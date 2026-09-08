@@ -32,6 +32,11 @@ else:
     elif component == "android":
         build = (root / "app/build.gradle.kts").read_text()
         assert 'applicationId = "io.github.zhanry.hometunnel"' in build
+        properties = (root / "gradle.properties").read_text()
+        version_name = re.search(r"^HOME_TUNNEL_VERSION_NAME=(\d+\.\d+\.\d+)$", properties, re.M).group(1)
+        version_code = int(re.search(r"^HOME_TUNNEL_VERSION_CODE=(\d+)$", properties, re.M).group(1))
+        major, minor, patch = map(int, version_name.split("."))
+        assert version_code == major * 1_000_000 + minor * 1_000 + patch, "Android versionCode must follow its own release version"
         assert (root / "release-signing-cert.sha256").read_text().strip() == "d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702"
         wrapper = root / "gradle/wrapper/gradle-wrapper.jar"
         assert hashlib.sha256(wrapper.read_bytes()).hexdigest() == "498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17"
