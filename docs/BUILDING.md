@@ -1,44 +1,23 @@
-# Home Tunnel Android Client
+# Android 构建与设备测试
 
-The Android app is a **management client**. Sign in with the control-center
-URL, username, and password to view your home devices and HTTP tunnels, copy
-public addresses, and change connection settings. Tunnels run on Windows,
-macOS, or Linux machines at home; this app does not start the managed Agent.
+## 工具
 
-It supports Android 8.0 (API 26) and newer. The first public APK targets
-`arm64-v8a`.
+使用 JDK 17、Android SDK Platform 35、Build Tools 35，以及仓库内的 Gradle Wrapper。
+运行目标为 Android 8.0 / API 26 及以上，当前优先验证 arm64 设备。
 
-The immutable Android application ID is:
-
-```text
-io.github.zhanry.hometunnel
-```
-
-## Current scope
-
-The app signs in with `client_type=mobile`, lists the account's home devices and
-HTTP connections, and can create, edit, pause, or delete tunnels that run on
-those devices. It does not enroll the phone as a tunnel endpoint and does not
-package or start a managed Agent.
-
-## Build requirements
-
-- JDK 17
-- Android SDK platform 35 and Build Tools 35
+## 调试构建
 
 ```sh
 ./gradlew --no-daemon test lint assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Run the normal checks and packages:
+Windows 使用 `gradlew.bat`。Debug 应用 ID 带 `.debug` 后缀，使用调试签名，不需要发布密钥。
+安装到设备前确认 adb 连接的目标；不同开发机的调试证书可能不同，不能把签名不匹配理解为网络或服务端错误。
 
-```sh
-./gradlew test lint assembleRelease bundleRelease
-```
+## 签名测试包
 
-Gradle uses `HOME_TUNNEL_VERSION_NAME` and `HOME_TUNNEL_VERSION_CODE` from
-`gradle.properties`. Release signing reads these environment variables (or the
-matching `android.release.*` Gradle properties):
+签名所需的本地环境变量如下：
 
 ```text
 ANDROID_RELEASE_STORE_FILE
@@ -47,55 +26,23 @@ ANDROID_RELEASE_KEY_ALIAS
 ANDROID_RELEASE_KEY_PASSWORD
 ```
 
-When any value is absent, the release variant remains unsigned. The build never
-falls back to the debug key or creates an ephemeral release identity.
-
-## Release assets and signing identity
-
-Public 5.0.0 assets are named:
-
-```text
-HomeTunnel-Android-5.0.0-arm64-v8a.apk
-HomeTunnel-Android-5.0.0.aab
-```
-
-The APK is the GitHub Releases side-load artifact. The AAB is an audit/store
-upload artifact: it cannot be installed directly and the presence of an AAB in
-GitHub Releases does **not** mean this Experimental build is Play-ready or has
-been published to Google Play.
-
-The long-lived official Android release certificate SHA-256 is:
-
-```text
-d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702
-```
-
-It is also recorded in `release-signing-cert.sha256`. Before installing a
-GitHub APK, compare the certificate reported by Android Build Tools:
-
 ```sh
-apksigner verify --verbose --print-certs HomeTunnel-Android-5.0.0-arm64-v8a.apk
+./gradlew --no-daemon test lint assembleRelease bundleRelease
 ```
 
-The `Signer #1 certificate SHA-256 digest` must match the value above. Also
-verify the adjacent artifact checksum or the aggregate `SHA256SUMS.txt` and its
-Sigstore evidence from the same GitHub Release.
+签名信息不足时 release variant 保持未签名；它不会自动使用调试证书。
+受限的 GitHub `android-release` 环境使用对应的签名配置构建，并校验产物。
+应用 ID 为 `io.github.zhanry.hometunnel`，证书指纹记录于 `release-signing-cert.sha256`。
 
-## Security notes
+APK 可直接安装；AAB 用于分发准备，不是手机安装包。存在 AAB 不代表已经上架应用商店。
+测试发布流程见 [RELEASING.md](RELEASING.md)。
 
-- Passwords and access/refresh tokens remain in memory only.
-- The permanent device credential and cached state are encrypted with an
-  Android Keystore AES-256-GCM key and stored under `noBackupFilesDir`.
-- Android backup and device-to-device transfer are disabled for application
-  data so a device credential cannot be cloned onto another phone.
-- Server discovery rejects cleartext HTTP, subpaths, user-info, redirects,
-  origin changes, oversized responses, malformed tunnel domains, and missing
-  or invalid FRPS trust material. Android intentionally refuses compatibility
-  deployments that do not publish the managed FRPS certificate.
-- Refresh rotation uses a single-flight mutex. Concurrent 401 responses cannot
-  replay an already-rotated refresh token and revoke the session family.
-The Gradle and emulator tests do not represent physical-device validation.
-Before raising the Android support level above Experimental, exercise a signed
-RC APK on physical arm64 devices, including offline sign-in, token refresh,
-screen rotation, process death, and upgrade while keeping the same application
-ID and release certificate.
+## 真实设备检查
+
+- 使用服务端 HTTPS 根地址登录，确认设备和连接属于正确账号。
+- 创建 / 编辑一个 HTTP 测试连接，检查电脑端同步与公网访问。
+- 验证复制地址、暂停恢复、保存失败后的输入保留和重试。
+- 验证屏幕旋转、前后台切换、断网和会话过期。
+- 使用测试数据；不要上传应用私有目录或凭据。
+
+应用声明网络访问与网络状态权限，关闭 Android 系统备份。手机管理已有设备上的连接，不运行本地 Agent 或隧道前台服务。
