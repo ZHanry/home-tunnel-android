@@ -35,7 +35,8 @@ jobs:
           gradle.properties
           gradle/wrapper/gradle-wrapper.properties
     - name: Test, lint, and assemble the unsigned debug client
-      run: ./gradlew --no-daemon test lint assembleDebug
+      run: |
+        ./gradlew --no-daemon test lint assembleDebug
     - name: Require generated Android binaries to remain untracked
       shell: bash
       run: |
@@ -52,9 +53,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    - run: python3 scripts/check-repository.py
+    - run: |
+        python3 scripts/check-repository.py
     - name: Check test-release policy
-      run: python3 -m unittest discover -s scripts -p "test_release_policy.py"
+      run: |
+        python3 -m unittest discover -s scripts -p "test_release_policy.py"
   dependency-review:
     name: Dependency Review
     if: ${{ github.event_name == 'pull_request' }}

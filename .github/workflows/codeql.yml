@@ -49,7 +49,14 @@ jobs:
         build-mode: ${{ matrix.build-mode }}
     - if: matrix.target == 'android'
       name: Build Android client under CodeQL
-      run: ./gradlew --no-daemon clean test lint assembleDebug --no-build-cache --rerun-tasks
+      run: |
+        ./gradlew --no-daemon clean test lint assembleDebug --no-build-cache --rerun-tasks
     - uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
       with:
         category: /language:${{ matrix.language }}/target:${{ matrix.target || 'default' }}
+        wait-for-processing: true
+    - name: Require no open CodeQL findings
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python scripts/check-codeql-alerts.py

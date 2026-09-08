@@ -31,7 +31,8 @@ jobs:
     - id: version
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: python3 scripts/release.py metadata
+      run: |
+        python3 scripts/release.py metadata
   android-package:
     name: Android 8+ arm64 Experimental APK and AAB
     if: needs.metadata.outputs.stable != 'true'
@@ -265,7 +266,8 @@ jobs:
         merge-multiple: true
     - env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: python3 scripts/release.py seal
+      run: |
+        python3 scripts/release.py seal
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: candidate-assets
@@ -288,7 +290,7 @@ jobs:
     - name: Seal and publish verified RC
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |-
+      run: |
         python3 scripts/release.py seal
         cosign sign-blob --yes --bundle release/SHA256SUMS.txt.sigstore.json release/SHA256SUMS.txt
         python3 scripts/release.py rc
@@ -303,4 +305,5 @@ jobs:
     - env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         RC_TAG: ${{ needs.metadata.outputs.rc-tag }}
-      run: python3 scripts/release.py stable
+      run: |
+        python3 scripts/release.py stable
