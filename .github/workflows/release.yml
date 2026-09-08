@@ -1,0 +1,306 @@
+name: Release android
+'on':
+  push:
+    tags:
+    - v*
+permissions:
+  contents: write
+  checks: read
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+  actions: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  metadata:
+    name: Validate component tag and CI
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      base-version: ${{ steps.version.outputs.base-version }}
+      stable: ${{ steps.version.outputs.stable }}
+      rc-version: ${{ steps.version.outputs.rc-version }}
+      rc-tag: ${{ steps.version.outputs.rc-tag }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        fetch-depth: 0
+    - id: version
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python3 scripts/release.py metadata
+  android-package:
+    name: Android 8+ arm64 Experimental APK and AAB
+    if: needs.metadata.outputs.stable != 'true'
+    needs: metadata
+    runs-on: ubuntu-latest
+    environment: android-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: Verify the pinned Gradle wrapper
+      run: |
+        set -euo pipefail
+        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+        grep -Fxq 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip' gradle/wrapper/gradle-wrapper.properties
+        grep -Fxq 'distributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab' gradle/wrapper/gradle-wrapper.properties
+    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      with:
+        distribution: temurin
+        java-version: '17'
+    - id: android
+      name: Build the persistently signed Android release packages
+      working-directory: ${{ github.workspace }}
+      shell: bash
+      env:
+        VERSION: ${{ needs.metadata.outputs.base-version }}
+        ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      run: |
+        set -euo pipefail
+        for secret_name in \
+          ANDROID_RELEASE_KEYSTORE_BASE64 \
+          ANDROID_RELEASE_STORE_PASSWORD \
+          ANDROID_RELEASE_KEY_ALIAS \
+          ANDROID_RELEASE_KEY_PASSWORD; do
+          test -n "${!secret_name:-}" || {
+            echo "Protected Android signing secret is missing: $secret_name" >&2
+            exit 1
+          }
+        done
+        test -s release-signing-cert.sha256 || {
+          echo 'The reviewed Android release certificate fingerprint is missing.' >&2
+          exit 1
+        }
+        keystore="$RUNNER_TEMP/home-tunnel-android-release.p12"
+        umask 077
+        trap 'rm -f -- "$keystore"' EXIT
+        printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+        test -s "$keystore"
+        export ANDROID_RELEASE_STORE_FILE="$keystore"
+        (
+          cd "$GITHUB_WORKSPACE"
+          ./gradlew --no-daemon clean test lint assembleRelease bundleRelease
+        )
+        source_apk=app/build/outputs/apk/release/app-release.apk
+        source_aab=app/build/outputs/bundle/release/app-release.aab
+        test -s "$source_apk" && test -s "$source_aab" || {
+          echo 'Signed Android APK or AAB output is missing; unsigned output is never accepted.' >&2
+          exit 1
+        }
+        mkdir release-android
+        apk="$PWD/release-android/HomeTunnel-Android-$VERSION-arm64-v8a.apk"
+        aab="$PWD/release-android/HomeTunnel-Android-$VERSION.aab"
+        cp "$source_apk" "$apk"
+        cp "$source_aab" "$aab"
+        {
+          echo "apk=$apk"
+          echo "aab=$aab"
+          echo "apk-sbom=$apk.spdx.json"
+          echo "aab-sbom=$aab.spdx.json"
+          echo "evidence=$PWD/release-android/android-release-evidence.json"
+        } >> "$GITHUB_OUTPUT"
+    - id: android-verify
+      name: Verify package identity, version, ABI, and persistent signer
+      shell: bash
+      env:
+        APK: ${{ steps.android.outputs.apk }}
+        AAB: ${{ steps.android.outputs.aab }}
+        EVIDENCE: ${{ steps.android.outputs.evidence }}
+        VERSION: ${{ needs.metadata.outputs.base-version }}
+      run: |
+        set -euo pipefail
+        export LC_ALL=C
+        expected_code=$(sed -n 's/^HOME_TUNNEL_VERSION_CODE=//p' gradle.properties)
+        expected_cert=$(tr -d '[:space:]:' < release-signing-cert.sha256 | tr 'A-F' 'a-f')
+        [[ "$expected_code" =~ ^[1-9][0-9]*$ ]]
+        [[ "$expected_cert" =~ ^[0-9a-f]{64}$ ]]
+
+        sdk_root=${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}
+        test -d "$sdk_root"
+        apksigner=$(find "$sdk_root/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+        apkanalyzer=$(command -v apkanalyzer || find "$sdk_root/cmdline-tools" -type f -path '*/bin/apkanalyzer' | sort -V | tail -n 1)
+        test -x "$apksigner" && test -x "$apkanalyzer"
+        apk_signature=$($apksigner verify --verbose --print-certs "$APK")
+        printf '%s\n' "$apk_signature"
+        grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true' <<< "$apk_signature"
+        apk_cert=$(sed -nE \
+          -e 's/^Signer #1 certificate SHA-256 digest: //p' \
+          -e 's/^V[0-9.]+ Signer: certificate SHA-256 digest: //p' \
+          <<< "$apk_signature" | tr 'A-F' 'a-f' | sort -u | tr -d '[:space:]:' )
+        [[ "$apk_cert" =~ ^[0-9a-f]{64}$ ]]
+        test "$apk_cert" = "$expected_cert"
+        test "$($apkanalyzer manifest application-id "$APK")" = io.github.zhanry.hometunnel
+        test "$($apkanalyzer manifest version-name "$APK")" = "$VERSION"
+        test "$($apkanalyzer manifest version-code "$APK")" = "$expected_code"
+        min_sdk=$($apkanalyzer manifest min-sdk "$APK")
+        target_sdk=$($apkanalyzer manifest target-sdk "$APK")
+        test "$min_sdk" -eq 26
+        test "$target_sdk" -ge 35
+        apk_abis=$(unzip -Z1 "$APK" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)
+        test -z "$apk_abis" || test "$apk_abis" = arm64-v8a
+        if unzip -Z1 "$APK" | grep -q libhometunnel_agent; then echo "Management APK must not bundle a tunnel Agent" >&2; exit 1; fi
+
+        bundletool="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+        curl --fail --location --proto '=https' --tlsv1.2 \
+          https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar \
+          --output "$bundletool"
+        echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  '"$bundletool" | sha256sum -c -
+        java -jar "$bundletool" validate --bundle="$AAB"
+        aab_signature=$(jarsigner -verify -verbose -certs "$AAB" 2>&1)
+        grep -Fq 'jar verified.' <<< "$aab_signature"
+        aab_cert=$(keytool -printcert -jarfile "$AAB" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d '[:space:]:' | tr 'A-F' 'a-f')
+        test "$aab_cert" = "$expected_cert"
+        test "$(java -jar "$bundletool" dump manifest --bundle="$AAB" --xpath=/manifest/@package)" = io.github.zhanry.hometunnel
+        test "$(java -jar "$bundletool" dump manifest --bundle="$AAB" --xpath=/manifest/@android:versionName)" = "$VERSION"
+        test "$(java -jar "$bundletool" dump manifest --bundle="$AAB" --xpath=/manifest/@android:versionCode)" = "$expected_code"
+        aab_abis=$(unzip -Z1 "$AAB" | sed -n 's#^base/lib/\([^/]*\)/.*#\1#p' | sort -u)
+        test -z "$aab_abis" || test "$aab_abis" = arm64-v8a
+        if unzip -Z1 "$AAB" | grep -q libhometunnel_agent; then echo "Management APK must not bundle a tunnel Agent" >&2; exit 1; fi
+
+        apk_sha=$(sha256sum "$APK" | awk '{print $1}')
+        aab_sha=$(sha256sum "$AAB" | awk '{print $1}')
+        (cd "$(dirname "$APK")" && sha256sum "$(basename "$APK")" > "$(basename "$APK").sha256")
+        (cd "$(dirname "$AAB")" && sha256sum "$(basename "$AAB")" > "$(basename "$AAB").sha256")
+        jq -n \
+          --arg version "$VERSION" \
+          --argjson version_code "$expected_code" \
+          --argjson min_sdk "$min_sdk" \
+          --argjson target_sdk "$target_sdk" \
+          --arg apk_sha256 "$apk_sha" \
+          --arg aab_sha256 "$aab_sha" \
+          --arg signing_certificate_sha256 "$expected_cert" \
+          --arg revision "$GITHUB_SHA" \
+          --arg build_identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release-images.yml@refs/tags/$GITHUB_REF_NAME" \
+          '{schema_version:1,status:"passed",release_channel:"experimental",
+            platform:"android",application_id:"io.github.zhanry.hometunnel",
+            version_name:$version,version_code:$version_code,min_sdk:$min_sdk,target_sdk:$target_sdk,
+            abis:["arm64-v8a"],apk_sha256:$apk_sha256,aab_sha256:$aab_sha256,
+            management_only:true,signing_certificate_sha256:$signing_certificate_sha256,
+            repository_revision:$revision,build_identity:$build_identity,
+            validations:["unit_tests","lint","apk_signature_v2","aab_signature","bundletool_validate","package_identity","version","arm64_abi","management_only_no_agent"],
+            physical_arm64_install:"not_run_in_github_actions"}' > "$EVIDENCE"
+    - id: android-syft
+      name: Install the pinned Android SBOM scanner
+      uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610
+      with:
+        syft-version: v1.42.3
+    - name: Generate per-package Android SPDX SBOMs
+      shell: bash
+      env:
+        SYFT: ${{ steps.android-syft.outputs.cmd }}
+        APK: ${{ steps.android.outputs.apk }}
+        AAB: ${{ steps.android.outputs.aab }}
+        APK_SBOM: ${{ steps.android.outputs.apk-sbom }}
+        AAB_SBOM: ${{ steps.android.outputs.aab-sbom }}
+      run: |
+        set -euo pipefail
+        "$SYFT" scan "file:$APK" -o spdx-json > "$APK_SBOM"
+        "$SYFT" scan "file:$AAB" -o spdx-json > "$AAB_SBOM"
+        test -s "$APK_SBOM" && test -s "$AAB_SBOM"
+    - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+    - name: Keyless-sign the Android package and evidence set
+      shell: bash
+      env:
+        APK: ${{ steps.android.outputs.apk }}
+        AAB: ${{ steps.android.outputs.aab }}
+        APK_SBOM: ${{ steps.android.outputs.apk-sbom }}
+        AAB_SBOM: ${{ steps.android.outputs.aab-sbom }}
+        EVIDENCE: ${{ steps.android.outputs.evidence }}
+      run: |
+        set -euo pipefail
+        for subject in "$APK" "$APK.sha256" "$APK_SBOM" "$AAB" "$AAB.sha256" "$AAB_SBOM" "$EVIDENCE"; do
+          test -s "$subject"
+          cosign sign-blob --yes --bundle "$subject.sigstore.json" "$subject"
+        done
+    - name: Publish GitHub Android APK provenance
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+      with:
+        subject-path: ${{ steps.android.outputs.apk }}
+    - name: Publish GitHub Android APK SBOM attestation
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+      with:
+        subject-path: ${{ steps.android.outputs.apk }}
+        sbom-path: ${{ steps.android.outputs.apk-sbom }}
+    - name: Publish GitHub Android AAB provenance
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+      with:
+        subject-path: ${{ steps.android.outputs.aab }}
+    - name: Publish GitHub Android AAB SBOM attestation
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+      with:
+        subject-path: ${{ steps.android.outputs.aab }}
+        sbom-path: ${{ steps.android.outputs.aab-sbom }}
+    - name: Attest the Android release evidence
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+      with:
+        subject-path: ${{ steps.android.outputs.evidence }}
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: android-release
+        path: release-android/*
+        if-no-files-found: error
+  collect:
+    name: Collect complete component artifact set
+    runs-on: ubuntu-latest
+    if: needs.metadata.outputs.stable != 'true'
+    needs:
+    - metadata
+    - android-package
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        pattern: android-release
+        path: release
+        merge-multiple: true
+    - env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python3 scripts/release.py seal
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: candidate-assets
+        path: release/*
+        if-no-files-found: error
+  rc-release:
+    name: Publish component RC
+    runs-on: ubuntu-latest
+    if: needs.metadata.outputs.stable != 'true'
+    needs:
+    - metadata
+    - collect
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: candidate-assets
+        path: release
+    - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+    - name: Seal and publish verified RC
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |-
+        python3 scripts/release.py seal
+        cosign sign-blob --yes --bundle release/SHA256SUMS.txt.sigstore.json release/SHA256SUMS.txt
+        python3 scripts/release.py rc
+  stable-release:
+    name: Promote identical signed RC bytes
+    runs-on: ubuntu-latest
+    if: needs.metadata.outputs.stable == 'true'
+    needs: metadata
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+    - env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RC_TAG: ${{ needs.metadata.outputs.rc-tag }}
+      run: python3 scripts/release.py stable

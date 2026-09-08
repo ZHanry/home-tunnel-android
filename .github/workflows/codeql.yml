@@ -1,0 +1,55 @@
+name: CodeQL
+'on':
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+  merge_group: null
+  schedule:
+  - cron: 23 3 * * 1
+  workflow_dispatch: null
+permissions:
+  contents: read
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - language: java-kotlin
+          name: Java/Kotlin Android client
+          os: ubuntu-latest
+          build-mode: manual
+          target: android
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - if: matrix.target == 'android'
+      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: gradle
+        cache-dependency-path: |
+          **/*.gradle*
+          gradle.properties
+          gradle/wrapper/gradle-wrapper.properties
+    - uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+      with:
+        languages: ${{ matrix.language }}
+        build-mode: ${{ matrix.build-mode }}
+    - if: matrix.target == 'android'
+      name: Build Android client under CodeQL
+      run: ./gradlew --no-daemon clean test lint assembleDebug --no-build-cache --rerun-tasks
+    - uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+      with:
+        category: /language:${{ matrix.language }}/target:${{ matrix.target || 'default' }}

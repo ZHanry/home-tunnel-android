@@ -1,0 +1,85 @@
+name: Android CI
+'on':
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+  merge_group: null
+  workflow_dispatch: null
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    name: Android client
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: Verify the pinned Gradle wrapper
+      run: |
+        set -euo pipefail
+        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+        grep -Fxq 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip' gradle/wrapper/gradle-wrapper.properties
+        grep -Fxq 'distributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab' gradle/wrapper/gradle-wrapper.properties
+    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: gradle
+        cache-dependency-path: |
+          **/*.gradle*
+          gradle.properties
+          gradle/wrapper/gradle-wrapper.properties
+    - name: Test, lint, and assemble the unsigned debug client
+      run: ./gradlew --no-daemon test lint assembleDebug
+    - name: Require generated Android binaries to remain untracked
+      shell: bash
+      run: |
+        set -euo pipefail
+        tracked=$(git ls-files -- '*.apk' '*.aab' '*.aar' '*.jks' '*.keystore' '*.so')
+        if [ -n "$tracked" ]; then
+          echo 'Generated Android binaries or signing stores must not be committed:' >&2
+          printf '%s\n' "$tracked" >&2
+          exit 1
+        fi
+        git diff --exit-code
+  repository:
+    name: Repository boundaries
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - run: python3 scripts/check-repository.py
+  dependency-review:
+    name: Dependency Review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+      with:
+        fail-on-severity: moderate
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs:
+    - android
+    - repository
+    - dependency-review
+    steps:
+    - name: Require all component checks
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        python3 - <<'PY'
+        import json, os
+        results = json.loads(os.environ['RESULTS'])
+        failed = {k:v['result'] for k,v in results.items() if v['result'] != 'success' and not (k == 'dependency-review' and v['result'] == 'skipped')}
+        if failed: raise SystemExit(str(failed))
+        print('All component checks passed')
+        PY

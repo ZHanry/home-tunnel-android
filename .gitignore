@@ -33,10 +33,10 @@ deploy/frps/frps
 **/.gradle/
 **/build/
 local.properties
-android-client/.android/
-android-client/.agent-build/
-android-client/app/src/main/jniLibs/**/libhometunnel_agent.so
-android-client/signing.properties
+.android/
+.agent-build/
+app/src/main/jniLibs/**/libhometunnel_agent.so
+signing.properties
 
 # Secrets and machine-local configuration
 .env
@@ -81,3 +81,6 @@ tests/frpc-https.toml
 
 **/test-results/
 **/playwright-report/
+
+/release-android/
+/release/

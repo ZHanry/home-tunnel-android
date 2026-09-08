@@ -1,101 +1,30 @@
-# Home Tunnel Android Client
+# Home Tunnel Android
 
-The Android app is a **management client**. Sign in with the control-center
-URL, username, and password to view your home devices and HTTP tunnels, copy
-public addresses, and change connection settings. Tunnels run on Windows,
-macOS, or Linux machines at home; this app does not start the managed Agent.
+Home Tunnel 的 Android 远程管理 App：登录服务端，查看家中设备与连接，创建、编辑、暂停连接并复制公网地址。隧道实际运行在家中的 Windows / macOS / Linux 客户端上。
 
-It supports Android 8.0 (API 26) and newer. The first public APK targets
-`arm64-v8a`.
+[项目主页](https://github.com/ZHanry/home-tunnel) · [服务端](https://github.com/ZHanry/home-tunnel-server) · [桌面 / CLI 客户端](https://github.com/ZHanry/home-tunnel-client)
 
-The immutable Android application ID is:
+支持 Android 8.0（API 26）及以上，当前发布目标为 arm64-v8a，状态为 Experimental。
+APK 用于侧载安装；AAB 是商店上传产物，不可直接安装，也不表示已发布到 Google Play。
 
-```text
-io.github.zhanry.hometunnel
-```
+## 构建
 
-## Current scope
-
-The app signs in with `client_type=mobile`, lists the account's home devices and
-HTTP connections, and can create, edit, pause, or delete tunnels that run on
-those devices. It does not enroll the phone as a tunnel endpoint and does not
-package or start a managed Agent.
-
-## Build requirements
-
-- JDK 17
-- Android SDK platform 35 and Build Tools 35
+使用 JDK 17 和 Android SDK 35，在本仓库根目录执行：
 
 ```sh
 ./gradlew --no-daemon test lint assembleDebug
 ```
 
-Run the normal checks and packages:
+Windows 使用 `gradlew.bat`。普通开发与 CI 无需发布密钥；正式版本通过受保护的 `android-release` 环境签名。
 
-```sh
-./gradlew test lint assembleRelease bundleRelease
-```
+## 下载与升级
 
-Gradle uses `HOME_TUNNEL_VERSION_NAME` and `HOME_TUNNEL_VERSION_CODE` from
-`gradle.properties`. Release signing reads these environment variables (or the
-matching `android.release.*` Gradle properties):
+已有版本：[原项目 5.0.0](https://github.com/ZHanry/home-tunnel/releases/tag/v5.0.0)。
+后续版本由[本仓库 Releases](https://github.com/ZHanry/home-tunnel-android/releases) 独立发布。
 
-```text
-ANDROID_RELEASE_STORE_FILE
-ANDROID_RELEASE_STORE_PASSWORD
-ANDROID_RELEASE_KEY_ALIAS
-ANDROID_RELEASE_KEY_PASSWORD
-```
+迁移保留应用 ID `io.github.zhanry.hometunnel`、固定发布证书及递增的 `versionCode`，以支持现有用户升级。
+证书指纹见 [release-signing-cert.sha256](release-signing-cert.sha256)。发布流程拒绝使用调试证书替代正式签名。
 
-When any value is absent, the release variant remains unsigned. The build never
-falls back to the debug key or creates an ephemeral release identity.
+完整构建和签名说明见 [BUILDING.md](docs/BUILDING.md)，发布见 [RELEASING.md](docs/RELEASING.md)，协议基线见 [compatibility.json](compatibility.json)。
 
-## Release assets and signing identity
-
-Public 5.0.0 assets are named:
-
-```text
-HomeTunnel-Android-5.0.0-arm64-v8a.apk
-HomeTunnel-Android-5.0.0.aab
-```
-
-The APK is the GitHub Releases side-load artifact. The AAB is an audit/store
-upload artifact: it cannot be installed directly and the presence of an AAB in
-GitHub Releases does **not** mean this Experimental build is Play-ready or has
-been published to Google Play.
-
-The long-lived official Android release certificate SHA-256 is:
-
-```text
-d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702
-```
-
-It is also recorded in `release-signing-cert.sha256`. Before installing a
-GitHub APK, compare the certificate reported by Android Build Tools:
-
-```sh
-apksigner verify --verbose --print-certs HomeTunnel-Android-5.0.0-arm64-v8a.apk
-```
-
-The `Signer #1 certificate SHA-256 digest` must match the value above. Also
-verify the adjacent artifact checksum or the aggregate `SHA256SUMS.txt` and its
-Sigstore evidence from the same GitHub Release.
-
-## Security notes
-
-- Passwords and access/refresh tokens remain in memory only.
-- The permanent device credential and cached state are encrypted with an
-  Android Keystore AES-256-GCM key and stored under `noBackupFilesDir`.
-- Android backup and device-to-device transfer are disabled for application
-  data so a device credential cannot be cloned onto another phone.
-- Server discovery rejects cleartext HTTP, subpaths, user-info, redirects,
-  origin changes, oversized responses, malformed tunnel domains, and missing
-  or invalid FRPS trust material. Android intentionally refuses compatibility
-  deployments that do not publish the managed FRPS certificate.
-- Refresh rotation uses a single-flight mutex. Concurrent 401 responses cannot
-  replay an already-rotated refresh token and revoke the session family.
-The Gradle and emulator tests do not represent physical-device validation.
-Before raising the Android support level above Experimental, exercise a signed
-RC APK on physical arm64 devices, including offline sign-in, token refresh,
-screen rotation, process death, and upgrade while keeping the same application
-ID and release certificate.
+Apache-2.0，见 [LICENSE](LICENSE)。
