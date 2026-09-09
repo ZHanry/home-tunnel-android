@@ -15,7 +15,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Windows 使用 `gradlew.bat`。Debug 应用 ID 带 `.debug` 后缀，使用调试签名，不需要发布密钥。
 安装到设备前确认 adb 连接的目标；不同开发机的调试证书可能不同，不能把签名不匹配理解为网络或服务端错误。
 
-## 签名测试包
+## 签名安装包
 
 签名所需的本地环境变量如下：
 
@@ -35,7 +35,7 @@ ANDROID_RELEASE_KEY_PASSWORD
 应用 ID 为 `io.github.zhanry.hometunnel`，证书指纹记录于 `release-signing-cert.sha256`。
 
 APK 可直接安装；AAB 用于分发准备，不是手机安装包。存在 AAB 不代表已经上架应用商店。
-测试发布流程见 [RELEASING.md](RELEASING.md)。
+版本发布流程见 [RELEASING.md](RELEASING.md)。
 
 ## 真实设备检查
 

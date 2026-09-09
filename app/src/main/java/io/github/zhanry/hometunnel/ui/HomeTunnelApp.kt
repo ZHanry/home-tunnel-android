@@ -4,6 +4,21 @@ package io.github.zhanry.hometunnel.ui
 
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -109,6 +124,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
 import io.github.zhanry.hometunnel.BuildConfig
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.AgentState
@@ -125,6 +142,9 @@ fun HomeTunnelApp(
 ) {
     val state by repository.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    if (state.screen == AppScreen.HOME) {
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { repository.refreshConnections(silent = true) }
+    }
 
     LaunchedEffect(state.error) {
         state.error?.let {
@@ -133,19 +153,7 @@ fun HomeTunnelApp(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f),
-                        MaterialTheme.colorScheme.surface,
-                    ),
-                ),
-            ),
-    ) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         AnimatedContent(targetState = state.screen, label = "screen") { screen ->
             when (screen) {
                 AppScreen.LOADING -> LoadingScreen()
@@ -188,7 +196,7 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         BrandMark()
         Spacer(Modifier.height(20.dp))
         Text(
-            stringResource(R.string.app_name),
+            stringResource(R.string.login_heading),
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -199,7 +207,7 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(28.dp))
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
         OutlinedTextField(
             value = server,
             onValueChange = { server = it },
@@ -333,101 +341,155 @@ private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelReposi
 
 @Composable
 private fun AuthFrame(content: @Composable ColumnScope.() -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-        val horizontal = if (maxWidth > 600.dp) 48.dp else 22.dp
+    Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .widthIn(max = 520.dp)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal, 32.dp),
+            modifier = Modifier.align(Alignment.Center).widthIn(max = 540.dp).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalAlignment = Alignment.Start,
             content = content,
         )
     }
 }
 
 @Composable
-private fun HomeScreen(
+internal fun HomeScreen(
     state: AppUiState,
     repository: HomeTunnelRepository,
     snackbar: SnackbarHostState,
 ) {
     var editor by remember { mutableStateOf<ConnectionEdit?>(null) }
-    var settings by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<TunnelConnection?>(null) }
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var selectedDevice by rememberSaveable { mutableStateOf("") }
+    var search by rememberSaveable { mutableStateOf("") }
+    var confirmLogout by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val tabLabels = listOf(R.string.nav_overview, R.string.nav_devices, R.string.nav_connections, R.string.nav_account)
+    val tabIcons = listOf(Icons.Default.Home, Icons.Default.Devices, Icons.Default.Link, Icons.Default.Person)
+    val createConnection = {
+        val available = state.devices.filter { it.status == "active" }
+        if (available.isEmpty()) {
+            scope.launch { snackbar.showSnackbar(context.getString(R.string.install_client_first)) }
+        } else {
+            val deviceId = selectedDevice.takeIf { id -> available.any { it.id == id } }
+                ?: available.singleOrNull()?.id.orEmpty()
+            editor = ConnectionEdit(newHttpConnection(state, deviceId), true)
+        }
+        Unit
+    }
+    val copyAddress: (String) -> Unit = { url ->
+        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("url", url))
+        scope.launch { snackbar.showSnackbar(context.getString(R.string.copied_address)) }
+    }
     Scaffold(
-        containerColor = Color.Transparent,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold) },
-                actions = {
-                    IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy) {
-                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh_status))
-                    }
-                    IconButton(onClick = { settings = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings))
-                    }
-                },
+            TopAppBar(
+                title = { Column {
+                    Text("HOME TUNNEL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold)
+                } },
+                actions = { IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy) {
+                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh_status))
+                } },
             )
+        },
+        bottomBar = {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                tabLabels.forEachIndexed { index, label ->
+                    NavigationBarItem(selected = tab == index, onClick = { tab = index },
+                        icon = { Icon(tabIcons[index], contentDescription = null) },
+                        label = { Text(stringResource(label)) })
+                }
+            }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    val deviceId = state.devices.firstOrNull { it.status == "active" }?.id
-                    if (deviceId == null) {
-                        scope.launch { snackbar.showSnackbar(context.getString(R.string.install_client_first)) }
-                    } else {
-                        editor = ConnectionEdit(newHttpConnection(state, deviceId), true)
-                    }
-                },
+            if (tab == 2) ExtendedFloatingActionButton(onClick = createConnection,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.add_connection)) },
-            )
+                text = { Text(stringResource(R.string.add_connection)) })
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 104.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item {
-                Text(
-                    stringResource(R.string.home_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.semantics { heading() },
-                )
-                Text(
-                    stringResource(R.string.home_subtitle),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            item {
-                ManagementStatusCard(state)
-            }
-            if (state.connections.isEmpty()) {
-                item { EmptyConnectionsCard() }
-            } else {
-                items(state.connections, key = { it.id }) { connection ->
-                    ConnectionCard(
-                        connection = connection,
-                        onEdit = { editor = ConnectionEdit(connection, false) },
-                        onCopy = { url ->
-                            val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("url", url))
-                            scope.launch { snackbar.showSnackbar(context.getString(R.string.copied_address)) }
-                        },
-                    )
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            LazyColumn(
+                modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = if (tab == 2) 100.dp else 32.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                if (state.busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                if (state.stale) item { WarningCard(stringResource(R.string.cached_data_warning)) }
+                when (tab) {
+                    0 -> {
+                        item { ManagementStatusCard(state) }
+                        item { Button(onClick = createConnection, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.add_connection))
+                        } }
+                        item { SectionLabel(stringResource(R.string.attention_title)) }
+                        val attention = state.connections.filter { it.enabled && it.state.lowercase() != "online" }
+                        if (attention.isEmpty()) item {
+                            OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(22.dp)) {
+                                Text(stringResource(if (state.connections.isEmpty()) R.string.no_connections else R.string.all_connected), fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(if (state.connections.isEmpty()) R.string.no_connections_detail else R.string.all_connected_detail), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                            } }
+                        }
+                        items(attention.take(4), key = { it.id }) { connection ->
+                            ConnectionCard(connection, { editor = ConnectionEdit(connection, false) }, copyAddress)
+                        }
+                        item { OutlinedButton(onClick = { tab = 1 }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.view_devices)); Spacer(Modifier.width(8.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                        } }
+                    }
+                    1 -> {
+                        item { Text(stringResource(R.string.device_scope_hint), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        if (state.devices.isEmpty()) item { EmptyConnectionsCard() }
+                        items(state.devices, key = { it.id }) { device ->
+                            OutlinedCard(onClick = { selectedDevice = device.id; search = ""; tab = 2 }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Icon(Icons.Default.Devices, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                        Text(stringResource(if (device.online && device.status == "active") R.string.status_online else R.string.status_offline), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                    Text(device.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                    HorizontalDivider()
+                                    Text(stringResource(R.string.device_service_count, state.connections.count { it.deviceId == device.id }), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        item { OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.search_connections)) }, singleLine = true,
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }) }
+                        if (selectedDevice.isNotEmpty()) item {
+                            OutlinedButton(onClick = { selectedDevice = "" }, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(R.string.device_filter, state.devices.find { it.id == selectedDevice }?.name.orEmpty()))
+                            }
+                        }
+                        val filtered = state.connections.filter { (selectedDevice.isEmpty() || it.deviceId == selectedDevice) &&
+                            (search.isBlank() || it.name.contains(search, true) || it.publicDisplayEndpoint.contains(search, true)) }
+                        if (filtered.isEmpty()) item {
+                            if (state.connections.isEmpty()) EmptyConnectionsCard()
+                            else Text(stringResource(R.string.no_search_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        items(filtered, key = { it.id }) { connection ->
+                            ConnectionCard(connection, { editor = ConnectionEdit(connection, false) }, copyAddress)
+                        }
+                    }
+                    3 -> {
+                        item { AccountContent(state) { confirmLogout = true } }
+                    }
                 }
             }
         }
     }
+    if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false },
+        title = { Text(stringResource(R.string.sign_out)) },
+        text = { Text(stringResource(R.string.sign_out_confirmation)) },
+        confirmButton = { Button(onClick = { confirmLogout = false; repository.logout { } }, enabled = !state.busy) { Text(stringResource(R.string.sign_out)) } },
+        dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.cancel)) } })
 
     editor?.let { edit ->
         ConnectionEditor(
@@ -456,43 +518,39 @@ private fun HomeScreen(
             title = { Text(stringResource(R.string.delete_connection)) },
             text = { Text(stringResource(R.string.delete_confirmation, value.name)) },
             confirmButton = {
-                Button(onClick = {
-                    repository.deleteConnection(value)
-                    deleteTarget = null
-                    editor = null
+                Button(enabled = !state.busy, onClick = {
+                    repository.deleteConnection(value) {
+                        deleteTarget = null
+                        editor = null
+                    }
                 }) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
-    if (settings) {
-        SettingsSheet(
-            state = state,
-            onDismiss = { settings = false },
-            onLogout = {
-                settings = false
-                repository.logout { }
-            },
-        )
-    }
+
 }
 
 @Composable
 private fun ManagementStatusCard(state: AppUiState) {
-    val online = state.devices.count { it.online }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.68f)),
-    ) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (state.stale) Text(stringResource(R.string.cached_data_warning), color = MaterialTheme.colorScheme.error)
-            state.lastSyncedAt?.let { Text(stringResource(R.string.last_sync, it), style = MaterialTheme.typography.labelSmall) }
-            Text(stringResource(R.string.management_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(
-                stringResource(R.string.management_detail, online, state.devices.size, state.connections.size),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    val online = state.devices.count { it.online && it.status == "active" }
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text(stringResource(R.string.overview_eyebrow), style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.overview_title), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text(state.persisted.profile?.tunnelDomain.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+            HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("$online / ${state.devices.size}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.online_devices), style = MaterialTheme.typography.labelMedium)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(state.connections.size.toString(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.nav_connections), style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
     }
 }
@@ -515,32 +573,27 @@ private fun EmptyConnectionsCard() {
 @Composable
 private fun ConnectionCard(connection: TunnelConnection, onEdit: () -> Unit, onCopy: (String) -> Unit) {
     val status = localizedConnectionState(connection)
-    OutlinedCard(onClick = onEdit, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(connection.proxyType.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(connection.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(connection.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    connection.publicDisplayEndpoint.ifBlank { "${connection.localHost}:${connection.localPort}" },
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                Text(
-                    status,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (connection.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                )
-            }
-            IconButton(onClick = { onCopy(connection.publicDisplayEndpoint.ifBlank { connection.subdomain }) }) {
-                Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.copy_address))
+            Text(connection.publicDisplayEndpoint.ifBlank { "${connection.localHost}:${connection.localPort}" },
+                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+            HorizontalDivider()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.edit_connection))
+                }
+                TextButton(onClick = { onCopy(connection.publicDisplayEndpoint.ifBlank { connection.subdomain }) }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.copy_address))
+                }
             }
         }
     }
@@ -548,7 +601,7 @@ private fun ConnectionCard(connection: TunnelConnection, onEdit: () -> Unit, onC
 
 @Composable
 private fun localizedConnectionState(connection: TunnelConnection): String {
-    if (!connection.enabled) return stringResource(R.string.status_offline)
+    if (!connection.enabled) return stringResource(R.string.status_paused)
     return when (connection.state.lowercase()) {
         "online" -> stringResource(R.string.status_online)
         "applying" -> stringResource(R.string.status_syncing)
@@ -585,38 +638,66 @@ private fun ConnectionEditor(
     val unknown = edit.value.kind == ProxyKind.UNKNOWN
     val validSubdomain = Regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$").matches(subdomain)
     val parsedPort = port.toIntOrNull()
-    val canSave = !unknown && name.isNotBlank() && validSubdomain && host.isNotBlank() && parsedPort in 1..65535 && deviceId.isNotBlank()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (edit.isNew) stringResource(R.string.add_connection) else stringResource(R.string.edit_connection)) },
-        text = {
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+    val canSave = !unknown && name.isNotBlank() && (raw || validSubdomain) && host.isNotBlank() && parsedPort in 1..65535 && deviceId.isNotBlank() && (!edit.isNew || devices.any { it.id == deviceId && it.status == "active" })
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val changed = name != edit.value.name || subdomain != edit.value.subdomain || host != edit.value.localHost ||
+        port != edit.value.localPort.toString() || enabled != edit.value.enabled || deviceId != edit.value.deviceId || scheme != edit.value.localScheme
+    val requestClose = { if (!busy) { if (changed) confirmDiscard = true else onDismiss() }; Unit }
+    Dialog(onDismissRequest = requestClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Scaffold(
+            topBar = { TopAppBar(title = { Text(stringResource(if (edit.isNew) R.string.add_connection else R.string.edit_connection)) },
+                navigationIcon = { IconButton(onClick = requestClose, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel)) } }) },
+            bottomBar = {
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().imePadding().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = requestClose, enabled = !busy, modifier = Modifier.heightIn(min = 52.dp)) { Text(stringResource(R.string.cancel)) }
+            Button(
+                onClick = {
+                    onSave(edit.value.copy(
+                        deviceId = deviceId,
+                        name = name.trim(),
+                        subdomain = subdomain.trim(),
+                        localScheme = if (raw) edit.value.localScheme else scheme,
+                        localHost = host.trim(),
+                        localPort = requireNotNull(parsedPort),
+                        enabled = enabled,
+                    ))
+                },
+                enabled = canSave && !busy,
+                modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+            ) { Text(stringResource(R.string.save)) }
+                }
+            },
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (error?.contains("VERSION_CONFLICT") == true) {
                     OutlinedButton(onClick = onReloadLatest, enabled = !busy) { Text(stringResource(R.string.reload_latest)) }
                 }
                 if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                 if (raw) WarningCard(stringResource(R.string.raw_mvp_warning, edit.value.proxyType.uppercase()))
                 if (unknown) WarningCard(stringResource(R.string.unknown_type_warning))
+                SectionLabel(stringResource(R.string.editor_identity))
                 if (edit.isNew) {
-                    Text(stringResource(R.string.device), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.choose_device), style = MaterialTheme.typography.bodyMedium)
                     devices.filter { it.status == "active" }.forEach { device ->
-                        AssistChip(
-                            onClick = { deviceId = device.id },
-                            label = { Text(if (device.online) "${device.name} · ${stringResource(R.string.status_online)}" else device.name) },
-                            leadingIcon = {
-                                if (deviceId == device.id) Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-                            },
-                        )
+                        Row(Modifier.fillMaxWidth().selectable(selected = deviceId == device.id,
+                            onClick = { deviceId = device.id }, enabled = !busy, role = Role.RadioButton)
+                            .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = deviceId == device.id, onClick = null, enabled = !busy)
+                            Spacer(Modifier.width(12.dp))
+                            Text(device.name, modifier = Modifier.weight(1f))
+                            Text(stringResource(if (device.online) R.string.status_online else R.string.status_offline), style = MaterialTheme.typography.labelSmall)
+                        }
                     }
+                } else {
+                    Text(devices.find { it.id == deviceId }?.name.orEmpty(), color = MaterialTheme.colorScheme.primary)
                 }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && !raw && !unknown,
+                    enabled = !busy && !unknown,
                     label = { Text(stringResource(R.string.connection_name)) },
                     singleLine = true,
                 )
@@ -624,11 +705,15 @@ private fun ConnectionEditor(
                     value = subdomain,
                     onValueChange = { subdomain = it.lowercase() },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && !raw && !unknown,
+                    enabled = !busy && !unknown,
                     label = { Text(stringResource(R.string.public_subdomain)) },
                     isError = subdomain.isNotEmpty() && !validSubdomain,
                     singleLine = true,
                 )
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider()
+                SectionLabel(stringResource(R.string.editor_destination))
+                Text(stringResource(R.string.target_device_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (!raw && !unknown) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("http", "https").forEach { value ->
@@ -667,26 +752,14 @@ private fun ConnectionEditor(
                         Text(stringResource(R.string.delete_connection))
                     }
                 }
+                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(edit.value.copy(
-                        deviceId = deviceId,
-                        name = name.trim(),
-                        subdomain = subdomain.trim(),
-                        localScheme = if (raw) edit.value.localScheme else scheme,
-                        localHost = host.trim(),
-                        localPort = requireNotNull(parsedPort),
-                        enabled = enabled,
-                    ))
-                },
-                enabled = canSave && !busy,
-            ) { Text(stringResource(R.string.save)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
+        }
+        if (confirmDiscard) AlertDialog(onDismissRequest = { confirmDiscard = false },
+            title = { Text(stringResource(R.string.discard_title)) }, text = { Text(stringResource(R.string.discard_detail)) },
+            confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.discard)) } },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(R.string.keep_editing)) } })
+    }
 }
 
 @Composable
@@ -697,62 +770,33 @@ private fun WarningCard(message: String) {
 }
 
 @Composable
-private fun SettingsSheet(state: AppUiState, onDismiss: () -> Unit, onLogout: () -> Unit) {
-    var confirmLogout by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp),
-        ) {
-            Text(
-                stringResource(R.string.settings),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp).semantics { heading() },
-            )
-            ListItem(
-                headlineContent = { Text(state.persisted.userDisplayName ?: state.persisted.username.orEmpty()) },
-                supportingContent = { Text(state.persisted.profile?.publicBaseUrl.orEmpty()) },
-                leadingContent = { Icon(Icons.Default.Home, contentDescription = null) },
-            )
-            HorizontalDivider()
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.language)) },
-                supportingContent = { Text(stringResource(R.string.language_system)) },
-                leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
-                trailingContent = { LanguageMenu(compact = false) },
-            )
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.release_identity)) },
-                supportingContent = { Text(stringResource(R.string.release_fingerprint), style = MaterialTheme.typography.bodySmall) },
-                leadingContent = { Icon(Icons.Default.Security, contentDescription = null) },
-            )
-            Text(
-                stringResource(R.string.experimental_notice),
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
-                modifier = Modifier.padding(horizontal = 24.dp),
-                color = MaterialTheme.colorScheme.outline,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = { confirmLogout = true },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-            ) { Text(stringResource(R.string.sign_out)) }
+private fun SectionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 6.dp).semantics { heading() })
+}
+
+@Composable
+private fun AccountContent(state: AppUiState, onLogout: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                Text(state.persisted.userDisplayName ?: state.persisted.username.orEmpty(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(state.persisted.profile?.publicBaseUrl.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+            }
         }
-    }
-    if (confirmLogout) {
-        AlertDialog(
-            onDismissRequest = { confirmLogout = false },
-            title = { Text(stringResource(R.string.sign_out)) },
-            text = { Text(stringResource(R.string.sign_out_confirmation)) },
-            confirmButton = { Button(onClick = onLogout) { Text(stringResource(R.string.sign_out)) } },
-            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.cancel)) } },
-        )
+        SectionLabel(stringResource(R.string.preferences))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.language)); LanguageMenu(compact = false)
+        }
+        Text(stringResource(R.string.theme_system), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        HorizontalDivider()
+        SectionLabel(stringResource(R.string.about_app))
+        Text(stringResource(R.string.management_notice), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.version_label, BuildConfig.VERSION_NAME), style = MaterialTheme.typography.labelMedium)
+        OutlinedButton(onClick = onLogout, enabled = !state.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+            Text(stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

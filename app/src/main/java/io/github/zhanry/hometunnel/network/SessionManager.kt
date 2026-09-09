@@ -7,7 +7,10 @@ import java.time.Instant
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class SessionManager(private val clock: Clock = Clock.systemUTC()) {
+class SessionManager(
+    private val clock: Clock = Clock.systemUTC(),
+    private val onRefresh: suspend (String, RefreshResponse) -> Unit = { _, _ -> },
+) {
     private val refreshMutex = Mutex()
 
     @Volatile
@@ -35,7 +38,9 @@ class SessionManager(private val clock: Clock = Clock.systemUTC()) {
             if (afterLock.accessExpiresAt.isAfter(clock.instant().plusSeconds(60))) {
                 return@withLock afterLock.accessToken
             }
-            install(refresher(afterLock.refreshToken))
+            val refreshed = refresher(afterLock.refreshToken)
+            install(refreshed)
+            onRefresh(afterLock.refreshToken, refreshed)
             requireNotNull(session).accessToken
         }
     }
@@ -50,7 +55,9 @@ class SessionManager(private val clock: Clock = Clock.systemUTC()) {
         ) {
             return@withLock current.accessToken
         }
-        install(refresher(current.refreshToken))
+        val refreshed = refresher(current.refreshToken)
+        install(refreshed)
+        onRefresh(current.refreshToken, refreshed)
         requireNotNull(session).accessToken
     }
 

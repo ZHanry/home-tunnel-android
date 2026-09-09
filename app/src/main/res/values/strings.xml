@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Home Tunnel</string>
-    <string name="tagline">A private path home, only when you ask for it.</string>
+    <string name="tagline">Use your own server to keep home services within reach.</string>
     <string name="server_address">Server address</string>
     <string name="server_hint">https://console.example.com</string>
     <string name="username">Username</string>
     <string name="password">Password</string>
     <string name="sign_in">Sign in</string>
     <string name="signing_in">Signing in…</string>
-    <string name="secure_discovery_note">The final HTTPS origin is verified before credentials are sent. Redirects are never followed.</string>
+    <string name="secure_discovery_note">Enter your Home Tunnel console address and the account provided by your administrator.</string>
     <string name="change_password">Change password</string>
-    <string name="password_change_required">Your administrator requires a new password before this device can be registered.</string>
+    <string name="password_change_required">Set your own password before continuing to manage your devices.</string>
     <string name="current_password">Current password</string>
     <string name="new_password">New password</string>
     <string name="confirm_password">Confirm new password</string>
@@ -38,8 +38,8 @@
     <string name="local_port">Local port</string>
     <string name="enabled">Enabled</string>
     <string name="no_connections">No connections yet</string>
-    <string name="no_connections_detail">Add an HTTP route for a service on this phone or your local network.</string>
-    <string name="raw_mvp_warning">This administrator-assigned %1$s route can be edited, but Android Experimental currently advertises HTTP capability only and will not start it.</string>
+    <string name="no_connections_detail">Sign in on your home computer or NAS, then add a connection for that device.</string>
+    <string name="raw_mvp_warning">This %1$s service is assigned by your administrator. Changes sync to its device; the public port is managed by your administrator.</string>
     <string name="unknown_type_warning">This connection type is not recognized. It is shown read-only and will never be started.</string>
     <string name="settings">Settings</string>
     <string name="language">Language</string>
@@ -49,9 +49,8 @@
     <string name="theme_system">Theme follows the system</string>
     <string name="release_identity">Release signing certificate</string>
     <string name="release_fingerprint">SHA-256 d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702</string>
-    <string name="experimental_notice">This Android app manages your Home Tunnel account. Tunnels run on Windows, macOS, or Linux at home.</string>
-    <string name="sign_out">Sign out and revoke this device</string>
-    <string name="sign_out_confirmation">This stops every tunnel on this Android device and rotates its device credential.</string>
+<string name="sign_out">Sign out</string>
+    <string name="sign_out_confirmation">Sign out on this phone. Tunnels on your home devices keep running.</string>
     <string name="status_offline">Offline</string>
     <string name="status_starting">Starting</string>
     <string name="status_online">Online</string>
@@ -75,7 +74,7 @@
     <string name="notification_stop">Stop</string>
     <string name="notification_sync">Sync</string>
     <string name="loading">Loading…</string>
-    <string name="version_label">Version %1$s · Android Experimental</string>
+    <string name="version_label">Version %1$s</string>
 
     <string name="refresh_status">Refresh status</string>
     <string name="cached_data_warning">Connection interrupted. Showing cached data. Refresh to retry.</string>
@@ -84,4 +83,34 @@
     <string name="show_password">Show password</string>
     <string name="hide_password">Hide password</string>
     <string name="reload_latest">Load latest version and keep my edits</string>
+    <string name="nav_overview">Overview</string>
+    <string name="nav_devices">Devices</string>
+    <string name="nav_connections">Services</string>
+    <string name="nav_account">Account</string>
+    <string name="attention_title">Needs attention</string>
+    <string name="all_connected">All services are connected</string>
+    <string name="all_connected_detail">Open Services to copy an address and reach your home.</string>
+    <string name="view_devices">View my devices</string>
+    <string name="device_scope_hint">Choose a device to see the services running on it.</string>
+    <string name="device_service_count">%1$d services · View connections</string>
+    <string name="search_connections">Search name or address</string>
+    <string name="device_filter">%1$s · Show all devices</string>
+    <string name="no_search_results">No matching services. Adjust your search or device filter.</string>
+    <string name="overview_eyebrow">YOUR HOME NETWORK</string>
+    <string name="overview_title">Your home,\nwithin reach.</string>
+    <string name="online_devices">Devices online</string>
+    <string name="editor_identity">01 · Service and public address</string>
+    <string name="editor_destination">02 · Local target on the device</string>
+    <string name="choose_device">Choose the device running this service</string>
+    <string name="target_device_hint">Addresses are relative to the selected device. 127.0.0.1 means that computer or NAS, not this phone.</string>
+    <string name="discard_title">Discard unsaved changes?</string>
+    <string name="discard_detail">Your edits will be lost when you leave.</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep editing</string>
+    <string name="preferences">Preferences</string>
+    <string name="about_app">About Home Tunnel</string>
+    <string name="login_heading">Connect to home.</string>
+    <string name="status_paused">Paused</string>
+    <string name="management_notice">Manage your devices and connections here. Tunnels keep running on your computer or NAS.</string>
+
 </resources>

@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Home Tunnel</string>
-    <string name="tagline">只在你需要时，打开一条安全回家的路。</string>
+    <string name="tagline">使用自己的服务器，让家里的服务随时可达。</string>
     <string name="server_address">服务器地址</string>
     <string name="server_hint">https://console.example.com</string>
     <string name="username">用户名</string>
     <string name="password">密码</string>
     <string name="sign_in">登录</string>
     <string name="signing_in">正在登录…</string>
-    <string name="secure_discovery_note">发送账号密码前会验证最终 HTTPS 源站；应用绝不会跟随重定向。</string>
+    <string name="secure_discovery_note">填写你的 Home Tunnel 控制台地址，并使用管理员为你创建的账号。</string>
     <string name="change_password">修改密码</string>
-    <string name="password_change_required">管理员要求先设置新密码，之后才能注册此设备。</string>
+    <string name="password_change_required">首次登录请设置自己的密码，然后继续管理家庭设备。</string>
     <string name="current_password">当前密码</string>
     <string name="new_password">新密码</string>
     <string name="confirm_password">确认新密码</string>
@@ -38,8 +38,8 @@
     <string name="local_port">本地端口</string>
     <string name="enabled">启用</string>
     <string name="no_connections">还没有连接</string>
-    <string name="no_connections_detail">为手机或局域网中的 HTTP 服务新建一条连接。</string>
-    <string name="raw_mvp_warning">这条由管理员分配的 %1$s 连接可以编辑，但 Android 实验版目前只声明 HTTP 能力，因此不会启动它。</string>
+    <string name="no_connections_detail">先在家庭电脑或 NAS 上登录客户端，再为设备添加连接。</string>
+    <string name="raw_mvp_warning">这条 %1$s 连接由管理员分配。更改将同步到所属设备，公网端口由管理员管理。</string>
     <string name="unknown_type_warning">应用无法识别这种连接类型。它只会以只读方式显示，绝不会启动。</string>
     <string name="settings">设置</string>
     <string name="language">语言</string>
@@ -49,9 +49,8 @@
     <string name="theme_system">主题跟随系统深色设置</string>
     <string name="release_identity">发布签名证书</string>
     <string name="release_fingerprint">SHA-256 d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702</string>
-    <string name="experimental_notice">这是账号管理应用。隧道运行在家里的 Windows、macOS 或 Linux 电脑上。</string>
-    <string name="sign_out">退出并撤销此设备</string>
-    <string name="sign_out_confirmation">这会停止此 Android 设备上的全部隧道，并轮换设备凭据。</string>
+<string name="sign_out">退出登录</string>
+    <string name="sign_out_confirmation">退出这部手机上的管理账号。家庭设备上的隧道会继续运行。</string>
     <string name="status_offline">离线</string>
     <string name="status_starting">正在启动</string>
     <string name="status_online">在线</string>
@@ -74,7 +73,7 @@
     <string name="notification_stop">停止</string>
     <string name="notification_sync">同步</string>
     <string name="loading">正在加载…</string>
-    <string name="version_label">版本 %1$s · Android 实验版</string>
+    <string name="version_label">版本 %1$s · Android 正式版</string>
 
     <string name="refresh_status">刷新状态</string>
     <string name="cached_data_warning">连接中断，当前显示缓存。请刷新重试。</string>
@@ -83,4 +82,34 @@
     <string name="show_password">显示密码</string>
     <string name="hide_password">隐藏密码</string>
     <string name="reload_latest">读取最新版本并保留我的输入</string>
+    <string name="nav_overview">总览</string>
+    <string name="nav_devices">设备</string>
+    <string name="nav_connections">连接</string>
+    <string name="nav_account">账户</string>
+    <string name="attention_title">需要关注</string>
+    <string name="all_connected">所有连接运行正常</string>
+    <string name="all_connected_detail">随时从连接页面复制地址，访问家里的服务。</string>
+    <string name="view_devices">查看我的设备</string>
+    <string name="device_scope_hint">选择一台设备，查看运行在这台设备上的连接。</string>
+    <string name="device_service_count">%1$d 条连接 · 查看服务</string>
+    <string name="search_connections">搜索名称或地址</string>
+    <string name="device_filter">%1$s · 显示所有设备</string>
+    <string name="no_search_results">没有匹配的连接，请调整搜索或设备筛选。</string>
+    <string name="overview_eyebrow">我的家庭网络</string>
+    <string name="overview_title">家的连接，\n尽在手中。</string>
+    <string name="online_devices">在线设备</string>
+    <string name="editor_identity">01 · 服务与访问地址</string>
+    <string name="editor_destination">02 · 设备上的本地目标</string>
+    <string name="choose_device">选择运行这个服务的设备</string>
+    <string name="target_device_hint">地址相对于所选设备填写。127.0.0.1 指所选电脑或 NAS，不是这部手机。</string>
+    <string name="discard_title">放弃尚未保存的修改？</string>
+    <string name="discard_detail">返回后，本次修改不会保存。</string>
+    <string name="discard">放弃修改</string>
+    <string name="keep_editing">继续编辑</string>
+    <string name="preferences">偏好设置</string>
+    <string name="about_app">关于 Home Tunnel</string>
+    <string name="login_heading">连接你的家。</string>
+    <string name="status_paused">已暂停</string>
+    <string name="management_notice">手机用于管理家庭设备与连接。转发服务持续运行在电脑或 NAS 上。</string>
+
 </resources>

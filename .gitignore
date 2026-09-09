@@ -84,3 +84,8 @@ tests/frpc-https.toml
 
 /release-android/
 /release/
+
+# Release workflow staging
+release/
+release-public/
+release-notes.md

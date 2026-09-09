@@ -98,8 +98,8 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         warningsAsErrors = true
-        // The first GitHub Experimental APK intentionally targets API 35 and
-        // arm64 only. Android 16 target behavior and ChromeOS are not claimed
+        // The signed APK targets API 35 and
+        // arm64. Android 16 target behavior and ChromeOS are not claimed
         // until their physical-device matrices are complete; all other lint
         // warnings remain release-blocking.
         disable += setOf("GradleDependency", "ChromeOsAbiSupport", "OldTargetApi", "PluralsCandidate", "UnusedResources")

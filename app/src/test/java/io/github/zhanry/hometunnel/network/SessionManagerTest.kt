@@ -17,7 +17,8 @@ class SessionManagerTest {
     @Test
     fun `concurrent callers perform exactly one refresh`() = runTest {
         val now = Instant.parse("2026-08-23T00:00:00Z")
-        val manager = SessionManager(Clock.fixed(now, ZoneOffset.UTC))
+        val persisted = mutableListOf<Pair<String, RefreshResponse>>()
+        val manager = SessionManager(Clock.fixed(now, ZoneOffset.UTC)) { previous, renewed -> persisted.add(previous to renewed) }
         manager.install(
             SessionResponse(
                 user = UserInfo("u", "user", "User", "user", "normal"),
@@ -43,6 +44,9 @@ class SessionManagerTest {
         }.awaitAll()
         assertEquals(1, refreshes.get())
         assertEquals(setOf("fresh-access"), values.toSet())
+        assertEquals(1, persisted.size)
+        assertEquals("refresh-a", persisted.single().first)
+        assertEquals("refresh-b", persisted.single().second.refreshToken)
     }
 
     @Test

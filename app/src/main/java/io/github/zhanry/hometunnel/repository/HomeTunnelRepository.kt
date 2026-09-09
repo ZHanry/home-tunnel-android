@@ -12,6 +12,7 @@ import io.github.zhanry.hometunnel.model.SyncResponse
 import io.github.zhanry.hometunnel.model.TunnelConnection
 import io.github.zhanry.hometunnel.network.HomeTunnelApi
 import io.github.zhanry.hometunnel.network.ServerDiscovery
+import io.github.zhanry.hometunnel.network.SessionManager
 import io.github.zhanry.hometunnel.storage.SecureStateStore
 import io.github.zhanry.hometunnel.storage.StateUnavailableException
 import java.time.Instant
@@ -58,11 +59,16 @@ class HomeTunnelRepository(
 
     init {
         scope.launch {
-            val state = try {
+            var state = try {
                 store.load()
             } catch (error: StateUnavailableException) {
                 _uiState.value = AppUiState(screen = AppScreen.LOGIN, error = error.message)
                 return@launch
+            }
+            if (state.enrolled) {
+                state = state.copy(deviceId = null, deviceCredential = null, accessToken = null,
+                    refreshToken = null, cachedConnections = emptyList(), desiredRunning = false)
+                store.save(state)
             }
             _uiState.value = AppUiState(
                 screen = if (state.signedIn) AppScreen.HOME else AppScreen.LOGIN,
@@ -78,7 +84,7 @@ class HomeTunnelRepository(
             setBusy(true)
             try {
                 val profile = ServerDiscovery.discover(server)
-                val newApi = HomeTunnelApi(profile)
+                val newApi = managementApi(profile)
                 val session = newApi.login(username.trim(), password)
                 api = newApi
                 if (session.passwordChangeRequired) {
@@ -129,10 +135,11 @@ class HomeTunnelRepository(
             val activeApi = ensureSignedInApi(state)
             val devices = activeApi.listDevices()
             val items = activeApi.listConnections()
-            _uiState.value = _uiState.value.copy(connections = items, devices = devices, busy = false, error = null, lastSyncedAt = Instant.now().toString(), stale = false)
+            val persisted = store.update { it.copy(cachedConnections = items) }
+            _uiState.value = _uiState.value.copy(persisted = persisted, connections = items, devices = devices, busy = false, error = null, lastSyncedAt = Instant.now().toString(), stale = false)
         } catch (error: Throwable) {
             _uiState.value = _uiState.value.copy(stale = true)
-            if (!silent) setFailure(error)
+            if (!silent || error is ApiException && (error.statusCode == 401 || error.statusCode == 423)) setFailure(error)
         }
     }
 
@@ -177,7 +184,7 @@ class HomeTunnelRepository(
         }
     }
 
-    fun deleteConnection(value: TunnelConnection) = scope.launch {
+    fun deleteConnection(value: TunnelConnection, onSuccess: () -> Unit = {}) = scope.launch {
         operationMutex.withLock {
             setBusy(true)
             try {
@@ -185,8 +192,10 @@ class HomeTunnelRepository(
                 val state = _uiState.value.persisted
                 val activeApi = ensureSignedInApi(state)
                 activeApi.deleteConnection(value)
-                val items = activeApi.listConnections()
+                val items = _uiState.value.connections.filter { it.id != value.id }
                 _uiState.value = _uiState.value.copy(connections = items, busy = false, error = null)
+                onSuccess()
+                refreshConnections(silent = true)
             } catch (error: Throwable) {
                 setFailure(error)
             }
@@ -331,6 +340,8 @@ class HomeTunnelRepository(
             lastServerUrl = profile.publicBaseUrl,
             userDisplayName = session.user.displayName,
             username = session.user.username,
+            deviceId = null,
+            deviceCredential = null,
             accessToken = session.accessToken,
             refreshToken = session.refreshToken,
             accessExpiresAt = session.accessExpiresAt,
@@ -353,7 +364,7 @@ class HomeTunnelRepository(
                 existing.clearSession()
             }
         }
-        val created = HomeTunnelApi(requireNotNull(state.profile))
+        val created = managementApi(requireNotNull(state.profile))
         if (!state.refreshToken.isNullOrBlank() && !state.accessToken.isNullOrBlank()) {
             created.restoreSession(
                 state.accessToken,
@@ -369,6 +380,19 @@ class HomeTunnelRepository(
 
     private fun existingSessionAvailable(value: HomeTunnelApi): Boolean = value.hasSession()
 
+    private fun managementApi(profile: ServerProfile): HomeTunnelApi = HomeTunnelApi(
+        profile,
+        SessionManager(onRefresh = { previous, renewed ->
+            val updated = store.update { current ->
+                if (current.refreshToken == previous && current.profile?.apiBaseUrl == profile.apiBaseUrl)
+                    current.copy(accessToken = renewed.accessToken, refreshToken = renewed.refreshToken,
+                        accessExpiresAt = renewed.accessExpiresAt)
+                else current
+            }
+            _uiState.value = _uiState.value.copy(persisted = updated)
+        }),
+    )
+
     private fun publishPersisted(value: PersistedState) {
         _uiState.value = _uiState.value.copy(
             screen = if (value.signedIn) AppScreen.HOME else AppScreen.LOGIN,
@@ -382,7 +406,12 @@ class HomeTunnelRepository(
         _uiState.value = _uiState.value.copy(busy = value, error = if (value) null else _uiState.value.error)
     }
 
-    private fun setFailure(error: Throwable) {
+    private suspend fun setFailure(error: Throwable) {
+        if (error is ApiException && (error.statusCode == 401 || error.errorCode in setOf("USER_DISABLED", "SESSION_REVOKED", "PASSWORD_CHANGE_REQUIRED"))) {
+            api?.clearSession()
+            api = null
+            clearLocalState()
+        }
         val message = when (error) {
             is ApiException -> "${error.errorCode}: ${error.message}"
             else -> error.message ?: error.javaClass.simpleName

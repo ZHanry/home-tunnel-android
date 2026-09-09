@@ -1,46 +1,30 @@
 <div align="center">
-  <img src="docs/assets/HomeTunnel.svg" alt="Home Tunnel" width="80" height="80">
-  <h1>Home Tunnel Android</h1>
-  <p><strong>Manage your home devices and connections from Android</strong></p>
-  <p>
-    <img src="https://img.shields.io/badge/status-internal_testing-92400e" alt="Status: internal testing">
-    <a href="https://github.com/ZHanry/home-tunnel-android/actions/workflows/ci.yml"><img src="https://github.com/ZHanry/home-tunnel-android/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0 license"></a>
-  </p>
-  <p><a href="README.md">简体中文</a> · <a href="https://zhanry.github.io/home-tunnel/">Project website</a></p>
+  <img src="docs/assets/HomeTunnel.svg" alt="Home Tunnel" width="72" height="72">
+  <h1>Home Tunnel for Android</h1>
+  <p><strong>Manage your home devices and connections anywhere</strong></p>
+  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.0.0-176653" alt="Release 6.0.0"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
+  <p><a href="README.md">简体中文</a> · <a href="https://zhanry.github.io/home-tunnel/">Website</a></p>
 </div>
 
-Connect to your own Home Tunnel server, inspect devices, manage connections and copy public addresses. Tunnels run on home computers or NAS hosts; this app provides remote management.
+The 6.0 app introduces Overview, Devices, Services and Account. Android manages your home network remotely; tunnels run on your home computer or NAS.
 
-> **Internal testing.** The focus is sign-in, connection editing, error recovery and real-device validation. No production-stable or app-store release is claimed.
+## Install
 
-[Project overview](https://github.com/ZHanry/home-tunnel) · [Server](https://github.com/ZHanry/home-tunnel-server) · [GUI / CLI client](https://github.com/ZHanry/home-tunnel-client)
+Download `HomeTunnel-Android-6.0.0-arm64-v8a.apk` from [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest). Android 8.0+ on arm64 is supported. The APK uses the persistent project signing certificate and can update earlier versions signed with that certificate. Only the APK appears in release downloads.
 
-## Requirements
+## Use
 
-- Android 8.0 / API 26 or newer; arm64 devices are the primary validation target.
-- JDK 17, Android SDK Platform 35 and Build Tools 35 for development.
-- A configured test server, test account and a registered home computer or NAS.
+1. Enter your Home Tunnel console HTTPS address and account.
+2. Select a computer or NAS in Devices to see its services.
+3. Explicitly select a device when creating a connection, then enter an address reachable from it.
+4. Search by name or address, edit a connection or copy its public address.
 
-The UI uses Kotlin and Jetpack Compose. Use the checked-in Gradle Wrapper.
+`127.0.0.1` refers to the selected computer or NAS. Signing out on the phone ends its management session while home tunnels continue running. The app follows the system theme and supports English and Simplified Chinese.
 
-## Build and install
+## Development
 
-```sh
-git clone https://github.com/ZHanry/home-tunnel-android.git
-cd home-tunnel-android
-./gradlew --no-daemon test lint assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
+Use JDK 17, Android SDK 35 and the included Gradle Wrapper. Run `./gradlew test lint assembleDebug`. GitHub Actions builds official APKs with the protected release signing configuration; the private key is never committed.
 
-On Windows, use `gradlew.bat`. Android Studio can also build and install the app. Debug builds use an application ID ending in `.debug` and do not require release keys; debug certificates can differ between development machines.
+[Building](docs/BUILDING.md) · [Releasing](docs/RELEASING.md) · [Release notes](docs/RELEASE_NOTES.md) · [Security](SECURITY.md) · [Project hub](https://github.com/ZHanry/home-tunnel)
 
-Enter the server's HTTPS origin, sign in, select an existing device and try a simple HTTP connection. Test editing, pause/resume, offline recovery and session expiration. HTTP / HTTPS management is the current testing focus.
-
-## Signing and contribution
-
-Signed test packages use the restricted `android-release` GitHub environment. The application ID is `io.github.zhanry.hometunnel`; the certificate fingerprint is recorded in [release-signing-cert.sha256](release-signing-cert.sha256). APKs are installable; AABs are distribution artifacts, not direct installers.
-
-See [building](docs/BUILDING.md), [test releases](docs/RELEASING.md), [contributing](CONTRIBUTING.md) and [security](SECURITY.md). Automated Gradle checks do not replace real-device testing.
-
-Licensed under [Apache-2.0](LICENSE).
+<img src="docs/assets/overview.jpg" alt="Home Tunnel 6.0 Android" width="320">
