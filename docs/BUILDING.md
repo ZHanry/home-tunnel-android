@@ -39,6 +39,16 @@ APK 可直接安装；AAB 用于分发准备，不是手机安装包。存在 AA
 
 ## 真实设备检查
 
+发布前的 Quality Gate 会在 Android 8 / API 26 和 Android 15 / API 35 模拟器上运行实际 AndroidKeyStore 与管理界面检查。密钥库检查覆盖已有密钥保存、冷启动读取、随机 IV、会话更新、旧加密格式兼容、篡改拒绝和退出后重新登录。
+
+本地可先运行 `./gradlew assembleDebug assembleDebugAndroidTest`，再对明确选定的模拟器运行：
+
+```sh
+python scripts/run-instrumentation.py --serial emulator-5554
+```
+
+结果保存在 `instrumentation-evidence/`。该命令仅使用调试应用与夹具账号，不连接真实控制台。它直接运行 AndroidJUnitRunner，不能用普通 JVM 单元测试代替。
+
 - 使用服务端 HTTPS 根地址登录，确认设备和连接属于正确账号。
 - 创建 / 编辑一个 HTTP 测试连接，检查电脑端同步与公网访问。
 - 验证复制地址、暂停恢复、保存失败后的输入保留和重试。

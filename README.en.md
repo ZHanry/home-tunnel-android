@@ -2,7 +2,7 @@
   <img src="docs/assets/HomeTunnel.svg" alt="Home Tunnel" width="72" height="72">
   <h1>Home Tunnel for Android</h1>
   <p><strong>Manage your home devices and connections anywhere</strong></p>
-  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.0.0-176653" alt="Release 6.0.0"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
+  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.0.1-176653" alt="Release 6.0.1"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
   <p><a href="README.md">简体中文</a> · <a href="https://zhanry.github.io/home-tunnel/">Website</a></p>
 </div>
 
@@ -10,7 +10,9 @@ The 6.0 app introduces Overview, Devices, Services and Account. Android manages 
 
 ## Install
 
-Download `HomeTunnel-Android-6.0.0-arm64-v8a.apk` from [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest). Android 8.0+ on arm64 is supported. The APK uses the persistent project signing certificate and can update earlier versions signed with that certificate. Only the APK appears in release downloads.
+Download `HomeTunnel-Android-6.0.1-arm64-v8a.apk` from [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest). Android 8.0+ on arm64 is supported. The APK uses the persistent project signing certificate and can update earlier versions signed with that certificate. Only the APK appears in release downloads.
+
+6.0.1 fixes the `Caller-provided IV not permitted` login error. Update without uninstalling or clearing application data.
 
 ## Use
 

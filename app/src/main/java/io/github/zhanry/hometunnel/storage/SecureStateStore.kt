@@ -9,7 +9,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.KeyStore
 import java.security.MessageDigest
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -163,9 +162,11 @@ class SecureStateStore(context: Context) {
     }
 
     private fun encrypt(plaintext: ByteArray): ByteArray {
-        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, stateKey(), GCMParameterSpec(128, iv))
+        // Randomized AndroidKeyStore keys require the provider to generate the encryption IV.
+        // Persist that IV in the existing envelope so earlier state files remain readable.
+        cipher.init(Cipher.ENCRYPT_MODE, stateKey())
+        val iv = cipher.iv
         val encrypted = cipher.doFinal(plaintext)
         return ByteArrayOutputStream(MAGIC.size + 1 + iv.size + encrypted.size).use { output ->
             output.write(MAGIC)

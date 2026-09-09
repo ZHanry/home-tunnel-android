@@ -2,7 +2,7 @@
   <img src="docs/assets/HomeTunnel.svg" alt="Home Tunnel" width="72" height="72">
   <h1>Home Tunnel for Android</h1>
   <p><strong>随时管理家庭设备与连接</strong></p>
-  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.0.0-176653" alt="Release 6.0.0"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
+  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.0.1-176653" alt="Release 6.0.1"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
   <p><a href="README.en.md">English</a> · <a href="https://zhanry.github.io/home-tunnel/">项目网站</a></p>
 </div>
 
@@ -10,7 +10,9 @@
 
 ## 安装
 
-从 [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest) 下载 `HomeTunnel-Android-6.0.0-arm64-v8a.apk`，在 Android 8.0+ 的 arm64 设备上安装。APK 使用项目持续维护的发布证书签名，可覆盖安装同证书版本。下载页仅保留 APK。
+从 [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest) 下载 `HomeTunnel-Android-6.0.1-arm64-v8a.apk`，在 Android 8.0+ 的 arm64 设备上安装。APK 使用项目持续维护的发布证书签名，可覆盖安装同证书版本。下载页仅保留 APK。
+
+6.0.1 修复登录时的 `Caller-provided IV not permitted` 错误，升级无需先卸载或清除应用数据。
 
 ## 使用
 

@@ -30,6 +30,7 @@ deploy/frps/frps
 
 # Android and Gradle local/generated state
 .gradle/
+.kotlin/
 **/.gradle/
 **/build/
 local.properties
@@ -71,6 +72,7 @@ coverage/
 lighthouse-results/
 _site/
 release-smoke-evidence/
+instrumentation-evidence/
 tests/smoke/
 release-smoke-evidence-*/
 

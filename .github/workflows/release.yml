@@ -117,6 +117,7 @@ jobs:
         AAB: ${{ steps.android.outputs.aab }}
         EVIDENCE: ${{ steps.android.outputs.evidence }}
         VERSION: ${{ needs.metadata.outputs.base-version }}
+        RELEASE_CHANNEL: ${{ needs.metadata.outputs.stable == 'true' && 'stable' || 'prerelease' }}
       run: |
         set -euo pipefail
         export LC_ALL=C
@@ -180,8 +181,9 @@ jobs:
           --arg aab_sha256 "$aab_sha" \
           --arg signing_certificate_sha256 "$expected_cert" \
           --arg revision "$GITHUB_SHA" \
-          --arg build_identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release-images.yml@refs/tags/$GITHUB_REF_NAME" \
-          '{schema_version:1,status:"passed",release_channel:"experimental",
+          --arg build_identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$GITHUB_REF_NAME" \
+          --arg release_channel "$RELEASE_CHANNEL" \
+          '{schema_version:1,status:"passed",release_channel:$release_channel,
             platform:"android",application_id:"io.github.zhanry.hometunnel",
             version_name:$version,version_code:$version_code,min_sdk:$min_sdk,target_sdk:$target_sdk,
             abis:["arm64-v8a"],apk_sha256:$apk_sha256,aab_sha256:$aab_sha256,

@@ -2,7 +2,7 @@
 
 正式版本使用 `vX.Y.Z` 标签，各组件独立构建。源码版本与标签必须一致，`compatibility.json` 的阶段设为 `public-release`。
 
-1. 提交代码到 `main`，等待 Quality Gate、CodeQL 和 Secret scan 成功。
+1. 提交代码到 `main`，等待 Quality Gate（包括 Android API 26 / 35 的密钥库与界面检查）、CodeQL 和 Secret scan 成功。
 2. 在已通过检查的提交上创建版本标签。
 3. 工作流构建完整安装包，运行组件检查，验证签名与产物身份。
 4. 完整构建证明、SBOM 和签名材料保留在 Actions 的 `release-verification-evidence` 附件中；Release 只上传面向用户的交付物。
