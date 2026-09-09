@@ -10,6 +10,15 @@ import io.github.zhanry.hometunnel.model.RefreshResponse
 import io.github.zhanry.hometunnel.model.ServerProfile
 import io.github.zhanry.hometunnel.model.SessionResponse
 import io.github.zhanry.hometunnel.model.UserInfo
+import io.github.zhanry.hometunnel.model.AdminUser
+import io.github.zhanry.hometunnel.model.AdminUserList
+import io.github.zhanry.hometunnel.model.AdminPasswordResponse
+import io.github.zhanry.hometunnel.model.AdminSummary
+import io.github.zhanry.hometunnel.model.AdminSettings
+import io.github.zhanry.hometunnel.model.AdminHealth
+import io.github.zhanry.hometunnel.model.AdminDeviceList
+import io.github.zhanry.hometunnel.model.AdminConnectionList
+import io.github.zhanry.hometunnel.model.AdminAuditList
 import io.github.zhanry.hometunnel.model.SyncResponse
 import io.github.zhanry.hometunnel.model.TunnelConnection
 import java.io.ByteArrayOutputStream
@@ -50,7 +59,7 @@ class HomeTunnelApi(
     private val profile: ServerProfile,
     private val sessionManager: SessionManager = SessionManager(),
     clientOverride: OkHttpClient? = null,
-) {
+) : AdministrationApi {
     companion object {
         const val MAXIMUM_RESPONSE_BYTES = 2 * 1024 * 1024
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
@@ -70,6 +79,47 @@ class HomeTunnelApi(
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
+
+    suspend fun currentUser(): UserInfo = authenticatedJson("GET", "auth/me")
+
+    override suspend fun adminSummary(): AdminSummary = authenticatedJson("GET", "admin/summary")
+    override suspend fun adminUsers(search: String): AdminUserList =
+        authenticatedJson("GET", "admin/users?search=${queryValue(search.trim())}")
+    override suspend fun adminUser(id: String): AdminUser = authenticatedJson("GET", "admin/users/${pathId(id)}")
+    override suspend fun adminCreateUser(username: String, displayName: String): AdminPasswordResponse =
+        authenticatedJson("POST", "admin/users", buildJsonObject {
+            put("username", username.trim()); put("display_name", displayName.trim()); put("role", "user")
+        })
+    override suspend fun adminUpdateUser(id: String, displayName: String, version: Long): AdminUser =
+        authenticatedJson("PATCH", "admin/users/${pathId(id)}", buildJsonObject {
+            put("display_name", displayName.trim()); put("expected_version", version)
+        }, version)
+    override suspend fun adminSetUserEnabled(id: String, enabled: Boolean): AdminUser =
+        authenticatedJson("POST", "admin/users/${pathId(id)}/${if (enabled) "enable" else "disable"}", buildJsonObject { })
+    override suspend fun adminResetPassword(id: String): AdminPasswordResponse =
+        authenticatedJson("POST", "admin/users/${pathId(id)}/reset-password", buildJsonObject { })
+    override suspend fun adminDeleteUser(id: String, version: Long) {
+        authenticatedJson<Unit>("DELETE", "admin/users/${pathId(id)}", buildJsonObject { put("expected_version", version) }, version)
+    }
+    override suspend fun adminDevices(userId: String): AdminDeviceList =
+        authenticatedJson("GET", "admin/devices?user_id=${queryValue(userId)}")
+    override suspend fun adminConnections(userId: String, search: String, page: Int): AdminConnectionList =
+        authenticatedJson("GET", "admin/connections?user_id=${queryValue(userId)}&search=${queryValue(search)}&page=${page.coerceAtLeast(1)}&page_size=25")
+    override suspend fun adminSettings(): AdminSettings = authenticatedJson("GET", "admin/settings")
+    override suspend fun adminSaveSettings(settings: AdminSettings): AdminSettings =
+        authenticatedJson("PATCH", "admin/settings", buildJsonObject {
+            put("subdomain_prefix_policy", settings.prefixPolicy)
+            settings.clientRawTunnelsEnabled?.let { put("client_raw_tunnels_enabled", it) }
+        })
+    override suspend fun adminHealth(): AdminHealth = authenticatedJson("GET", "admin/system/health")
+    override suspend fun adminAudit(page: Int): AdminAuditList =
+        authenticatedJson("GET", "admin/audit-events?page=${page.coerceAtLeast(1)}&page_size=25")
+
+    private fun queryValue(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
+    private fun pathId(value: String): String {
+        require(value.isNotBlank() && value.all { it.isLetterOrDigit() || it == '-' || it == '_' }) { "Invalid resource identifier" }
+        return value
+    }
 
     suspend fun login(username: String, password: String): SessionResponse {
         val response: SessionResponse = publicJson(

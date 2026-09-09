@@ -53,6 +53,7 @@ data class UserInfo(
     @SerialName("display_name") val displayName: String,
     val role: String,
     @SerialName("password_state") val passwordState: String,
+    @SerialName("device_id") val deviceId: String? = null,
 )
 
 @Serializable

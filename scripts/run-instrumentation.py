@@ -27,14 +27,15 @@ result = subprocess.run(
 (args.output / "instrumentation.log").write_text(result.stdout, encoding="utf-8")
 print(result.stdout, flush=True)
 match = re.search(r"OK \((\d+) tests?\)", result.stdout)
-passed = (result.returncode == 0 and match is not None and int(match[1]) >= 8
+passed = (result.returncode == 0 and match is not None and int(match[1]) >= 15
           and "SecureStateStoreTest" in result.stdout and "ManagementUiTest" in result.stdout
+          and "AdminUiTest" in result.stdout and "AdminIdentityTest" in result.stdout
           and "FAILURES!!!" not in result.stdout and "INSTRUMENTATION_FAILED" not in result.stdout)
 api_level = subprocess.check_output([*adb, "shell", "getprop", "ro.build.version.sdk"], text=True).strip()
 revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 report = {"status": "passed" if passed else "failed", "api_level": int(api_level),
           "tests": int(match[1]) if match else 0, "repository_revision": revision,
-          "android_keystore": True, "variant": "debug"}
+          "android_keystore": True, "administrator_ui": True, "administrator_identity": True, "variant": "debug"}
 (args.output / "instrumentation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 if not passed:
     raise SystemExit("Android instrumentation did not pass the storage and management UI checks")

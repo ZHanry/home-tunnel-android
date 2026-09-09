@@ -365,8 +365,11 @@ internal fun HomeScreen(
     var confirmLogout by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val tabLabels = listOf(R.string.nav_overview, R.string.nav_devices, R.string.nav_connections, R.string.nav_account)
-    val tabIcons = listOf(Icons.Default.Home, Icons.Default.Devices, Icons.Default.Link, Icons.Default.Person)
+    val tabLabels = listOf(R.string.nav_overview, R.string.nav_devices, R.string.nav_connections, R.string.nav_account, R.string.nav_management)
+    val tabIcons = listOf(Icons.Default.Home, Icons.Default.Devices, Icons.Default.Link, Icons.Default.Person, Icons.Default.Security)
+    val visibleTabs = listOf(0, 1, 2) + (if (state.isAdmin) listOf(4) else emptyList()) + 3
+    val scrollState = pageScrollState(tab, if (tab == 2) selectedDevice to search else Unit)
+    LaunchedEffect(state.isAdmin) { if (!state.isAdmin && tab == 4) tab = 0 }
     val createConnection = {
         val available = state.devices.filter { it.status == "active" }
         if (available.isEmpty()) {
@@ -391,17 +394,17 @@ internal fun HomeScreen(
                     Text("HOME TUNNEL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold)
                 } },
-                actions = { IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy) {
+                actions = { if (tab != 4) IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy) {
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh_status))
                 } },
             )
         },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                tabLabels.forEachIndexed { index, label ->
+                visibleTabs.forEach { index ->
                     NavigationBarItem(selected = tab == index, onClick = { tab = index },
                         icon = { Icon(tabIcons[index], contentDescription = null) },
-                        label = { Text(stringResource(label)) })
+                        label = { Text(stringResource(tabLabels[index])) })
                 }
             }
         },
@@ -412,7 +415,10 @@ internal fun HomeScreen(
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-            LazyColumn(
+            if (tab == 4 && state.isAdmin) {
+                AdminWorkspace(repository.administration, state.persisted.profile?.publicBaseUrl.orEmpty())
+            } else LazyColumn(
+                state = scrollState,
                 modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth(),
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = if (tab == 2) 100.dp else 32.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -781,7 +787,8 @@ private fun AccountContent(state: AppUiState, onLogout: () -> Unit) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-                Text(state.persisted.userDisplayName ?: state.persisted.username.orEmpty(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(state.currentUser?.displayName ?: state.persisted.userDisplayName ?: state.persisted.username.orEmpty(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                state.currentUser?.let { Text(stringResource(if (state.isAdmin) R.string.admin_role_admin else R.string.admin_role_user)) }
                 Text(state.persisted.profile?.publicBaseUrl.orEmpty(), style = MaterialTheme.typography.bodyMedium)
             }
         }

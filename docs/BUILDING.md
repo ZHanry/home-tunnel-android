@@ -39,7 +39,7 @@ APK 可直接安装；AAB 用于分发准备，不是手机安装包。存在 AA
 
 ## 真实设备检查
 
-发布前的 Quality Gate 会在 Android 8 / API 26 和 Android 15 / API 35 模拟器上运行实际 AndroidKeyStore 与管理界面检查。密钥库检查覆盖已有密钥保存、冷启动读取、随机 IV、会话更新、旧加密格式兼容、篡改拒绝和退出后重新登录。
+发布前的 Quality Gate 会在 Android 8 / API 26 和 Android 15 / API 35 模拟器上运行实际 AndroidKeyStore 与管理界面检查。密钥库检查覆盖已有密钥保存、冷启动读取、随机 IV、会话更新、旧加密格式兼容、篡改拒绝和退出后重新登录。管理员检查覆盖真实加密会话恢复后的角色识别、权限收回、用户操作、版本冲突、删除确认、系统设置与大字体界面。
 
 本地可先运行 `./gradlew assembleDebug assembleDebugAndroidTest`，再对明确选定的模拟器运行：
 

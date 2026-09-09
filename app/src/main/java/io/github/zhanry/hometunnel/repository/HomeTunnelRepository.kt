@@ -10,6 +10,7 @@ import io.github.zhanry.hometunnel.model.SessionResponse
 import io.github.zhanry.hometunnel.model.SyncMerger
 import io.github.zhanry.hometunnel.model.SyncResponse
 import io.github.zhanry.hometunnel.model.TunnelConnection
+import io.github.zhanry.hometunnel.model.UserInfo
 import io.github.zhanry.hometunnel.network.HomeTunnelApi
 import io.github.zhanry.hometunnel.network.ServerDiscovery
 import io.github.zhanry.hometunnel.network.SessionManager
@@ -38,18 +39,34 @@ data class AppUiState(
     val error: String? = null,
     val lastSyncedAt: String? = null,
     val stale: Boolean = false,
-)
+    val currentUser: UserInfo? = null,
+) {
+    val isAdmin: Boolean get() = currentUser?.role == "admin" && currentUser.passwordState == "normal" && currentUser.deviceId == null
+}
 
 data class SyncBundle(val state: PersistedState, val response: SyncResponse)
 
 class HomeTunnelRepository(
     private val context: Context,
     val store: SecureStateStore,
+    private val apiFactory: (ServerProfile, SessionManager) -> HomeTunnelApi = { profile, sessions -> HomeTunnelApi(profile, sessions) },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val operationMutex = Mutex()
+    private val refreshMutex = Mutex()
+    @Volatile private var sessionGeneration = 0
     private val _uiState = MutableStateFlow(AppUiState())
     val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
+    val administration: AdminRepository = AdminRepository(
+        api = { ensureSignedInApi(_uiState.value.persisted) },
+        identity = { _uiState.value.currentUser },
+        onAccessDenied = { error ->
+            _uiState.value = _uiState.value.copy(currentUser = null)
+            scope.launch {
+                if (error.statusCode == 403) refreshConnections(silent = true) else setFailure(error)
+            }
+        },
+    )
 
     @Volatile
     private var api: HomeTunnelApi? = null
@@ -129,17 +146,29 @@ class HomeTunnelRepository(
 
     fun refreshConnections(silent: Boolean = false) = scope.launch {
         if (_uiState.value.busy || !_uiState.value.persisted.signedIn) return@launch
+        if (!refreshMutex.tryLock()) return@launch
+        val started = sessionGeneration
         if (!silent) setBusy(true)
         try {
             val state = _uiState.value.persisted
             val activeApi = ensureSignedInApi(state)
+            val currentUser = activeApi.currentUser()
+            if (started != sessionGeneration) return@launch
+            if (_uiState.value.currentUser?.id != currentUser.id || currentUser.role != "admin" ||
+                currentUser.passwordState != "normal" || currentUser.deviceId != null) administration.reset()
+            _uiState.value = _uiState.value.copy(currentUser = currentUser)
             val devices = activeApi.listDevices()
             val items = activeApi.listConnections()
-            val persisted = store.update { it.copy(cachedConnections = items) }
+            if (started != sessionGeneration) return@launch
+            val persisted = store.update { if (started == sessionGeneration) it.copy(cachedConnections = items) else it }
+            if (started != sessionGeneration) return@launch
             _uiState.value = _uiState.value.copy(persisted = persisted, connections = items, devices = devices, busy = false, error = null, lastSyncedAt = Instant.now().toString(), stale = false)
         } catch (error: Throwable) {
+            if (started != sessionGeneration) return@launch
             _uiState.value = _uiState.value.copy(stale = true)
             if (!silent || error is ApiException && (error.statusCode == 401 || error.statusCode == 423)) setFailure(error)
+        } finally {
+            refreshMutex.unlock()
         }
     }
 
@@ -268,6 +297,8 @@ class HomeTunnelRepository(
     }
 
     suspend fun clearLocalState() {
+        sessionGeneration++
+        administration.reset()
         val previous = store.load()
         val cleared = store.clear().copy(
             lastServerUrl = previous.profile?.publicBaseUrl ?: previous.lastServerUrl,
@@ -334,6 +365,8 @@ class HomeTunnelRepository(
     }
 
     private suspend fun enterManagement(profile: ServerProfile, session: SessionResponse) {
+        sessionGeneration++
+        administration.reset()
         val current = store.load()
         val signedIn = current.copy(
             profile = profile,
@@ -351,7 +384,7 @@ class HomeTunnelRepository(
             desiredRunning = false,
         )
         store.save(signedIn)
-        _uiState.value = AppUiState(screen = AppScreen.HOME, persisted = signedIn, busy = false)
+        _uiState.value = AppUiState(screen = AppScreen.HOME, persisted = signedIn, busy = false, currentUser = session.user.copy(deviceId = session.deviceId))
         refreshConnections(silent = true)
     }
 
@@ -380,7 +413,7 @@ class HomeTunnelRepository(
 
     private fun existingSessionAvailable(value: HomeTunnelApi): Boolean = value.hasSession()
 
-    private fun managementApi(profile: ServerProfile): HomeTunnelApi = HomeTunnelApi(
+    private fun managementApi(profile: ServerProfile): HomeTunnelApi = apiFactory(
         profile,
         SessionManager(onRefresh = { previous, renewed ->
             val updated = store.update { current ->

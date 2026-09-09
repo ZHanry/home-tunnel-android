@@ -14,6 +14,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.ManagedDevice
@@ -60,22 +65,27 @@ class ManagementUiTest {
         openHome()
         capture("overview")
         navigate(R.string.nav_devices)
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("家庭 NAS"))
         compose.onNodeWithText("家庭 NAS").assertIsDisplayed()
         capture("devices")
         compose.onNodeWithText("家庭 NAS").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("家庭相册"))
         compose.onNodeWithText("家庭相册").assertIsDisplayed()
         compose.onNodeWithText("Home Assistant").assertDoesNotExist()
         capture("connections")
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         compose.onNodeWithText(context.getString(R.string.search_connections)).performTextInput("no-match")
         compose.onNodeWithText("家庭相册").assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.no_search_results)).assertIsDisplayed()
         navigate(R.string.nav_account)
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("林先生"))
         compose.onNodeWithText("林先生").assertIsDisplayed()
         capture("account")
     }
 
     @Test fun multiDeviceCreationRequiresAnExplicitTargetAndHasAVisibleCancelAction() {
         openHome()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(context.getString(R.string.add_connection)))
         compose.onNodeWithText(context.getString(R.string.add_connection)).performClick()
         compose.onNodeWithText(context.getString(R.string.choose_device)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.save)).assertIsNotEnabled()
