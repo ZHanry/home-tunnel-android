@@ -58,6 +58,8 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // Older x86_64 emulators cannot translate the arm64 UI tooling libraries.
+            ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
         }
         release {
             isMinifyEnabled = true
