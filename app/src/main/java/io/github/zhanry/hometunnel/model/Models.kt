@@ -119,11 +119,14 @@ data class TunnelConnection(
     val appliedVersion: Long = 0,
     val lastErrorCode: String? = null,
     val proxyName: String? = null,
+    val applicationProtocol: String? = null,
+    val accessUrl: String? = null,
 ) {
     val kind: ProxyKind get() = ProxyKind.fromWire(proxyType)
 
     val publicDisplayEndpoint: String
         get() = when {
+            !accessUrl.isNullOrBlank() -> accessUrl
             kind == ProxyKind.HTTP && !publicUrl.isNullOrBlank() -> publicUrl
             !publicEndpoint.isNullOrBlank() && publicEndpoint.contains("://") -> publicEndpoint
             !publicEndpoint.isNullOrBlank() && kind in setOf(ProxyKind.TCP, ProxyKind.UDP) ->
@@ -167,6 +170,8 @@ object TunnelConnectionSerializer : KSerializer<TunnelConnection> {
             appliedVersion = value["applied_version"]?.jsonPrimitive?.longOrNull ?: 0,
             lastErrorCode = value.optionalString("last_error_code"),
             proxyName = value.optionalString("proxy_name"),
+            applicationProtocol = value.optionalString("application_protocol"),
+            accessUrl = value.optionalString("access_url"),
         )
     }
 
@@ -179,6 +184,8 @@ object TunnelConnectionSerializer : KSerializer<TunnelConnection> {
             put("name", value.name)
             put("subdomain", value.subdomain)
             put("proxy_type", value.proxyType)
+            value.applicationProtocol?.let { put("application_protocol", it) }
+            value.accessUrl?.let { put("access_url", it) }
             value.remotePort?.let { put("remote_port", it) } ?: put("remote_port", JsonNull)
             value.publicUrl?.let { put("public_url", it) } ?: put("public_url", JsonNull)
             value.publicEndpoint?.let { put("public_endpoint", it) } ?: put("public_endpoint", JsonNull)
@@ -208,10 +215,10 @@ private fun JsonObject.intOrNull(name: String): Int? =
     get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.intOrNull
 
 @Serializable
-data class ConnectionListResponse(val items: List<TunnelConnection>)
+data class ConnectionListResponse(val items: List<TunnelConnection>, val capabilities: ConnectionCapabilities = ConnectionCapabilities(), @SerialName("total_pages") val totalPages: Int = 1)
 
 @Serializable
-data class DeviceListResponse(val items: List<ManagedDevice> = emptyList())
+data class DeviceListResponse(val items: List<ManagedDevice> = emptyList(), @SerialName("total_pages") val totalPages: Int = 1)
 
 @Serializable
 data class ManagedDevice(
@@ -219,6 +226,9 @@ data class ManagedDevice(
     val name: String,
     val status: String = "active",
     val online: Boolean = false,
+    val tags: List<String> = emptyList(),
+    val favorite: Boolean = false,
+    @SerialName("metadata_version") val metadataVersion: Long = 1,
 )
 
 @Serializable
@@ -255,6 +265,8 @@ enum class AgentState {
 
 @Serializable
 data class PersistedState(
+    val savedAccounts: List<SavedAccount> = emptyList(),
+    val activeAccountId: String? = null,
     val installId: String = UUID.randomUUID().toString().replace("-", ""),
     val profile: ServerProfile? = null,
     val deviceId: String? = null,

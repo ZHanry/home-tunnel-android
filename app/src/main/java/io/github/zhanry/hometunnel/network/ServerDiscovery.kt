@@ -97,12 +97,13 @@ object ServerDiscovery {
             throw DiscoveryException("Server returned an invalid FRPS port")
         }
         val certificate = wire.frpsTlsCertificatePem?.takeIf { it.isNotBlank() }
-            ?: throw DiscoveryException("Server did not publish the managed FRPS certificate")
-        if (
+        // Android manages the HTTPS API and never starts an FRP tunnel. An
+        // optional FRPS trust anchor must not prevent management-only login.
+        if (certificate != null && (
             certificate.length > MAXIMUM_CERTIFICATE_CHARS ||
             !certificate.contains("-----BEGIN CERTIFICATE-----") ||
             !certificate.contains("-----END CERTIFICATE-----")
-        ) {
+        )) {
             throw DiscoveryException("Server returned an invalid FRPS certificate")
         }
         return ServerProfile(

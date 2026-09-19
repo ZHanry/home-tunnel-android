@@ -1,38 +1,40 @@
-<div align="center">
-  <img src="docs/assets/HomeTunnel.svg" alt="Home Tunnel" width="72" height="72">
-  <h1>Home Tunnel for Android</h1>
-  <p><strong>随时管理家庭设备与连接</strong></p>
-  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.1.0-176653" alt="Release 6.1.0"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
-  <p><a href="README.en.md">English</a> · <a href="https://zhanry.github.io/home-tunnel/">项目网站</a></p>
-</div>
+# Home Tunnel Android
 
-6.0 正式版使用全新的“总览、设备、连接、账户”导航。手机负责远程管理；隧道运行在家庭电脑或 NAS 上。
+**在手机上管理自己的服务器与家庭设备**
 
-## 安装
+[![Stable 7.0.0](https://img.shields.io/badge/stable-7.0.0-176653)](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0) [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-从 [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest) 下载 `HomeTunnel-Android-6.1.0-arm64-v8a.apk`，在 Android 8.0+ 的 arm64 设备上安装。APK 使用项目持续维护的发布证书签名，可覆盖安装同证书版本。下载页仅保留 APK。
+[English](README.en.md) · [项目网站](https://zhanry.github.io/home-tunnel/) · [下载](https://github.com/ZHanry/home-tunnel/blob/main/docs/DOWNLOADS.md) · [快速开始](https://github.com/ZHanry/home-tunnel/blob/main/docs/GETTING_STARTED.md)
 
-6.0.1 修复登录时的 `Caller-provided IV not permitted` 错误，升级无需先卸载或清除应用数据。
 
-## 使用
+Android 8.0+ 的 Home Tunnel 远程管理客户端。手机负责管理，实际隧道持续运行在
+Windows、macOS、Linux 电脑或 NAS 上。
 
-1. 填写自己的 Home Tunnel 控制台 HTTPS 地址与账号。
-2. 在“设备”中选择电脑或 NAS，查看该设备上的连接。
-3. 创建连接时明确选择目标设备，填写该设备可以访问的服务地址。
-4. 在“连接”中按名称或地址搜索，编辑配置或复制公网地址。
+[下载 7.0.0 正式 APK（arm64-v8a）](https://github.com/ZHanry/home-tunnel-android/releases/download/v7.0.0/HomeTunnel-Android-7.0.0-arm64-v8a.apk) · [Release 与签名证据](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0)
 
-`127.0.0.1` 指所选电脑或 NAS。退出手机账号只结束手机管理会话，家庭隧道继续运行。主题跟随系统，并支持简体中文与英文。
+## 登录后能做什么
 
-## 管理员
+- 加密保存最多 20 个服务器/账号，切换不混用连接、请求或缓存。
+- TOTP/恢复码登录、MFA 设置、会话撤销和为新电脑生成一次性接入码。
+- 按服务端能力创建 HTTP/TCP/UDP 及 SSH/RDP/RTSP 预设；管理员带版本编辑端口池。
+- 设备搜索、标签和收藏；最多 50 条连接批量暂停/恢复，确认范围并逐项报告。
+- 管理账号、系统状态和审计；复制脱敏的管理端诊断报告。
 
-管理员登录后，底部增加“管理”入口，可搜索和创建用户、修改显示名称、重置密码、启用／停用及删除普通账号，同时查看全局设备、连接、运行状态和操作记录，调整系统设置。恢复已有会话时会重新向服务端确认角色，普通用户不显示此入口。临时密码只在当前界面展示，唯一管理员受到保护。建议配合服务端 6.1.1 使用。
+服务端需为 **7.0.0**。输入自己的 HTTPS 地址后登录，选择已登记设备，再创建连接。
+纯管理登录无需 FRPS 证书字段；HTTPS 身份仍正常校验。已有单账号状态自动迁移，
+继续使用 AndroidKeyStore；不要为升级而卸载应用。
 
-## 开发
+## 构建
 
-使用 JDK 17、Android SDK 35 和项目 Gradle Wrapper。运行 `./gradlew test lint assembleDebug`。正式 APK 由 GitHub Actions 使用发布环境中的签名材料构建；私钥不进入仓库。
+JDK 17、Android SDK 35，使用仓库内已锁定的 Gradle wrapper：
 
-[构建说明](docs/BUILDING.md) · [发布流程](docs/RELEASING.md) · [版本说明](docs/RELEASE_NOTES.md) · [安全报告](SECURITY.md) · [项目入口](https://github.com/ZHanry/home-tunnel)
+```sh
+./gradlew test lint assembleDebug assembleDebugAndroidTest
+python3 scripts/check-repository.py
+```
 
-<img src="docs/assets/overview.jpg" alt="Home Tunnel 6.0 Android" width="320">
+正式发行必须使用既有 Android 签名身份，证书摘要固定在 `release-signing-cert.sha256`。
+CI 在 Android API 26 和 35 上检查 KeyStore 与管理界面；发行保留 APK、AAB、
+校验清单、SBOM 和签名/安装检查证据。
 
-<img src="docs/assets/administration.jpg" alt="管理员管理页" width="320">
+[功能与升级](docs/PLATFORM_FEATURES.md) · [API 契约](contracts/README.md) · [项目入口](https://github.com/ZHanry/home-tunnel) · [服务端部署](https://github.com/ZHanry/home-tunnel-server/blob/main/docs/SELF_HOSTING.md)

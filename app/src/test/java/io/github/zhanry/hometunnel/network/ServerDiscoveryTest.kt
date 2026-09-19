@@ -41,9 +41,8 @@ class ServerDiscoveryTest {
         assertFailsWith<DiscoveryException> {
             ServerDiscovery.validateProfile(requested, valid.copy(frpsPort = 0))
         }
-        assertFailsWith<DiscoveryException> {
-            ServerDiscovery.validateProfile(requested, valid.copy(frpsTlsCertificatePem = null))
-        }
+        assertEquals("https://console.example.com/api/v1/",
+            ServerDiscovery.validateProfile(requested, valid.copy(frpsTlsCertificatePem = null)).apiBaseUrl)
         assertFailsWith<DiscoveryException> {
             ServerDiscovery.validateProfile(requested, valid.copy(frpsTlsCertificatePem = "not a certificate"))
         }
