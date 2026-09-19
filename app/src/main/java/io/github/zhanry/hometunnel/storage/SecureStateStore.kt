@@ -69,8 +69,7 @@ class SecureStateStore(context: Context) {
                 }
                 protectFile(temporary)
                 if (!temporary.renameTo(stateFile)) {
-                    stateFile.delete()
-                    if (!temporary.renameTo(stateFile)) throw IllegalStateException("Unable to replace encrypted state")
+                    throw IllegalStateException("Unable to atomically replace encrypted state; previous state preserved")
                 }
                 protectFile(stateFile)
                 cached = value
@@ -126,8 +125,7 @@ class SecureStateStore(context: Context) {
             }
             protectFile(temporary)
             if (!temporary.renameTo(stateFile)) {
-                stateFile.delete()
-                if (!temporary.renameTo(stateFile)) throw IllegalStateException("Unable to replace encrypted state")
+                throw IllegalStateException("Unable to atomically replace encrypted state; previous state preserved")
             }
             protectFile(stateFile)
         } finally {

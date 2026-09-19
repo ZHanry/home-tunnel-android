@@ -48,6 +48,8 @@ data class AdminSummary(
 data class AdminSettings(
     @SerialName("subdomain_prefix_policy") val prefixPolicy: String = "suggest",
     @SerialName("client_raw_tunnels_enabled") val clientRawTunnelsEnabled: Boolean? = null,
+    @SerialName("transport_tunnels") val transportTunnels: TransportPools? = null,
+    @SerialName("transport_settings_version") val transportSettingsVersion: Long? = null,
 )
 
 @Serializable data class AdminHealth(val status: String, val components: List<HealthComponent> = emptyList())
@@ -63,7 +65,7 @@ data class AdminDevice(
     val online: Boolean = false,
     @SerialName("client_version") val clientVersion: String? = null,
 )
-@Serializable data class AdminDeviceList(val items: List<AdminDevice> = emptyList())
+@Serializable data class AdminDeviceList(val items: List<AdminDevice> = emptyList(), @SerialName("total_pages") val totalPages: Int = 1)
 
 @Serializable
 data class AdminConnection(

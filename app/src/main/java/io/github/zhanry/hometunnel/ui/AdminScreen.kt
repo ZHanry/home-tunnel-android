@@ -306,6 +306,13 @@ private fun AdminSettingsForm(value: AdminSettings, saved: AdminSettings?, busy:
             }
             Text(stringResource(R.string.admin_raw_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else Text(stringResource(R.string.admin_raw_upgrade), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        value.transportTunnels?.let { pools ->
+            listOf("TCP" to pools.tcp, "UDP" to pools.udp).forEach { (name, pool) ->
+                TransportPoolForm(name, pool, busy) { changed ->
+                    onChange(value.copy(transportTunnels = if (name == "TCP") pools.copy(tcp = changed) else pools.copy(udp = changed)))
+                }
+            }
+        } ?: Text(platformText("此服务器尚不支持端口池设置。", "This server does not support port pool settings."))
         Button(onClick = onSave, enabled = !busy && value != saved, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(stringResource(R.string.save)) }
     }
 }
@@ -493,4 +500,22 @@ private tailrec fun Context.activity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.activity()
     else -> null
+}
+
+@Composable
+private fun TransportPoolForm(name: String, value: io.github.zhanry.hometunnel.model.TransportPool, busy: Boolean, onChange: (io.github.zhanry.hometunnel.model.TransportPool) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(name, style = MaterialTheme.typography.titleMedium)
+        Text(platformText("部署端口范围：${value.poolStart}–${value.poolEnd}；已分配 ${value.allocatedPorts}；可用 ${value.availablePorts}",
+            "Deployment pool: ${value.poolStart}–${value.poolEnd}; allocated ${value.allocatedPorts}; available ${value.availablePorts}"))
+        if (!value.deploymentReady) Text(platformText("请先在部署配置和防火墙开放此协议。", "Enable this protocol in deployment configuration and firewall first."))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(value.configuredEnabled, { onChange(value.copy(configuredEnabled = it)) }, enabled = !busy)
+            Text(platformText("允许新建连接", "Enable new connections"))
+        }
+        OutlinedTextField(value.portStart.toString(), { input -> onChange(value.copy(portStart = input.filter(Char::isDigit).take(5).toIntOrNull() ?: 0)) },
+            enabled = !busy, label = { Text(platformText("起始端口", "First port")) }, isError = value.portStart !in 1..65535)
+        OutlinedTextField(value.portEnd.toString(), { input -> onChange(value.copy(portEnd = input.filter(Char::isDigit).take(5).toIntOrNull() ?: 0)) },
+            enabled = !busy, label = { Text(platformText("结束端口", "Last port")) }, isError = value.portEnd !in value.portStart..65535)
+    }
 }

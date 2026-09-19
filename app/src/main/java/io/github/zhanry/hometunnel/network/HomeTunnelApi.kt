@@ -1,6 +1,7 @@
 package io.github.zhanry.hometunnel.network
 
 import io.github.zhanry.hometunnel.BuildConfig
+import io.github.zhanry.hometunnel.model.*
 import io.github.zhanry.hometunnel.model.ApiErrorBody
 import io.github.zhanry.hometunnel.model.ApiException
 import io.github.zhanry.hometunnel.model.ConnectionListResponse
@@ -23,15 +24,9 @@ import io.github.zhanry.hometunnel.model.SyncResponse
 import io.github.zhanry.hometunnel.model.TunnelConnection
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -44,16 +39,12 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
 
 class HomeTunnelApi(
     private val profile: ServerProfile,
@@ -101,8 +92,17 @@ class HomeTunnelApi(
     override suspend fun adminDeleteUser(id: String, version: Long) {
         authenticatedJson<Unit>("DELETE", "admin/users/${pathId(id)}", buildJsonObject { put("expected_version", version) }, version)
     }
-    override suspend fun adminDevices(userId: String): AdminDeviceList =
-        authenticatedJson("GET", "admin/devices?user_id=${queryValue(userId)}")
+    override suspend fun adminDevices(userId: String): AdminDeviceList {
+        val items = mutableListOf<AdminDevice>()
+        var page = 1
+        do {
+            val result = authenticatedJson<AdminDeviceList>("GET", "admin/devices?user_id=${queryValue(userId)}&page=$page&page_size=100")
+            items += result.items
+            require(result.totalPages <= 100) { "Too many device pages; filter by account" }
+            page++
+        } while (page <= result.totalPages)
+        return AdminDeviceList(items.distinctBy { it.id })
+    }
     override suspend fun adminConnections(userId: String, search: String, page: Int): AdminConnectionList =
         authenticatedJson("GET", "admin/connections?user_id=${queryValue(userId)}&search=${queryValue(search)}&page=${page.coerceAtLeast(1)}&page_size=25")
     override suspend fun adminSettings(): AdminSettings = authenticatedJson("GET", "admin/settings")
@@ -110,10 +110,44 @@ class HomeTunnelApi(
         authenticatedJson("PATCH", "admin/settings", buildJsonObject {
             put("subdomain_prefix_policy", settings.prefixPolicy)
             settings.clientRawTunnelsEnabled?.let { put("client_raw_tunnels_enabled", it) }
+            settings.transportTunnels?.let { pools ->
+                put("transport_settings_version", requireNotNull(settings.transportSettingsVersion))
+                put("transport_tunnels", buildJsonObject {
+                    listOf("tcp" to pools.tcp, "udp" to pools.udp).forEach { (name, pool) ->
+                        put(name, buildJsonObject {
+                            put("enabled", pool.configuredEnabled)
+                            put("port_start", pool.portStart)
+                            put("port_end", pool.portEnd)
+                        })
+                    }
+                })
+            }
         })
     override suspend fun adminHealth(): AdminHealth = authenticatedJson("GET", "admin/system/health")
     override suspend fun adminAudit(page: Int): AdminAuditList =
         authenticatedJson("GET", "admin/audit-events?page=${page.coerceAtLeast(1)}&page_size=25")
+
+    suspend fun mfaStatus(): MfaStatus = authenticatedJson("GET", "auth/mfa")
+    suspend fun sessions(): ManagementSessions = authenticatedJson("GET", "auth/sessions")
+    suspend fun revokeSession(id: String) = authenticatedJson<Unit>("DELETE", "auth/sessions/${pathId(id)}")
+    suspend fun mfaSetup(password: String): MfaSetup = authenticatedJson("POST", "auth/mfa/setup", credentials(password, ""))
+    suspend fun mfaConfirm(password: String, code: String): RecoveryCodes = authenticatedJson("POST", "auth/mfa/confirm", buildJsonObject {
+        put("password", password); put("code", code.trim())
+    })
+    suspend fun replaceRecoveryCodes(password: String, code: String): RecoveryCodes = authenticatedJson("POST", "auth/mfa/recovery-codes", credentials(password, code))
+    suspend fun mfaDisable(password: String, code: String) = authenticatedJson<Unit>("POST", "auth/mfa/disable", credentials(password, code))
+    suspend fun enrollmentCodes(): EnrollmentCodes = authenticatedJson("GET", "client/enrollment-codes")
+    suspend fun createEnrollmentCode(name: String): EnrollmentCode = authenticatedJson("POST", "client/enrollment-codes", buildJsonObject { put("name", name.trim()) })
+    suspend fun revokeEnrollmentCode(id: String) = authenticatedJson<Unit>("DELETE", "client/enrollment-codes/${pathId(id)}")
+    suspend fun updateDeviceMetadata(device: ManagedDevice, tags: List<String>, favorite: Boolean) = authenticatedJson<JsonObject>("PATCH", "client/devices/${pathId(device.id)}/metadata", buildJsonObject {
+        put("tags", JsonArray(tags.map(::JsonPrimitive))); put("favorite", favorite); put("expected_metadata_version", device.metadataVersion)
+    })
+    suspend fun batchConnections(items: List<TunnelConnection>, enabled: Boolean): BatchResults = authenticatedJson("POST", "client/connections/batch", buildJsonObject {
+        put("enabled", enabled); put("items", buildJsonArray { items.forEach { add(buildJsonObject { put("id", it.id); put("expected_version", it.version) }) } })
+    })
+    private fun credentials(password: String, code: String) = buildJsonObject {
+        put("password", password); if (code.isNotBlank()) put("mfa_code", code.trim())
+    }
 
     private fun queryValue(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
     private fun pathId(value: String): String {
@@ -121,57 +155,32 @@ class HomeTunnelApi(
         return value
     }
 
-    suspend fun login(username: String, password: String): SessionResponse {
+    suspend fun login(username: String, password: String, mfaCode: String = ""): SessionResponse {
         val response: SessionResponse = publicJson(
             "auth/login",
             buildJsonObject {
                 put("username", username)
                 put("password", password)
-                put("client_type", "mobile")
+                put("client_type", "android")
+                if (mfaCode.isNotBlank()) put("mfa_code", mfaCode.trim())
             },
         )
         sessionManager.install(response)
         return response
     }
 
-    suspend fun deviceLogin(deviceId: String, credential: String): SessionResponse {
-        val response: SessionResponse = publicJson(
-            "auth/device",
-            buildJsonObject {
-                put("device_id", deviceId)
-                put("device_credential", credential)
-            },
-        )
-        sessionManager.install(response)
-        return response
-    }
-
-    suspend fun changePassword(currentPassword: String, newPassword: String) {
+    suspend fun changePassword(currentPassword: String, newPassword: String, mfaCode: String = "") {
         authenticatedJson<Unit>(
             method = "POST",
             path = "auth/password/change",
             body = buildJsonObject {
                 put("current_password", currentPassword)
                 put("new_password", newPassword)
+                if (mfaCode.isNotBlank()) put("mfa_code", mfaCode.trim())
             },
         )
         sessionManager.clear()
     }
-
-    suspend fun registerDevice(
-        name: String,
-        installId: String,
-        fingerprintHash: String,
-    ): DeviceRegistration = authenticatedJson(
-        method = "POST",
-        path = "devices/register",
-        body = buildJsonObject {
-            put("name", name)
-            put("install_id", installId)
-            put("fingerprint_hash", fingerprintHash)
-            put("client_version", BuildConfig.VERSION_NAME)
-        },
-    )
 
     fun restoreSession(accessToken: String, refreshToken: String, accessExpiresAt: String) {
         sessionManager.install(
@@ -185,25 +194,48 @@ class HomeTunnelApi(
         )
     }
 
-    suspend fun listDevices(): List<io.github.zhanry.hometunnel.model.ManagedDevice> =
-        authenticatedJson<io.github.zhanry.hometunnel.model.DeviceListResponse>("GET", "client/devices").items
+    suspend fun listDevices(): List<ManagedDevice> {
+        val result = mutableListOf<ManagedDevice>()
+        var page = 1
+        do {
+            val response = authenticatedJson<DeviceListResponse>("GET", "client/devices?page=$page&page_size=100")
+            result += response.items
+            require(response.totalPages <= 100) { "Too many device pages" }
+            page++
+        } while (page <= response.totalPages)
+        return result.distinctBy { it.id }
+    }
 
-    suspend fun listConnections(): List<TunnelConnection> =
-        authenticatedJson<ConnectionListResponse>("GET", "client/connections").items
+    suspend fun connectionCatalog(): ConnectionListResponse {
+        val result = mutableListOf<TunnelConnection>()
+        var page = 1
+        var capabilities = ConnectionCapabilities()
+        do {
+            val response = authenticatedJson<ConnectionListResponse>("GET", "client/connections?page=$page&page_size=100")
+            result += response.items
+            capabilities = response.capabilities
+            require(response.totalPages <= 100) { "Too many connection pages" }
+            page++
+        } while (page <= response.totalPages)
+        return ConnectionListResponse(items=result.distinctBy { it.id }, capabilities=capabilities)
+    }
 
-    suspend fun createHttpConnection(deviceId: String, value: TunnelConnection): TunnelConnection =
+    suspend fun listConnections(): List<TunnelConnection> = connectionCatalog().items
+
+    suspend fun createConnection(deviceId: String, value: TunnelConnection): TunnelConnection =
         authenticatedJson(
             method = "POST",
             path = "client/connections",
             body = buildJsonObject {
                 put("device_id", deviceId)
                 put("name", value.name)
-                put("subdomain", value.subdomain)
+                if (value.kind == ProxyKind.HTTP) put("subdomain", value.subdomain)
                 put("local_scheme", value.localScheme)
                 put("local_host", value.localHost)
                 put("local_port", value.localPort)
                 put("enabled", value.enabled)
-                put("proxy_type", "http")
+                put("proxy_type", value.proxyType)
+                value.applicationProtocol?.let { put("application_protocol", it) }
             },
         )
 
@@ -212,8 +244,8 @@ class HomeTunnelApi(
         path = "client/connections/${value.id}",
         body = buildJsonObject {
             if (baseline == null || baseline.name != value.name) put("name", value.name)
-            if (baseline == null || baseline.subdomain != value.subdomain) put("subdomain", value.subdomain)
-            if (baseline == null || baseline.localScheme != value.localScheme) put("local_scheme", value.localScheme)
+            if (value.kind == ProxyKind.HTTP && (baseline == null || baseline.subdomain != value.subdomain)) put("subdomain", value.subdomain)
+            if (value.kind == ProxyKind.HTTP && (baseline == null || baseline.localScheme != value.localScheme)) put("local_scheme", value.localScheme)
             if (baseline == null || baseline.localHost != value.localHost) put("local_host", value.localHost)
             if (baseline == null || baseline.localPort != value.localPort) put("local_port", value.localPort)
             if (baseline == null || baseline.enabled != value.enabled) put("enabled", value.enabled)
@@ -231,51 +263,6 @@ class HomeTunnelApi(
         )
     }
 
-    suspend fun sync(
-        state: PersistedState,
-        reportLease: Boolean,
-        forceFull: Boolean = false,
-    ): SyncResponse = authenticatedJson(
-        method = "POST",
-        path = "client/sync",
-        body = buildJsonObject {
-            put("device_id", requireNotNull(state.deviceId))
-            put("last_config_version", requestedConfigVersion(state, forceFull))
-            put("supports_optional_lease", true)
-            if (reportLease && state.leaseExpiresAt != null) {
-                put("lease_expires_at", state.leaseExpiresAt)
-            } else {
-                put("lease_expires_at", JsonNull)
-            }
-            put("supported_proxy_types", JsonArray(listOf(JsonPrimitive("http"))))
-        },
-    )
-
-    suspend fun heartbeat(state: PersistedState) {
-        authenticatedJson<Unit>(
-            method = "POST",
-            path = "client/heartbeat",
-            body = buildJsonObject {
-                put("device_id", requireNotNull(state.deviceId))
-                put("applied_config_version", state.appliedConfigVersion)
-                put("client_version", BuildConfig.VERSION_NAME)
-                put("agent_version", BuildConfig.VERSION_NAME)
-                put("clock_utc", Instant.now().toString())
-                put("connections", buildJsonArray {
-                    state.cachedConnections.forEach { connection ->
-                        add(buildJsonObject {
-                            put("connection_id", connection.id)
-                            put("applied_version", connection.appliedVersion)
-                            put("state", heartbeatState(connection))
-                            connection.lastErrorCode?.let { put("error_code", it) } ?: put("error_code", JsonNull)
-                            put("error_summary", JsonNull)
-                        })
-                    }
-                })
-            },
-        )
-    }
-
     suspend fun logout() {
         try {
             authenticatedJson<Unit>("POST", "auth/logout", buildJsonObject { })
@@ -284,55 +271,9 @@ class HomeTunnelApi(
         }
     }
 
-    fun configurationEvents(deviceId: String): Flow<Unit> = flow {
-        val token = sessionManager.accessToken(::refresh)
-        emitAll(webSocketFlow(deviceId, token))
-    }
-
     fun clearSession() = sessionManager.clear()
 
     fun hasSession(): Boolean = sessionManager.hasSession()
-
-    private fun webSocketFlow(deviceId: String, token: String): Flow<Unit> = callbackFlow {
-        val httpWebsocketUrl = baseUrl.newBuilder()
-            .encodedPath("/api/v1/ws")
-            .build()
-        val websocketUrl = httpWebsocketUrl.toString().replaceFirst(
-            if (httpWebsocketUrl.isHttps) "https://" else "http://",
-            if (httpWebsocketUrl.isHttps) "wss://" else "ws://",
-        )
-        val request = Request.Builder()
-            .url(websocketUrl)
-            .header("Authorization", "Bearer $token")
-            .header("User-Agent", "HomeTunnel-Android/${BuildConfig.VERSION_NAME}")
-            .build()
-        val socket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
-                val event = root["event"]?.jsonPrimitive?.content ?: return
-                if (event == "realtime.connected") return
-                if (event !in setOf("config.version.changed", "connection.command", "subject.revoked")) return
-                val eventDevice = root["payload"]?.let { payload ->
-                    runCatching { payload.jsonObject["device_id"]?.jsonPrimitive?.content }.getOrNull()
-                }
-                if (eventDevice == null || eventDevice.equals(deviceId, ignoreCase = true)) trySend(Unit)
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                val cause = if (response?.code == 401) {
-                    ApiException(401, "SESSION_REVOKED", "Realtime session was rejected")
-                } else {
-                    t
-                }
-                close(cause)
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                close()
-            }
-        })
-        awaitClose { socket.close(1000, "client stopped") }
-    }
 
     private suspend fun refresh(refreshToken: String): RefreshResponse = publicJson(
         "auth/refresh",
@@ -357,7 +298,7 @@ class HomeTunnelApi(
         try {
             execute<T>(RequestSpec(method, path, body, token, expectedVersion))
         } catch (error: ApiException) {
-            if (error.statusCode != 401) throw error
+            if (error.statusCode != 401 || error.errorCode !in setOf("SESSION_REVOKED", "SESSION_EXPIRED", "AUTH_REQUIRED", "AUTH_EXPIRED", "TOKEN_EXPIRED")) throw error
             token = sessionManager.refreshAfterUnauthorized(token, ::refresh)
             execute<T>(RequestSpec(method, path, body, token, expectedVersion))
         }
@@ -394,13 +335,6 @@ class HomeTunnelApi(
             if (bytes.isEmpty()) throw IOException("Control-center returned an empty response")
             return json.decodeFromString(bytes.decodeToString())
         }
-    }
-
-    private fun heartbeatState(connection: TunnelConnection): String {
-        if (!connection.enabled) return "Disabled"
-        return connection.state.takeIf {
-            it in setOf("Disabled", "Pending", "Applying", "Online", "Degraded", "Offline", "Error")
-        } ?: "Offline"
     }
 
     private fun java.io.InputStream.readLimited(maximum: Int): ByteArray {

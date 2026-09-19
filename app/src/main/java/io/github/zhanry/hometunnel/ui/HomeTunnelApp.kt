@@ -94,6 +94,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -159,11 +160,11 @@ fun HomeTunnelApp(
                 AppScreen.LOADING -> LoadingScreen()
                 AppScreen.LOGIN -> LoginScreen(state, repository)
                 AppScreen.PASSWORD_CHANGE -> PasswordChangeScreen(state, repository)
-                AppScreen.HOME -> HomeScreen(
+                AppScreen.HOME -> key(state.persisted.activeAccountId) { HomeScreen(
                     state = state,
                     repository = repository,
                     snackbar = snackbar,
-                )
+                ) }
             }
         }
         SnackbarHost(
@@ -192,6 +193,7 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
     // enter the Activity saved-state bundle or survive process recreation.
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var mfa by remember { mutableStateOf("") }
     AuthFrame {
         BrandMark()
         Spacer(Modifier.height(20.dp))
@@ -243,8 +245,9 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
         )
+        MfaField(mfa) { mfa = it }
         Button(
-            onClick = { repository.login(server, username, password) },
+            onClick = { repository.login(server, username, password, mfa) },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             enabled = !state.busy && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
         ) {
@@ -266,6 +269,7 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
                 )
             }
         }
+        if (state.persisted.savedAccounts.isNotEmpty()) SavedServers(state, repository)
         LanguageMenu(compact = true)
     }
 }
@@ -275,6 +279,7 @@ private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelReposi
     var current by remember { mutableStateOf("") }
     var next by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
+    var mfa by remember { mutableStateOf("") }
     AuthFrame {
         Icon(
             Icons.Default.Lock,
@@ -323,8 +328,9 @@ private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelReposi
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
         )
+        MfaField(mfa) { mfa = it }
         Button(
-            onClick = { repository.changeRequiredPassword(current, next) },
+            onClick = { repository.changeRequiredPassword(current, next, mfa) },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             enabled = !state.busy && current.isNotEmpty() && next.length >= 12 && next == confirm,
         ) {
@@ -363,6 +369,7 @@ internal fun HomeScreen(
     var selectedDevice by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
     var confirmLogout by remember { mutableStateOf(false) }
+    var selectedConnections by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tabLabels = listOf(R.string.nav_overview, R.string.nav_devices, R.string.nav_connections, R.string.nav_account, R.string.nav_management)
@@ -451,7 +458,7 @@ internal fun HomeScreen(
                     1 -> {
                         item { Text(stringResource(R.string.device_scope_hint), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         if (state.devices.isEmpty()) item { EmptyConnectionsCard() }
-                        items(state.devices, key = { it.id }) { device ->
+                        items(state.devices.sortedByDescending { it.favorite }, key = { it.id }) { device ->
                             OutlinedCard(onClick = { selectedDevice = device.id; search = ""; tab = 2 }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -461,6 +468,7 @@ internal fun HomeScreen(
                                     Text(device.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                     HorizontalDivider()
                                     Text(stringResource(R.string.device_service_count, state.connections.count { it.deviceId == device.id }), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    DeviceMetadataControls(device, repository)
                                 }
                             }
                         }
@@ -480,12 +488,21 @@ internal fun HomeScreen(
                             if (state.connections.isEmpty()) EmptyConnectionsCard()
                             else Text(stringResource(R.string.no_search_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        item { BatchConnectionControls(state.connections.filter { it.id in selectedConnections }, repository) { selectedConnections = emptySet() } }
                         items(filtered, key = { it.id }) { connection ->
-                            ConnectionCard(connection, { editor = ConnectionEdit(connection, false) }, copyAddress)
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = connection.id in selectedConnections,
+                                        enabled = connection.kind != ProxyKind.UNKNOWN && !state.busy && (selectedConnections.size < 50 || connection.id in selectedConnections),
+                                        onCheckedChange = { checked -> selectedConnections = if (checked) selectedConnections + connection.id else selectedConnections - connection.id })
+                                    Text(platformText("选择此连接", "Select connection"))
+                                }
+                                ConnectionCard(connection, { editor = ConnectionEdit(connection, false) }, copyAddress)
+                            }
                         }
                     }
                     3 -> {
-                        item { AccountContent(state) { confirmLogout = true } }
+                        item { AccountContent(state, repository) { confirmLogout = true } }
                     }
                 }
             }
@@ -501,6 +518,7 @@ internal fun HomeScreen(
         ConnectionEditor(
             edit = edit,
             devices = state.devices,
+            capabilities = state.capabilities,
             username = state.persisted.username.orEmpty(),
             busy = state.busy,
             error = state.error,
@@ -617,172 +635,21 @@ private fun localizedConnectionState(connection: TunnelConnection): String {
     }
 }
 
-private data class ConnectionEdit(val value: TunnelConnection, val isNew: Boolean, val baseline: TunnelConnection = value)
-
 @Composable
-private fun ConnectionEditor(
-    edit: ConnectionEdit,
-    devices: List<io.github.zhanry.hometunnel.model.ManagedDevice>,
-    username: String,
-    busy: Boolean,
-    error: String?,
-    onReloadLatest: () -> Unit,
-    onDismiss: () -> Unit,
-    onSave: (TunnelConnection) -> Unit,
-    onDelete: (() -> Unit)?,
-) {
-    var name by rememberSaveable(edit.value.id) { mutableStateOf(edit.value.name) }
-    var deviceId by rememberSaveable(edit.value.id) { mutableStateOf(edit.value.deviceId) }
-    var subdomain by rememberSaveable(edit.value.id) {
-        mutableStateOf(edit.value.subdomain.ifBlank { if (username.isBlank()) "" else "${username.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-').take(40)}-app" })
-    }
-    var scheme by rememberSaveable(edit.value.id) { mutableStateOf(edit.value.localScheme) }
-    var host by rememberSaveable(edit.value.id) { mutableStateOf(edit.value.localHost) }
-    var port by rememberSaveable(edit.value.id) { mutableStateOf(edit.value.localPort.takeIf { it > 0 }?.toString().orEmpty()) }
-    var enabled by rememberSaveable(edit.value.id) { mutableStateOf(edit.value.enabled) }
-    val raw = edit.value.kind in setOf(ProxyKind.TCP, ProxyKind.UDP)
-    val unknown = edit.value.kind == ProxyKind.UNKNOWN
-    val validSubdomain = Regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$").matches(subdomain)
-    val parsedPort = port.toIntOrNull()
-    val canSave = !unknown && name.isNotBlank() && (raw || validSubdomain) && host.isNotBlank() && parsedPort in 1..65535 && deviceId.isNotBlank() && (!edit.isNew || devices.any { it.id == deviceId && it.status == "active" })
-    var confirmDiscard by remember { mutableStateOf(false) }
-    val changed = name != edit.value.name || subdomain != edit.value.subdomain || host != edit.value.localHost ||
-        port != edit.value.localPort.toString() || enabled != edit.value.enabled || deviceId != edit.value.deviceId || scheme != edit.value.localScheme
-    val requestClose = { if (!busy) { if (changed) confirmDiscard = true else onDismiss() }; Unit }
-    Dialog(onDismissRequest = requestClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Scaffold(
-            topBar = { TopAppBar(title = { Text(stringResource(if (edit.isNew) R.string.add_connection else R.string.edit_connection)) },
-                navigationIcon = { IconButton(onClick = requestClose, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel)) } }) },
-            bottomBar = {
-                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().imePadding().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = requestClose, enabled = !busy, modifier = Modifier.heightIn(min = 52.dp)) { Text(stringResource(R.string.cancel)) }
-            Button(
-                onClick = {
-                    onSave(edit.value.copy(
-                        deviceId = deviceId,
-                        name = name.trim(),
-                        subdomain = subdomain.trim(),
-                        localScheme = if (raw) edit.value.localScheme else scheme,
-                        localHost = host.trim(),
-                        localPort = requireNotNull(parsedPort),
-                        enabled = enabled,
-                    ))
-                },
-                enabled = canSave && !busy,
-                modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-            ) { Text(stringResource(R.string.save)) }
-                }
-            },
-        ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (error?.contains("VERSION_CONFLICT") == true) {
-                    OutlinedButton(onClick = onReloadLatest, enabled = !busy) { Text(stringResource(R.string.reload_latest)) }
-                }
-                if (error != null) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                if (raw) WarningCard(stringResource(R.string.raw_mvp_warning, edit.value.proxyType.uppercase()))
-                if (unknown) WarningCard(stringResource(R.string.unknown_type_warning))
-                SectionLabel(stringResource(R.string.editor_identity))
-                if (edit.isNew) {
-                    Text(stringResource(R.string.choose_device), style = MaterialTheme.typography.bodyMedium)
-                    devices.filter { it.status == "active" }.forEach { device ->
-                        Row(Modifier.fillMaxWidth().selectable(selected = deviceId == device.id,
-                            onClick = { deviceId = device.id }, enabled = !busy, role = Role.RadioButton)
-                            .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = deviceId == device.id, onClick = null, enabled = !busy)
-                            Spacer(Modifier.width(12.dp))
-                            Text(device.name, modifier = Modifier.weight(1f))
-                            Text(stringResource(if (device.online) R.string.status_online else R.string.status_offline), style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                } else {
-                    Text(devices.find { it.id == deviceId }?.name.orEmpty(), color = MaterialTheme.colorScheme.primary)
-                }
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && !unknown,
-                    label = { Text(stringResource(R.string.connection_name)) },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = subdomain,
-                    onValueChange = { subdomain = it.lowercase() },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && !unknown,
-                    label = { Text(stringResource(R.string.public_subdomain)) },
-                    isError = subdomain.isNotEmpty() && !validSubdomain,
-                    singleLine = true,
-                )
-                Spacer(Modifier.height(14.dp))
-                HorizontalDivider()
-                SectionLabel(stringResource(R.string.editor_destination))
-                Text(stringResource(R.string.target_device_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!raw && !unknown) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("http", "https").forEach { value ->
-                            AssistChip(onClick = { scheme = value }, label = { Text(value) }, leadingIcon = {
-                                if (scheme == value) Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-                            })
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = host,
-                    onValueChange = { host = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && !unknown,
-                    label = { Text(stringResource(R.string.local_host)) },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = { port = it.filter(Char::isDigit).take(5) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy && !unknown,
-                    label = { Text(stringResource(R.string.local_port)) },
-                    isError = port.isNotEmpty() && parsedPort !in 1..65535,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = enabled, onCheckedChange = { enabled = it }, enabled = !busy && !unknown)
-                    Text(stringResource(R.string.enabled))
-                }
-                onDelete?.let {
-                    OutlinedButton(onClick = it, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.delete_connection))
-                    }
-                }
-                }
-            }
-        }
-        if (confirmDiscard) AlertDialog(onDismissRequest = { confirmDiscard = false },
-            title = { Text(stringResource(R.string.discard_title)) }, text = { Text(stringResource(R.string.discard_detail)) },
-            confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.discard)) } },
-            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(R.string.keep_editing)) } })
-    }
-}
-
-@Composable
-private fun WarningCard(message: String) {
+internal fun WarningCard(message: String) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
         Text(message, Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(top = 6.dp).semantics { heading() })
 }
 
 @Composable
-private fun AccountContent(state: AppUiState, onLogout: () -> Unit) {
+private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository, onLogout: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -792,6 +659,7 @@ private fun AccountContent(state: AppUiState, onLogout: () -> Unit) {
                 Text(state.persisted.profile?.publicBaseUrl.orEmpty(), style = MaterialTheme.typography.bodyMedium)
             }
         }
+        PlatformAccountControls(state, repository)
         SectionLabel(stringResource(R.string.preferences))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.language)); LanguageMenu(compact = false)

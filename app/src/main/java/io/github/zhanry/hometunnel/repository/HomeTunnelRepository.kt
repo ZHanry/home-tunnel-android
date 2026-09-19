@@ -1,14 +1,13 @@
 package io.github.zhanry.hometunnel.repository
 
 import android.content.Context
+import io.github.zhanry.hometunnel.model.*
 import io.github.zhanry.hometunnel.model.AgentState
 import io.github.zhanry.hometunnel.model.ApiException
 import io.github.zhanry.hometunnel.model.PersistedState
 import io.github.zhanry.hometunnel.model.ProxyKind
 import io.github.zhanry.hometunnel.model.ServerProfile
 import io.github.zhanry.hometunnel.model.SessionResponse
-import io.github.zhanry.hometunnel.model.SyncMerger
-import io.github.zhanry.hometunnel.model.SyncResponse
 import io.github.zhanry.hometunnel.model.TunnelConnection
 import io.github.zhanry.hometunnel.model.UserInfo
 import io.github.zhanry.hometunnel.network.HomeTunnelApi
@@ -20,7 +19,6 @@ import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +33,7 @@ data class AppUiState(
     val persisted: PersistedState = PersistedState(),
     val connections: List<TunnelConnection> = emptyList(),
     val devices: List<io.github.zhanry.hometunnel.model.ManagedDevice> = emptyList(),
+    val capabilities: ConnectionCapabilities = ConnectionCapabilities(),
     val busy: Boolean = false,
     val error: String? = null,
     val lastSyncedAt: String? = null,
@@ -44,7 +43,6 @@ data class AppUiState(
     val isAdmin: Boolean get() = currentUser?.role == "admin" && currentUser.passwordState == "normal" && currentUser.deviceId == null
 }
 
-data class SyncBundle(val state: PersistedState, val response: SyncResponse)
 
 class HomeTunnelRepository(
     private val context: Context,
@@ -70,8 +68,6 @@ class HomeTunnelRepository(
 
     @Volatile
     private var api: HomeTunnelApi? = null
-    @Volatile
-    private var serviceActive: Boolean = false
     private var pendingLogin: PendingLogin? = null
 
     init {
@@ -87,6 +83,8 @@ class HomeTunnelRepository(
                     refreshToken = null, cachedConnections = emptyList(), desiredRunning = false)
                 store.save(state)
             }
+            state = state.archiveActiveAccount()
+            store.save(state)
             _uiState.value = AppUiState(
                 screen = if (state.signedIn) AppScreen.HOME else AppScreen.LOGIN,
                 persisted = state,
@@ -96,13 +94,15 @@ class HomeTunnelRepository(
         }
     }
 
-    fun login(server: String, username: String, password: String) = scope.launch {
+    fun login(server: String, username: String, password: String, mfaCode: String = "") = scope.launch {
         operationMutex.withLock {
             setBusy(true)
             try {
+                sessionGeneration++
+                administration.reset()
                 val profile = ServerDiscovery.discover(server)
                 val newApi = managementApi(profile)
-                val session = newApi.login(username.trim(), password)
+                val session = newApi.login(username.trim(), password, mfaCode)
                 api = newApi
                 if (session.passwordChangeRequired) {
                     pendingLogin = PendingLogin(profile, username.trim())
@@ -120,17 +120,17 @@ class HomeTunnelRepository(
         }
     }
 
-    fun changeRequiredPassword(currentPassword: String, newPassword: String) = scope.launch {
+    fun changeRequiredPassword(currentPassword: String, newPassword: String, mfaCode: String = "") = scope.launch {
         operationMutex.withLock {
-            val pending = pendingLogin ?: return@withLock setFailure(IllegalStateException("Login session expired"))
+            if (pendingLogin == null) return@withLock setFailure(IllegalStateException("Login session expired"))
             val activeApi = api ?: return@withLock setFailure(IllegalStateException("Login session expired"))
             setBusy(true)
             try {
-                activeApi.changePassword(currentPassword, newPassword)
-                val session = activeApi.login(pending.username, newPassword)
-                if (session.passwordChangeRequired) error("Server still requires a password change")
+                activeApi.changePassword(currentPassword, newPassword, mfaCode)
                 pendingLogin = null
-                enterManagement(pending.profile, session)
+                api = null
+                _uiState.value = _uiState.value.copy(screen = AppScreen.LOGIN, busy = false,
+                    error = "Password changed. Sign in with the new password and a new authenticator code.")
             } catch (error: Throwable) {
                 setFailure(error)
             }
@@ -158,11 +158,12 @@ class HomeTunnelRepository(
                 currentUser.passwordState != "normal" || currentUser.deviceId != null) administration.reset()
             _uiState.value = _uiState.value.copy(currentUser = currentUser)
             val devices = activeApi.listDevices()
-            val items = activeApi.listConnections()
+            val catalog = activeApi.connectionCatalog()
+            val items = catalog.items
             if (started != sessionGeneration) return@launch
             val persisted = store.update { if (started == sessionGeneration) it.copy(cachedConnections = items) else it }
             if (started != sessionGeneration) return@launch
-            _uiState.value = _uiState.value.copy(persisted = persisted, connections = items, devices = devices, busy = false, error = null, lastSyncedAt = Instant.now().toString(), stale = false)
+            _uiState.value = _uiState.value.copy(persisted = persisted, connections = items, devices = devices, capabilities = catalog.capabilities, busy = false, error = null, lastSyncedAt = Instant.now().toString(), stale = false)
         } catch (error: Throwable) {
             if (started != sessionGeneration) return@launch
             _uiState.value = _uiState.value.copy(stale = true)
@@ -180,8 +181,8 @@ class HomeTunnelRepository(
                 val state = _uiState.value.persisted
                 val activeApi = ensureSignedInApi(state)
                 if (isNew) {
-                    require(value.kind == ProxyKind.HTTP) { "Only HTTP connections can be created by a client" }
-                    activeApi.createHttpConnection(value.deviceId, value)
+                    require(_uiState.value.capabilities.permits(value.kind)) { "Server has not enabled this transport for your account" }
+                    activeApi.createConnection(value.deviceId, value)
                 } else {
                     activeApi.updateConnection(value, baseline)
                 }
@@ -231,80 +232,10 @@ class HomeTunnelRepository(
         }
     }
 
-    suspend fun currentState(): PersistedState = store.load()
-
-    suspend fun synchronize(reportLease: Boolean, forceFull: Boolean = false): SyncBundle {
-        val current = store.load()
-        val activeApi = ensureSignedInApi(current)
-        val response = activeApi.sync(current, reportLease, forceFull)
-        val merged = SyncMerger.merge(current, response)
-        store.save(merged)
-        publishPersisted(merged)
-        return SyncBundle(merged, response)
-    }
-
-    suspend fun heartbeat() {
-        val current = store.load()
-        ensureSignedInApi(current).heartbeat(current)
-    }
-
-    suspend fun configurationEvents(): Flow<Unit> {
-        val current = store.load()
-        return ensureSignedInApi(current).configurationEvents(requireNotNull(current.deviceId))
-    }
-
-    suspend fun reauthenticateDevice() {
-        val current = store.load()
-        api?.clearSession()
-        api = null
-        ensureSignedInApi(current)
-    }
-
-    suspend fun markServiceState(
-        agentState: AgentState,
-        message: String,
-        desiredRunning: Boolean? = null,
-    ): PersistedState {
-        val updated = store.update { current ->
-            current.copy(
-                agentState = agentState,
-                agentMessage = message,
-                desiredRunning = desiredRunning ?: current.desiredRunning,
-            )
-        }
-        publishPersisted(updated)
-        return updated
-    }
-
-    suspend fun markApplied(bundle: SyncBundle, activeConnections: Int): PersistedState {
-        val applied = store.update { current ->
-            current.copy(
-                appliedConfigVersion = bundle.response.targetConfigVersion,
-                leaseExpiresAt = bundle.response.lease?.expiresAt ?: current.leaseExpiresAt,
-                agentState = AgentState.ONLINE,
-                agentMessage = "$activeConnections active connection(s)",
-                cachedConnections = current.cachedConnections.map { connection ->
-                    connection.copy(
-                        appliedVersion = connection.version,
-                        state = if (connection.enabled) "Online" else "Disabled",
-                        lastErrorCode = null,
-                    )
-                },
-            )
-        }
-        publishPersisted(applied)
-        return applied
-    }
-
     suspend fun clearLocalState() {
         sessionGeneration++
         administration.reset()
-        val previous = store.load()
-        val cleared = store.clear().copy(
-            lastServerUrl = previous.profile?.publicBaseUrl ?: previous.lastServerUrl,
-            username = previous.username,
-        )
-        store.save(cleared)
+        val cleared = store.update { it.withoutActiveAccount(remove = true) }
         api?.clearSession()
         api = null
         pendingLogin = null
@@ -342,33 +273,50 @@ class HomeTunnelRepository(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    fun setServiceActive(value: Boolean) {
-        serviceActive = value
-    }
-
-    fun reconcileActivityWithService() = scope.launch {
-        if (serviceActive) return@launch
-        val current = store.load()
-        // Activity and a sticky Service can be created back-to-back on the
-        // main thread while the encrypted read is suspended on IO. Recheck the
-        // process-local service signal before changing the durable run intent.
-        if (serviceActive) return@launch
-        if (current.desiredRunning || current.agentState in setOf(AgentState.ONLINE, AgentState.STARTING)) {
-            val reconciled = current.copy(
-                agentState = AgentState.OFFLINE,
-                agentMessage = "",
-                desiredRunning = false,
-            )
-            store.save(reconciled)
-            publishPersisted(reconciled)
+    fun addServer() = scope.launch {
+        operationMutex.withLock {
+            sessionGeneration++
+            administration.reset()
+            val saved = store.update { it.withoutActiveAccount(remove = false) }
+            api?.clearSession(); api = null; pendingLogin = null
+            _uiState.value = AppUiState(screen = AppScreen.LOGIN, persisted = saved)
         }
     }
 
+    fun switchServer(id: String) = scope.launch {
+        operationMutex.withLock {
+            setBusy(true)
+            try {
+                sessionGeneration++
+                administration.reset()
+                val next = store.update { it.switchAccount(id) }
+                api?.clearSession(); api = null; pendingLogin = null
+                _uiState.value = AppUiState(screen = AppScreen.HOME, persisted = next)
+                refreshConnections(silent = true)
+            } catch (error: Throwable) { setFailure(error) }
+        }
+    }
+
+    fun forgetServer(id: String) = scope.launch {
+        operationMutex.withLock {
+            if (id == _uiState.value.persisted.activeAccountId) return@withLock
+            val saved = store.update { it.copy(savedAccounts = it.savedAccounts.filterNot { account -> account.id == id }) }
+            _uiState.value = _uiState.value.copy(persisted = saved)
+        }
+    }
+
+    suspend fun <T> accountAction(block: suspend (HomeTunnelApi) -> T): T = operationMutex.withLock {
+        val generation = sessionGeneration
+        val result = block(ensureSignedInApi(_uiState.value.persisted))
+        check(generation == sessionGeneration) { "Account changed; retry the operation" }
+        result
+    }
+
     private suspend fun enterManagement(profile: ServerProfile, session: SessionResponse) {
-        sessionGeneration++
         administration.reset()
-        val current = store.load()
+        val current = store.load().archiveActiveAccount()
         val signedIn = current.copy(
+            activeAccountId = null,
             profile = profile,
             lastServerUrl = profile.publicBaseUrl,
             userDisplayName = session.user.displayName,
@@ -383,8 +331,9 @@ class HomeTunnelRepository(
             agentMessage = "Management session",
             desiredRunning = false,
         )
-        store.save(signedIn)
-        _uiState.value = AppUiState(screen = AppScreen.HOME, persisted = signedIn, busy = false, currentUser = session.user.copy(deviceId = session.deviceId))
+        val archived = signedIn.archiveActiveAccount()
+        store.save(archived)
+        _uiState.value = AppUiState(screen = AppScreen.HOME, persisted = archived, busy = false, currentUser = session.user.copy(deviceId = session.deviceId))
         refreshConnections(silent = true)
     }
 
@@ -405,7 +354,7 @@ class HomeTunnelRepository(
                 state.accessExpiresAt ?: java.time.Instant.now().plusSeconds(120).toString(),
             )
         } else {
-            created.deviceLogin(requireNotNull(state.deviceId), requireNotNull(state.deviceCredential))
+            error("Management session expired; sign in again")
         }
         api = created
         return created
@@ -413,26 +362,12 @@ class HomeTunnelRepository(
 
     private fun existingSessionAvailable(value: HomeTunnelApi): Boolean = value.hasSession()
 
-    private fun managementApi(profile: ServerProfile): HomeTunnelApi = apiFactory(
-        profile,
-        SessionManager(onRefresh = { previous, renewed ->
-            val updated = store.update { current ->
-                if (current.refreshToken == previous && current.profile?.apiBaseUrl == profile.apiBaseUrl)
-                    current.copy(accessToken = renewed.accessToken, refreshToken = renewed.refreshToken,
-                        accessExpiresAt = renewed.accessExpiresAt)
-                else current
-            }
-            _uiState.value = _uiState.value.copy(persisted = updated)
-        }),
-    )
-
-    private fun publishPersisted(value: PersistedState) {
-        _uiState.value = _uiState.value.copy(
-            screen = if (value.signedIn) AppScreen.HOME else AppScreen.LOGIN,
-            persisted = value,
-            connections = value.cachedConnections,
-            busy = false,
-        )
+    private fun managementApi(profile: ServerProfile): HomeTunnelApi {
+        val generation = sessionGeneration
+        return apiFactory(profile, SessionManager(onRefresh = { previous, renewed ->
+            val updated = store.update { it.withRefreshedAccount(profile.apiBaseUrl, previous, renewed) }
+            if (generation == sessionGeneration) _uiState.value = _uiState.value.copy(persisted = updated)
+        }))
     }
 
     private fun setBusy(value: Boolean) {
@@ -440,7 +375,7 @@ class HomeTunnelRepository(
     }
 
     private suspend fun setFailure(error: Throwable) {
-        if (error is ApiException && (error.statusCode == 401 || error.errorCode in setOf("USER_DISABLED", "SESSION_REVOKED", "PASSWORD_CHANGE_REQUIRED"))) {
+        if (error is ApiException && (error.errorCode in setOf("USER_DISABLED", "SESSION_REVOKED", "SESSION_EXPIRED", "PASSWORD_CHANGE_REQUIRED"))) {
             api?.clearSession()
             api = null
             clearLocalState()

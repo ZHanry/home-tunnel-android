@@ -1,13 +1,18 @@
-# Home Tunnel for Android 6.1.0
+# Home Tunnel 7.0.0
 
-Android 管理员现在可直接在 App 中管理用户与系统设置。
+All first-party components and the managed Agent now use 7.0.0. Upgrade the server,
+desktop/CLI and Android together; FRP remains at its independent 0.70.1 version.
 
-- 管理员专属“管理”入口：部署概览、用户管理、全部设备、全部连接、系统设置、运行状态和操作记录。
-- 支持搜索和创建普通用户、修改显示名称、重置密码、启用／停用及删除账号；显示用户资源数量与月度流量。
-- 删除前需输入目标用户名并核对资源影响；编辑和删除保留版本校验，冲突时需加载最新数据后重新确认。唯一管理员不能被停用或删除。
-- 新账号与重置密码的临时凭据仅在内存中展示，界面防截屏，复制时标记为敏感内容；关闭提示或退出账号后清除当前展示内容。
-- 支持查看各用户的设备与连接、分页查看连接和操作记录，以及调整用户名前缀规则和普通用户 TCP/UDP 新建权限。
-- 登录及恢复会话后从服务端确认角色，普通用户及设备绑定会话不会获得管理入口；权限失效或退出账号会清除管理数据。
-- 保留 6.0.1 的 AndroidKeyStore 登录修复、持续发布签名与 APK 单附件发布规则。
+- Fix Web multi-tab refresh, stale access-policy writes and persistent backup health.
+- Reject unverified/incomplete desktop updates and use stable semantic versions.
+- Add full REST OpenAPI/JSON Schema and capability-driven Android transport controls.
+- Add TOTP/recovery codes, session management and single-use enrollment codes.
+- Add OS credential protection, redacted diagnostics and host-only admin recovery.
+- Add encrypted off-host backup, verified fresh-volume restore, preflight/NAS
+  templates, monitoring and alert rules.
+- Add encrypted Android server profiles, tags/favorites and per-item batch operations.
+- Publish checksums, SBOMs, provenance and verification evidence as durable assets.
 
-可直接覆盖安装 6.0.1。管理员联网打开 App 后会自动识别管理权限。建议配合服务端 6.1.1 使用；TCP/UDP 授权开关不会代替服务器端口范围与防火墙配置。管理员修改自己的密码及其他高级操作仍可使用网页控制台。
+Windows/macOS have no publisher certificates configured and are explicitly unsigned;
+their signing/notarization workflow is ready. Android retains its release signing
+identity. Read the migration and platform-security guides before upgrading.

@@ -1,38 +1,37 @@
-<div align="center">
-  <img src="docs/assets/HomeTunnel.svg" alt="Home Tunnel" width="72" height="72">
-  <h1>Home Tunnel for Android</h1>
-  <p><strong>Manage your home devices and connections anywhere</strong></p>
-  <p><a href="https://github.com/ZHanry/home-tunnel-android/releases/latest"><img src="https://img.shields.io/badge/release-6.1.0-176653" alt="Release 6.1.0"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a></p>
-  <p><a href="README.md">简体中文</a> · <a href="https://zhanry.github.io/home-tunnel/">Website</a></p>
-</div>
+# Home Tunnel Android
 
-The 6.0 app introduces Overview, Devices, Services and Account. Android manages your home network remotely; tunnels run on your home computer or NAS.
+**Manage your servers and home devices from Android**
 
-## Install
+[![Stable 7.0.0](https://img.shields.io/badge/stable-7.0.0-176653)](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0) [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Download `HomeTunnel-Android-6.1.0-arm64-v8a.apk` from [Releases](https://github.com/ZHanry/home-tunnel-android/releases/latest). Android 8.0+ on arm64 is supported. The APK uses the persistent project signing certificate and can update earlier versions signed with that certificate. Only the APK appears in release downloads.
+[简体中文](README.md) · [Website](https://zhanry.github.io/home-tunnel/en/) · [Downloads](https://github.com/ZHanry/home-tunnel/blob/main/docs/DOWNLOADS.md) · [Quick start](https://github.com/ZHanry/home-tunnel/blob/main/docs/GETTING_STARTED.md)
 
-6.0.1 fixes the `Caller-provided IV not permitted` login error. Update without uninstalling or clearing application data.
 
-## Use
+The Android 8.0+ management app for Home Tunnel. Your phone controls devices and
+connections; tunnels run continuously on a Windows/macOS/Linux computer or NAS.
 
-1. Enter your Home Tunnel console HTTPS address and account.
-2. Select a computer or NAS in Devices to see its services.
-3. Explicitly select a device when creating a connection, then enter an address reachable from it.
-4. Search by name or address, edit a connection or copy its public address.
+[Download signed 7.0.0 APK (arm64-v8a)](https://github.com/ZHanry/home-tunnel-android/releases/download/v7.0.0/HomeTunnel-Android-7.0.0-arm64-v8a.apk) · [Release evidence](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0)
 
-`127.0.0.1` refers to the selected computer or NAS. Signing out on the phone ends its management session while home tunnels continue running. The app follows the system theme and supports English and Simplified Chinese.
+- Save up to 20 encrypted server/account profiles with isolated request/cache state.
+- TOTP/recovery-code sign-in, MFA setup, session revocation and one-time enrollment codes.
+- Capability-based HTTP/TCP/UDP, SSH/RDP/RTSP presets and versioned administrator port settings.
+- Device tags/favorites and batch pause/resume for up to 50 connections with per-item results.
+- Account administration, status/audit views and redacted management diagnostics.
 
-## Administration
+Requires server **7.0.0**. Enter your own HTTPS origin, sign in and select an enrolled
+home device. Management discovery accepts an absent FRPS certificate while still
+verifying HTTPS. Existing encrypted single-account state migrates on upgrade;
+uninstalling can destroy local keys and is not required.
 
-Administrators get a Manage tab for user creation, display-name changes, password resets, enable/disable and deletion, plus deployment-wide devices, connections, health, activity and settings. Restored sessions recheck the server role; regular users do not receive this entry. Temporary passwords are shown only in memory, and the sole administrator is protected. Server 6.1.1 is recommended.
+Build with JDK 17 and Android SDK 35:
 
-## Development
+```sh
+./gradlew test lint assembleDebug assembleDebugAndroidTest
+python3 scripts/check-repository.py
+```
 
-Use JDK 17, Android SDK 35 and the included Gradle Wrapper. Run `./gradlew test lint assembleDebug`. GitHub Actions builds official APKs with the protected release signing configuration; the private key is never committed.
+Official releases retain the established Android signing identity pinned in
+`release-signing-cert.sha256`. CI checks KeyStore and management UI on API 26/35.
+Release assets retain checksums, SBOMs and signing/install evidence.
 
-[Building](docs/BUILDING.md) · [Releasing](docs/RELEASING.md) · [Release notes](docs/RELEASE_NOTES.md) · [Security](SECURITY.md) · [Project hub](https://github.com/ZHanry/home-tunnel)
-
-<img src="docs/assets/overview.jpg" alt="Home Tunnel 6.0 Android" width="320">
-
-<img src="docs/assets/administration.jpg" alt="Administrator workspace" width="320">
+[Feature guide](docs/PLATFORM_FEATURES.md) · [API](contracts/README.md) · [Project](https://github.com/ZHanry/home-tunnel)
