@@ -2,3 +2,11 @@
 # These are content digests verified by check-repository.py, not credentials.
 7c99af7fb7d25cd358fd3793ed4cba200f6567dd:contracts/lock.json:generic-api-key:8
 7c99af7fb7d25cd358fd3793ed4cba200f6567dd:contracts/lock.json:generic-api-key:9
+# Public ES256 keyset-rotation test vectors, signed offline; private keys discarded.
+# These signatures authorize only fixture server/key identities and are not login JWTs.
+917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:contracts/rd-keyset-vectors.json:jwt:56
+917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:contracts/rd-keyset-vectors.json:jwt:91
+917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:contracts/rd-keyset-vectors.json:jwt:92
+917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:app/src/test/resources/rd-keyset-vectors.json:jwt:56
+917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:app/src/test/resources/rd-keyset-vectors.json:jwt:91
+917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:app/src/test/resources/rd-keyset-vectors.json:jwt:92

@@ -58,7 +58,7 @@ jobs:
     - if: matrix.target == 'android-native'
       name: Build shared core and JNI under CodeQL
       run: |
-        sdkmanager 'ndk;27.2.12479018' 'cmake;3.22.1'
+        source scripts/install-native-tools.sh
         python3 scripts/build-remote-native.py
         ./gradlew --no-daemon -PremoteNativeRoot="$PWD/.cache/remote-native" assembleDebug --no-build-cache --rerun-tasks
     - uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81

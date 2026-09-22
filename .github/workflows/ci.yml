@@ -36,7 +36,7 @@ jobs:
           gradle/wrapper/gradle-wrapper.properties
     - name: Test, lint, and assemble the unsigned debug client
       run: |
-        sdkmanager 'ndk;27.2.12479018' 'cmake;3.22.1'
+        source scripts/install-native-tools.sh
         python3 scripts/build-remote-native.py
         ./gradlew --no-daemon -PremoteNativeRoot="$PWD/.cache/remote-native" test lint assembleDebug assembleDebugAndroidTest
     - name: Share compiled debug instrumentation packages

@@ -87,7 +87,7 @@ jobs:
         printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
         test -s "$keystore"
         export ANDROID_RELEASE_STORE_FILE="$keystore"
-        sdkmanager 'ndk;27.2.12479018' 'cmake;3.22.1'
+        source scripts/install-native-tools.sh
         python3 scripts/build-remote-native.py
         (
           cd "$GITHUB_WORKSPACE"
