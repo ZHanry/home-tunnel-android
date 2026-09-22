@@ -45,7 +45,7 @@ else:
         build = (root / "app/build.gradle.kts").read_text()
         assert 'applicationId = "io.github.zhanry.hometunnel"' in build
         properties = (root / "gradle.properties").read_text()
-        version_name = re.search(r"^HOME_TUNNEL_VERSION_NAME=(\d+\.\d+\.\d+)$", properties, re.M).group(1)
+        version_name = re.search(r"^HOME_TUNNEL_VERSION_NAME=(\d+\.\d+\.\d+(?:-rc\.[1-9]\d*)?)$", properties, re.M).group(1)
         version_code = int(re.search(r"^HOME_TUNNEL_VERSION_CODE=(\d+)$", properties, re.M).group(1))
         assert 7_000_000 < version_code <= 2_100_000_000, "Each new RC/stable needs an explicit increasing Android versionCode"
         assert (root / "release-signing-cert.sha256").read_text().strip() == "d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702"

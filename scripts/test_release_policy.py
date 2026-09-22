@@ -29,7 +29,13 @@ class ReleasePolicyTests(unittest.TestCase):
             module.validate_release_tag("v8.0.0-rc.0", "8.0.0", "internal-testing")
 
     def test_first_project_version_is_allowed_as_a_test_build(self):
-        self.assertEqual(module.validate_release_tag("v0.1.0-rc.1", "0.1.0", "internal-testing"), ("0.1.0", "1"))
+        self.assertEqual(module.validate_release_tag("v0.1.0-rc.1", "0.1.0-rc.1", "internal-testing"), ("0.1.0", "1"))
+
+    def test_full_candidate_identity_must_be_committed_in_source(self):
+        self.assertEqual(module.validate_release_tag("v8.0.0-rc.1", "8.0.0-rc.1", "internal-testing"), ("8.0.0", "1"))
+        for tag, source in (("v8.0.0-rc.1", "8.0.0"), ("v8.0.0-rc.2", "8.0.0-rc.1"), ("v8.0.0", "8.0.0-rc.1")):
+            with self.assertRaisesRegex(SystemExit, "source version"):
+                module.validate_release_tag(tag, source, "internal-testing")
 
     def test_internal_testing_cannot_publish_a_stable_tag(self):
         with self.assertRaisesRegex(SystemExit, "prereleases only"):

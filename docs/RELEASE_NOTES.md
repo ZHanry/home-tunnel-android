@@ -1,8 +1,8 @@
-# Home Tunnel Android 8.0.0 development candidate
+# Home Tunnel Android 8.0.0-rc.1 development candidate
 
 This prerelease adds the Android controller's remote-desktop protocol and security
 foundation. Existing tunnel management remains available. The source version is
-8.0.0; prerelease packages display their full `8.0.0-rc.N` identity.
+`8.0.0-rc.1`; the source, tag, APK/AAB display version and asset names must match exactly.
 
 - Add a remote-desktop entry, endpoint enrollment, parent-account reauthentication,
   AndroidKeyStore P-256 identity, DPoP requests, WSS authentication and pairing-code

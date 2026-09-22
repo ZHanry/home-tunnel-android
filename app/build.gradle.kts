@@ -8,8 +8,8 @@ plugins {
 val productVersionValue = providers.gradleProperty("HOME_TUNNEL_VERSION_NAME").get()
 val versionNameValue = providers.gradleProperty("HOME_TUNNEL_RELEASE_VERSION").orElse(productVersionValue).get()
 val versionCodeValue = providers.gradleProperty("HOME_TUNNEL_VERSION_CODE").get().toInt()
-require(Regex(Regex.escape(productVersionValue) + "(?:-rc\\.[1-9][0-9]*)?").matches(versionNameValue)) {
-    "Release display version must match the source version or its RC tag"
+require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-rc\\.[1-9][0-9]*)?").matches(productVersionValue) && versionNameValue == productVersionValue) {
+    "Release display version must exactly match the complete source version"
 }
 require(versionCodeValue in 1..2_100_000_000) { "Android versionCode is outside the supported range" }
 val remoteNativeRoot = providers.gradleProperty("remoteNativeRoot").orNull

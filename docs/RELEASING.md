@@ -1,6 +1,6 @@
 # 发布流程
 
-8.0 开发预览的 `compatibility.json` 使用 `internal-testing`，只允许 `v8.0.0-rc.N` 预发布标签。原生媒体未就绪，不能以正式版或“全部远控功能可用”发布。源码基础版本保持 `8.0.0`；构建通过 `HOME_TUNNEL_RELEASE_VERSION` 设置完整 `8.0.0-rc.N`，APK/AAB 的版本显示与文件名均保留 RC 后缀。
+8.0 开发预览的 `compatibility.json` 使用 `internal-testing`，只允许预发布标签。当前源码版本为完整的 `8.0.0-rc.1`，标签必须严格为 `v8.0.0-rc.1`；APK/AAB 版本显示、文件名与源码完全一致。`HOME_TUNNEL_RELEASE_VERSION` 不允许覆盖为另一个 RC。每次新候选版必须先提交源码版本变更。原生媒体未就绪，不能以正式版或“全部远控功能可用”发布。
 
 Android `versionCode` 从 `8000001` 开始独立递增，每次新 RC 和后续正式版都必须高于所有已发布 APK/AAB（包含预发布）的编号。例如 RC1 为 8000001，RC2 为 8000002，随后正式版使用 8000003。编号在 `gradle.properties` 中显式提交，不根据 Actions 次数、时间或语义版本公式重用。发布任务读取所有历史 Release 的证据并阻止降号、重复编号或覆盖已公开产物；同一个尚未公开标签的失败重试保持编号。
 
