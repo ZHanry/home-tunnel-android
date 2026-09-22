@@ -135,6 +135,9 @@ class RemoteApi(
     }, idempotency = uuid(requestId))
     suspend fun session(id: String): JsonObject = request("GET", "rd/sessions/${uuid(id)}")
     suspend fun closeSession(id: String): JsonObject = request("POST", "rd/sessions/${uuid(id)}/close", buildJsonObject { put("reason", "user_closed") })
+    suspend fun reportReady(id: String, epoch: Long, version: Long): JsonObject = request("POST", "rd/sessions/${uuid(id)}/report", buildJsonObject {
+        put("phase", "ready"); put("connection_epoch", epoch); put("expected_version", version); put("path_verified", true)
+    })
     suspend fun signalTicket(purpose: String = "connect"): JsonObject {
         require(purpose in setOf("connect", "reauth"))
         if (purpose == "reauth") ensureToken(force = true)

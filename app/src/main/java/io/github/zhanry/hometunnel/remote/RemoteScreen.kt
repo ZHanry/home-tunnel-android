@@ -2,12 +2,12 @@ package io.github.zhanry.hometunnel.remote
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,6 +62,7 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
     var permissions by remember { mutableStateOf(setOf("view", "input.keyboard", "input.pointer", "input.text")) }
     var selected by remember { mutableStateOf(emptyList<RemoteSelectedFile>()) }
     var localError by remember { mutableStateOf<String?>(null) }
+    var inputText by remember { mutableStateOf("") }
     val files = remember { RemoteFiles(context.contentResolver) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) scope.launch {
@@ -111,7 +112,7 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
             Text(text("本次配对请求的权限", "Permissions requested for this pairing"), style = MaterialTheme.typography.titleMedium)
             P.permissions.forEach { permission ->
                 Row {
-                    Checkbox(checked = permission in permissions, enabled = permission != "view" && !state.loading,
+                    Checkbox(checked = permission in permissions, enabled = permission != "view" && !state.loading && (!state.native.available || permission in state.native.permissions),
                         onCheckedChange = { enabled -> permissions = if (enabled) permissions + permission else permissions - permission })
                     Text(permissionLabel(permission), Modifier.padding(top = 12.dp))
                 }
@@ -132,14 +133,37 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
         if (state.sessionId != null) item {
             Text(state.phase)
             Box(Modifier.fillMaxWidth().height(300.dp)) {
-                AndroidView(factory = { viewContext -> SurfaceView(viewContext).apply {
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) { controller.setSurface(holder.surface) }
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { controller.setSurface(holder.surface) }
-                        override fun surfaceDestroyed(holder: SurfaceHolder) { controller.setSurface(null) }
-                    })
-                } }, modifier = Modifier.fillMaxSize())
+                AndroidView(factory = { viewContext -> RemoteSurfaceView(viewContext, controller) },
+                    update = { it.display(state.display) }, modifier = Modifier.fillMaxSize())
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = state.phase == "active" && !state.inputEnabled, onClick = {
+                    runCatching { controller.requestControl() }.onFailure { localError = "RD_CONTROL_NOT_READY" }
+                }) { Text(text("请求控制", "Request control")) }
+                OutlinedButton(enabled = state.inputEnabled, onClick = { runCatching { controller.releaseControl() } }) { Text(text("释放控制", "Release control")) }
+            }
+            Text(if (state.inputEnabled) text("已取得控制：轻触点击，拖动移动鼠标。", "Control enabled: tap to click and drag to move the pointer.")
+                else text("仅查看画面。请求控制并完成同步后才能输入。", "Viewing only. Request control and wait for synchronization before input."))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Esc" to 41, "Tab" to 43, "Enter" to 40, "⌫" to 42).forEach { (label, usage) ->
+                    OutlinedButton(enabled = state.inputEnabled && controller.canUse("input.keyboard"), onClick = {
+                        runCatching { controller.key(usage, true); controller.key(usage, false) }
+                            .onFailure { runCatching { controller.releaseControl() }; localError = "RD_INPUT_FAILED" }
+                    }) { Text(label) }
+                }
+            }
+            OutlinedTextField(inputText, { if (it.toByteArray().size <= P.TEXT_BYTES) inputText = it },
+                enabled = state.inputEnabled && controller.canUse("input.text"), modifier = Modifier.fillMaxWidth(),
+                label = { Text(text("输入法文本", "Text input")) })
+            OutlinedButton(enabled = inputText.isNotEmpty() && state.textStatus != "pending" && state.inputEnabled && controller.canUse("input.text"), onClick = {
+                runCatching { controller.submitText(inputText); inputText = "" }.onFailure { localError = "RD_INPUT_FAILED" }
+            }) { Text(text("发送文本", "Send text")) }
+            state.textStatus?.let { status -> Text(when (status) {
+                "pending" -> text("等待远端确认文本输入。", "Waiting for text input confirmation.")
+                "confirmed" -> text("远端已确认文本输入。", "The host confirmed text input.")
+                "unconfirmed" -> text("未收到确认，请先检查远端画面，避免重复输入。", "No confirmation received. Check the remote screen before retrying.")
+                else -> text("远端未能输入文本。", "The host could not enter the text.")
+            }) }
             Button(onClick = { controller.closeSession() }) { Text(text("断开连接", "Disconnect")) }
         }
         item {

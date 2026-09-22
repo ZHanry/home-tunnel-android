@@ -13,6 +13,7 @@ require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-rc\\.[1-9][0-9]*)?").matches(productV
 }
 require(versionCodeValue in 1..2_100_000_000) { "Android versionCode is outside the supported range" }
 val remoteNativeRoot = providers.gradleProperty("remoteNativeRoot").orNull
+val remoteControllerArm64 = providers.gradleProperty("remoteControllerArm64").orNull == "true"
 
 fun signingValue(environmentName: String, propertyName: String): String? =
     providers.environmentVariable(environmentName).orNull
@@ -35,6 +36,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.zhanry.hometunnel"
+        buildConfigField("boolean", "REMOTE_CONTROLLER_BACKEND", remoteControllerArm64.toString())
         minSdk = 26
         ndk { abiFilters += setOf("arm64-v8a") }
         targetSdk = 35
@@ -71,7 +73,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             // Older x86_64 emulators cannot translate the arm64 UI tooling libraries.
-            ndk { abiFilters += setOf("arm64-v8a", "x86_64") }
+            ndk { abiFilters += if (remoteControllerArm64) setOf("arm64-v8a") else setOf("arm64-v8a", "x86_64") }
         }
         release {
             isMinifyEnabled = true
@@ -132,8 +134,9 @@ android {
 if (remoteNativeRoot != null) {
     val verifyRemoteNative = tasks.register<Exec>("verifyRemoteNative") {
         workingDir(rootProject.projectDir)
-        commandLine(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
-            "scripts/verify-remote-native.py", file(remoteNativeRoot).absolutePath)
+        commandLine(listOf(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
+            "scripts/verify-remote-native.py", file(remoteNativeRoot).absolutePath) +
+            if (remoteControllerArm64) listOf("--abis", "arm64-v8a") else emptyList())
     }
     tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(verifyRemoteNative) }
 }

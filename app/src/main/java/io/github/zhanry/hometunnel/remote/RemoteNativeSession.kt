@@ -6,7 +6,7 @@ import android.view.Surface
 import androidx.annotation.Keep
 import java.io.Closeable
 
-data class NativeRemoteCapability(val available: Boolean, val reason: String, val maxSessions: Int = 0)
+data class NativeRemoteCapability(val available: Boolean, val reason: String, val maxSessions: Int = 0, val permissions: Set<String> = emptySet())
 
 /** Optional verified shared core. A missing backend is an explicit product state, never success. */
 @Keep
@@ -15,6 +15,7 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
     private var handle = 0L
     private var generation = 0L
     private var closed = false
+    private var started = false
     val capability: NativeRemoteCapability
 
     init {
@@ -26,7 +27,8 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
                 val values = RemoteNativeBridge.capabilities(handle)
                 require(values.size == 5)
                 val available = values[0] == 1L && values[2] == 1L
-                NativeRemoteCapability(available, if (available) "" else "RD_MEDIA_BACKEND_UNAVAILABLE", values[3].toInt().coerceIn(0, 4))
+                NativeRemoteCapability(available, if (available) "" else "RD_MEDIA_BACKEND_UNAVAILABLE", values[3].toInt().coerceIn(0, 4),
+                    io.github.zhanry.hometunnel.remote.protocol.RemoteProtocol.permissions.filterIndexed { index, _ -> values[4] and (1L shl index) != 0L }.toSet())
             } catch (_: LinkageError) {
                 NativeRemoteCapability(false, "RD_NATIVE_ABI_MISMATCH")
             } catch (_: RuntimeException) {
@@ -34,10 +36,11 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
             }
         }
     }
-    @Synchronized fun start(ticket: String) {
+    @Synchronized fun start(context: ByteArray) {
         checkAvailable()
-        require(ticket.toByteArray().size in 1..16 * 1024)
-        checkResult(RemoteNativeBridge.start(handle, ticket.toByteArray()))
+        require(context.size in 1..64 * 1024)
+        checkResult(RemoteNativeBridge.start(handle, context))
+        started = true
     }
     @Synchronized fun signal(envelope: ByteArray) {
         checkAvailable(); require(envelope.size in 1..64 * 1024)
@@ -52,6 +55,7 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
         checkResult(RemoteNativeBridge.surface(handle, surface, ++generation))
     }
     @Synchronized fun pause() { if (!closed && handle != 0L) RemoteNativeBridge.pause(handle, 1) }
+    @Synchronized fun resume() { if (!closed && started) signal("{\"type\":\"local.resume\"}".toByteArray()) }
     @Synchronized override fun close() {
         if (closed) return
         closed = true; generation++

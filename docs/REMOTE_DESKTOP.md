@@ -2,7 +2,7 @@
 
 This preview implements account-bound P-256 AndroidKeyStore identities, DPoP REST authentication, single-use WebSocket authentication, server-key pinning, pairing confirmation, bounded protocol parsing, and local input/lease gates. The existing tunnel-management app remains available.
 
-The bundled native artifact is currently a **security core with no media backend**. It returns `available=false`; Android does not label a connection successful or open input, microphone, clipboard or file permissions. Video, audio, touch/keyboard control and end-to-end file transfer are not usable in this candidate. The screen explicitly reports this limitation. A JNI/Surface adapter and SAF/clipboard/transfer primitives prepare the integration but are not evidence of a functioning media session.
+The default native artifact is a **security core with no media backend** and returns `available=false`. A separately built, same-source Android arm64 controller now implements real WebRTC/VP8 receive and Surface output, native ticket/lease/grant and proof verification, selected direct-UDP checks, and synchronized keyboard/pointer/text input. It must pass the import checks below before JNI may link it. Audio, clipboard and files remain unavailable in this controller profile. A successful compile or imported library is not physical-device acceptance.
 
 ## Build and provenance
 
@@ -17,6 +17,24 @@ python scripts/build-remote-native.py
 
 The builder produces arm64 and x86_64 core libraries; Gradle validates their hashes before linking JNI. Release packages include arm64 only. Missing native artifacts are reported as unavailable in a management-only developer build. Release CI requires the locked core, JNI and matching C++ runtime, verifies their identical APK/AAB library sets and 16 KiB ELF page alignment, and publishes native provenance. No independent WebRTC AAR or second transport stack is included.
 
+For the real controller, build `scripts/build-remote-android-webrtc.py --build` in
+the exact clean client repository on Linux. The Android source lock must first be
+imported from that same native source tree. Review the CI artifact's manifest
+SHA-256, then import and build explicitly:
+
+```sh
+python scripts/import-remote-controller.py /path/to/android-webrtc-arm64 --reviewed-manifest-sha256 REVIEWED_SHA256
+./gradlew -PremoteNativeRoot="$PWD/.cache/remote-controller" -PremoteControllerArm64=true test lint assembleDebug
+```
+
+The importer checks every SDK file, source tree, dependency lock, toolchain recipe
+and public header. The GN build checks the C exports, static C++ runtime boundary
+and 16 KiB ELF alignment. The app passes complete signed authority to native,
+signs only correlated proof transcripts with AndroidKeyStore, and reports ready
+only after native confirms an actual Surface frame. The view preserves aspect
+ratio; touching outside the display cannot produce input. Input requires the
+request/grant/state/ACK sequence, and text success requires the matching host ACK.
+
 ## Permission boundaries
 
 - Android is a controller only. Microphone permission is requested only after explicit activation in an authorized session. Backgrounding, logout and account changes close the local input/microphone gates; no permanent foreground service is added.
@@ -24,8 +42,8 @@ The builder produces arm64 and x86_64 core libraries; Gradle validates their has
 - Files are selected through SAF; no broad storage permission is requested. Up to 64 individually selected files, 8 GiB per file and 32 GiB per batch are permitted by the shared protocol. Directories and images are outside this preview. The tested transfer primitives allow two active files and one unacknowledged chunk per file. A receive ACK follows the sink's commit callback; completion requires exact size, SHA-256 and successful output close. Cancellation and failed validation discard the incomplete output. Media-backend transport and actual SAF receive consent remain pending.
 - Initial server trust is pinned on first use over HTTPS. Subsequent signing-key changes require a consecutive ES256 rotation chain rooted in the pinned active key, valid key fingerprints and validity intervals. Same-version mutations, instance changes and version/restore-epoch rollback fail closed. Restore-epoch changes clear the local remote session and authentication. Explicit recovery for lost pins or invalid chains is not implemented; failures never reset trust automatically.
 - Before native startup, Kotlin independently verifies the server ticket, lease and host-signed grant against the local account, selected endpoints and key fingerprints, server instance/restore epoch, session and original pairing request. One-session grants must name that exact request; renewal cannot change grant or account-token versions or extend past the grant/signing-key expiry. The shared public authorization vectors exercise cross-client rejection behavior.
-- Each input handshake uses a fresh UUID echoed by `CONTROL_GRANTED`, `INPUT_STATE` and `INPUT_SYNC_ACK`. Input stays disabled until the matching epoch/layout acknowledgement arrives. Backgrounding, surface loss, layout changes, explicit release and a five-second pending-handshake deadline invalidate it. Delayed acknowledgements leave the local session read-only rather than terminating video. These gates do not replace the still-required native readiness and media integration.
+- Each input handshake uses a fresh UUID echoed by `CONTROL_GRANTED`, `INPUT_STATE` and `INPUT_SYNC_ACK`. Input stays disabled until the matching epoch/layout acknowledgement arrives. Backgrounding, surface loss, layout changes, explicit release and a five-second pending-handshake deadline invalidate it. Delayed acknowledgements leave the local session read-only rather than terminating video. Both Kotlin and the linked native controller enforce these gates independently.
 
 ## Validation still required
 
-JVM protocol/crypto/state/transfer tests and AndroidKeyStore instrumentation are separate evidence. Successful compilation is not a physical-device test. The media engine, native readiness callbacks, audio routes, input lifecycle, actual transfer consent, Wi-Fi/cellular migration, codec negotiation, physical devices and sustained-session matrices remain release blockers for claiming functional remote desktop.
+JVM protocol/crypto/state/transfer tests and AndroidKeyStore instrumentation are separate evidence. Successful compilation is not a physical-device test. Real Surface decoding, input lifecycle, Wi-Fi/cellular migration, codec negotiation, physical devices and sustained-session matrices remain required before claiming an accepted Android controller. Audio routes and actual clipboard/file transfer consent and transport need separate implementation and acceptance.

@@ -42,6 +42,17 @@ class RemoteAuthorizationTest {
         assertEquals(900_000L, result.remainingLeaseMs)
         assertTrue(RemoteKeyset.advance(null, keys, now).anchor.isNotEmpty())
     }
+    @Test fun `native context retains signed authority and local pins instead of an authorization boolean`() {
+        val context = RemoteJson.parse(RemoteAuthorization(binding, keys).nativeContext(snapshot(), now))
+        for (kind in listOf("ticket", "lease", "grant")) assertEquals(signed(kind), context.string("${kind}_jws"))
+        assertEquals(keys, context.getValue("initial_trust_pin")); assertEquals(keys, context.getValue("server_keyset"))
+        assertEquals(binding.issuer, context.string("origin"))
+        assertEquals(binding.sessionRequestId, context.string("session_request_id"))
+        assertEquals(claims("ticket").getValue("grant_version"), context.getValue("grant_version"))
+        assertTrue("authorized" !in context && "verified" !in context)
+        val corrupted = JsonObject(snapshot() + ("grant_jws" to JsonPrimitive(signed("ticket"))))
+        assertFails { RemoteAuthorization(binding, keys).nativeContext(corrupted, now) }
+    }
     @Test fun `validly signed shared negative vectors cannot cross authorization boundaries`() {
         val verifier = RemoteAuthorization(binding, keys)
         val cases = vectors.getValue("rejected") as JsonArray

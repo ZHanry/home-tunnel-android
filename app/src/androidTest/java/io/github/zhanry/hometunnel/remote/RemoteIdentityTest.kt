@@ -1,6 +1,7 @@
 package io.github.zhanry.hometunnel.remote
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.zhanry.hometunnel.BuildConfig
 import java.security.KeyStore
 import java.util.UUID
 import kotlinx.serialization.json.buildJsonObject
@@ -37,12 +38,18 @@ class RemoteIdentityTest {
             }
         }
     }
-    @Test fun securityCoreNeverAdvertisesAnUnimplementedMediaEngine() {
+    @Test fun nativeFixtureMatchesTheExplicitlySelectedBackend() {
         assertTrue("The native CI fixture must load JNI and all transitive native libraries", RemoteNativeBridge.loaded)
         val session = RemoteNativeSession { _, _, _, _ -> }
         try {
-            assertFalse(session.capability.available)
-            assertEquals("RD_MEDIA_BACKEND_UNAVAILABLE", session.capability.reason)
+            if (BuildConfig.REMOTE_CONTROLLER_BACKEND) {
+                assertTrue(session.capability.available)
+                assertEquals(setOf("view", "input.keyboard", "input.pointer", "input.text"), session.capability.permissions)
+                assertEquals("", session.capability.reason)
+            } else {
+                assertFalse(session.capability.available)
+                assertEquals("RD_MEDIA_BACKEND_UNAVAILABLE", session.capability.reason)
+            }
         } finally { session.close(); session.close() }
     }
 }

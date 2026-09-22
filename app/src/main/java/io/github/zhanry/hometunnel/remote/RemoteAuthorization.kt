@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** Values captured from the local account, selected host, pairing and session request. */
 data class RemoteAuthorizationBinding(
@@ -64,6 +66,30 @@ class RemoteAuthorization(private val binding: RemoteAuthorizationBinding, priva
         val lease = lease(snapshot.string("lease_jws"), ticket, now)
         if (grant["expires_at"] != JsonNull) require(Instant.parse(grant.string("expires_at")).epochSecond >= lease.number("exp")) { "RD_GRANT_EXPIRED" }
         return RemoteVerifiedAuthorization(ticket, lease, grant, remainingLeaseMs(lease, now))
+    }
+
+    /** Full independently verifiable native context; a caller-supplied trusted boolean is never accepted. */
+    fun nativeContext(snapshot: JsonObject, now: Instant = Instant.now(), stunUrls: List<String> = emptyList()): ByteArray {
+        val verified = authorize(snapshot, now)
+        require(stunUrls.size <= 4 && stunUrls.all(RemoteConnectionPolicy::validStun)) { "RD_PATH_REJECTED" }
+        val context = buildJsonObject {
+            put("stun_urls", JsonArray(stunUrls.map(::JsonPrimitive)))
+            put("session_id", binding.sessionId); put("connection_epoch", binding.connectionEpoch)
+            put("session_request_id", binding.sessionRequestId); put("grant_id", binding.grantId)
+            put("origin", binding.issuer); put("owner_user_id", binding.ownerUserId)
+            put("host_endpoint_id", binding.hostEndpointId); put("controller_endpoint_id", binding.controllerEndpointId)
+            put("restore_epoch", binding.restoreEpoch)
+            put("grant_version", verified.ticket.getValue("grant_version"))
+            put("user_token_version", verified.ticket.getValue("user_token_version"))
+            put("local_permissions", JsonArray(binding.permissions.sorted().map(::JsonPrimitive)))
+            put("local_grant_revoked", false)
+            put("host_public_jwk", snapshot.getValue("host_public_jwk"))
+            put("controller_public_jwk", snapshot.getValue("controller_public_jwk"))
+            put("initial_trust_pin", trustedKeys); put("server_keyset", trustedKeys)
+            for (name in listOf("ticket_jws", "lease_jws", "grant_jws")) put(name, snapshot.getValue(name))
+        }.toString().toByteArray()
+        require(context.size in 1..64 * 1024) { "RD_AUTHORIZATION_TOO_LARGE" }
+        return context
     }
 
     fun ticket(compact: String, now: Instant = Instant.now()): JsonObject = serverClaims(compact, false, now)

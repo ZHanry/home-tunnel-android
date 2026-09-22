@@ -101,7 +101,7 @@ extern "C" JNIEXPORT jlongArray JNICALL JNI_METHOD(capabilities)(JNIEnv* env, jo
   return array;
 }
 extern "C" JNIEXPORT jint JNICALL JNI_METHOD(start)(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
-  return with_bytes(env, handle, bytes, 16384, ht_rd_start);
+  return with_bytes(env, handle, bytes, HT_RD_MAX_SIGNAL_BYTES, ht_rd_start);
 }
 extern "C" JNIEXPORT jint JNICALL JNI_METHOD(signal)(JNIEnv* env, jobject, jlong handle, jbyteArray bytes) {
   return with_bytes(env, handle, bytes, HT_RD_MAX_SIGNAL_BYTES, ht_rd_on_signal);

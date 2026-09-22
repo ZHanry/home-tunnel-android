@@ -17,7 +17,21 @@ def verify(directory, abis):
         raise SystemExit("Native ABI header hash does not match the source lock")
     for abi in abis:
         record = json.loads((directory / abi / "remote-artifact.json").read_text())
-        for key in ("abi", "status", "source_revision", "source_tree_sha256", "source_archive_sha256", "deps_lock_sha256", "header_sha256", "available"):
+        controller = record.get("status") == "webrtc-controller-linked-device-acceptance-required"
+        if controller:
+            manifest_path = directory / "android-webrtc-build.json"
+            if abi != "arm64-v8a" or record.get("available") is not True or record.get("device_media_accepted") is not False or digest(manifest_path) != record.get("controller_manifest_sha256"):
+                raise SystemExit("Unexpected controller ABI/capability or reviewed build manifest")
+            manifest = json.loads(manifest_path.read_text())
+            if manifest.get("source_files") != lock.get("source_files") or manifest.get("source_tree_sha256") != lock.get("source_tree_sha256") or manifest.get("upstream_lock_sha256") != lock.get("deps_lock_sha256"):
+                raise SystemExit("Controller build has a different same-source identity")
+            if manifest.get("files", {}).get("lib/arm64-v8a/libhome_tunnel_remote.so") != record.get("library_sha256"):
+                raise SystemExit("Controller library differs from reviewed SDK inventory")
+            if manifest.get("recipe_sha256") != digest(ROOT / "native/remote-source/android/android-build.lock.json") or manifest.get("controller_backend_linked") is not True:
+                raise SystemExit("Controller build policy or linked backend mismatch")
+        elif record.get("status") != lock.get("status") or record.get("available") != lock.get("available"):
+            raise SystemExit("Unknown native artifact capability")
+        for key in ("abi", "source_revision", "source_tree_sha256", "source_archive_sha256", "deps_lock_sha256", "header_sha256"):
             if record.get(key) != lock[key]:
                 raise SystemExit(f"Native artifact provenance mismatch: {abi} {key}")
         if record.get("target") != abi or record.get("library_sha256") != digest(directory / abi / "libhome_tunnel_remote.so"):
