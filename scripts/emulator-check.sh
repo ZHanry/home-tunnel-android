@@ -23,8 +23,9 @@ echo no | "$avdmanager" create avd --name "$avd" --package "$image" \
 grep -Fxq "$avd" instrumentation-evidence/avds.txt
 test -e /dev/kvm
 sudo chmod a+rw /dev/kvm
+"$adb" start-server
 "$sdk/emulator/emulator" -avd "$avd" -port 5554 -no-window -no-audio -no-snapshot \
-  -no-boot-anim -gpu swiftshader_indirect > instrumentation-evidence/emulator.log 2>&1 &
+  -no-boot-anim -no-metrics -gpu swiftshader_indirect > instrumentation-evidence/emulator.log 2>&1 &
 emulator_pid=$!
 trap '"$adb" -s "$serial" emu kill >/dev/null 2>&1 || true' EXIT
 echo "Wait for $avd to boot"
@@ -43,7 +44,11 @@ while (( SECONDS < deadline )); do
   sleep 2
 done
 if [[ "$booted" != true ]]; then
+  "$adb" devices -l > instrumentation-evidence/adb-devices.txt 2>&1 || true
+  timeout 10 "$adb" -s "$serial" shell getprop > instrumentation-evidence/boot-properties.txt 2>&1 || true
+  timeout 10 "$adb" -s "$serial" logcat -d > instrumentation-evidence/boot-logcat.txt 2>&1 || true
   cat instrumentation-evidence/emulator.log >&2
+  cat instrumentation-evidence/adb-devices.txt >&2
   echo 'Android did not finish booting within five minutes' >&2
   exit 1
 fi
