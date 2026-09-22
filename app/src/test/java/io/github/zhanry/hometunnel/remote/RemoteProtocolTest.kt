@@ -109,7 +109,10 @@ class RemoteProtocolTest {
         assertFails { gate.authenticatedDirectPath(1, "udp", "relay", "host") }
         gate.authenticatedDirectPath(1, "udp", "host", "srflx")
         assertFalse(gate.canUse("input.keyboard"))
-        gate.surface(true); gate.acknowledgeInput(1, 1, 1)
+        gate.surface(true); gate.displayLayout(1, 1)
+        val first = gate.requestInput().string("request_id")
+        assertEquals(first, requireNotNull(gate.controlGranted(1, first, 1)).string("request_id"))
+        assertTrue(gate.acknowledgeInput(1, first, 1, 1))
         assertTrue(gate.canUse("input.keyboard"))
         assertFalse(gate.canUse("files.send"))
         gate.feature("audio.microphone", true)
@@ -117,7 +120,9 @@ class RemoteProtocolTest {
         assertFalse(gate.featureEnabled("audio.microphone")); assertFalse(gate.canUse("input.keyboard"))
         gate.foreground(true)
         assertFalse(gate.canUse("input.keyboard")); assertFalse(gate.featureEnabled("audio.microphone"))
-        gate.acknowledgeInput(1, 2, 1)
+        val second = gate.requestInput().string("request_id")
+        gate.controlGranted(1, second, 2)
+        assertTrue(gate.acknowledgeInput(1, second, 2, 1))
         assertTrue(gate.canUse("input.keyboard"))
         now = 900_100
         assertFalse(gate.live()); assertFalse(gate.canUse("view"))
@@ -131,5 +136,39 @@ class RemoteProtocolTest {
         assertFails { gate.authenticatedDirectPath(1, "udp", "host", "host") }
         now = 999
         assertFalse(gate.live())
+    }
+    @Test fun `input grants and synchronization acknowledgements bind a fresh request and never kill video`() {
+        var now = 100L
+        val gate = RemoteSessionGate { now }
+        gate.foreground(true); gate.surface(true)
+        gate.authorized(3, setOf("view", "input.keyboard"), 900_000, 1)
+        gate.authenticatedDirectPath(3, "udp", "host", "host"); gate.displayLayout(3, 7)
+        val first = gate.requestInput().string("request_id")
+        assertFalse(gate.acknowledgeInput(3, first, 1, 7)) // No CONTROL_GRANTED / INPUT_STATE.
+        assertTrue(gate.canUse("view")); assertFalse(gate.canUse("input.keyboard"))
+        var second = gate.requestInput().string("request_id")
+        assertNull(gate.controlGranted(3, first, 1)) // Old request cannot grant the new one.
+        assertFalse(gate.canUse("input.keyboard")); assertTrue(gate.canUse("view"))
+        second = gate.requestInput().string("request_id")
+        assertEquals(2L, requireNotNull(gate.controlGranted(3, second, 2)).number("generation"))
+        assertFalse(gate.canUse("input.keyboard"))
+        gate.releaseInput()
+        assertFalse(gate.acknowledgeInput(3, second, 2, 7))
+        assertTrue(gate.canUse("view"))
+        val third = gate.requestInput().string("request_id")
+        gate.controlGranted(3, third, 3); now += 5000
+        assertFalse(gate.acknowledgeInput(3, third, 3, 7))
+        val fourth = gate.requestInput().string("request_id")
+        gate.controlGranted(3, fourth, 4)
+        gate.foreground(false); gate.foreground(true)
+        assertFalse(gate.acknowledgeInput(3, fourth, 4, 7)); assertTrue(gate.canUse("view"))
+        val fifth = gate.requestInput().string("request_id")
+        gate.controlGranted(3, fifth, 5); gate.displayLayout(3, 8)
+        assertFalse(gate.acknowledgeInput(3, fifth, 5, 7)); assertTrue(gate.canUse("view"))
+        val sixth = gate.requestInput().string("request_id")
+        gate.controlGranted(3, sixth, 6)
+        assertTrue(gate.acknowledgeInput(3, sixth, 6, 8)); assertTrue(gate.canUse("input.keyboard"))
+        gate.surface(false); gate.surface(true)
+        assertFalse(gate.acknowledgeInput(3, sixth, 6, 8)); assertTrue(gate.canUse("view"))
     }
 }

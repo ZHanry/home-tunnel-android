@@ -58,12 +58,16 @@ class RemoteController(
     private var api: RemoteApi? = null
     private var identity: RemoteIdentity? = null
     private var serverInstance: String? = null
+    private var trustedKeys: JsonObject? = null
+    private var authorization: RemoteAuthorization? = null
+    private var verifiedAuthorization: RemoteVerifiedAuthorization? = null
     private var accountKey: String? = null
     private var native: RemoteNativeSession? = null
+    private var nativeLifetime = 0L
     private var signaling: RemoteSignaling? = null
     private var signalingGeneration = 0L
     private var operation: Job? = null
-    private val gate = RemoteSessionGate(SystemClock::elapsedRealtime)
+    private var gate = RemoteSessionGate(SystemClock::elapsedRealtime)
     private var sequence = 0L
     private var controlSequence = 0L
     private var foreground = true
@@ -88,6 +92,7 @@ class RemoteController(
             val trustUpdate = try { trust.pinServer(selected.profile.publicBaseUrl, selected.user.id, keys) }
             catch (error: Exception) { clearAuthentication(); throw error }
             if (trustUpdate.restoreChanged) clearAuthentication()
+            trustedKeys = trustUpdate.anchor
             serverInstance = keys.string("server_instance_id")
             updateEndpoints(activeApi.accountEndpoints())
         } else clearAuthentication()
@@ -164,46 +169,115 @@ class RemoteController(
         val pending = requireNotNull(_state.value.pairing)
         check(pending.code != null && Instant.parse(pending.transcript.string("expires_at")).isAfter(Instant.now())) { "RD_PAIRING_EXPIRED" }
         val proof = RemoteCrypto.signJws(requireNotNull(identity), "ht-rd-pairing+jwt", pending.transcript)
-        requireNotNull(api).confirmPairing(pending.id, proof)
+        val pairing = requireNotNull(api).confirmPairing(pending.id, proof)
+        check(pairing["state"] == JsonPrimitive("confirmed") && pairing["grant_id"] == JsonPrimitive(pending.id)) { "RD_PAIRING_CONTEXT" }
         _state.value = _state.value.copy(pairing = null)
         // Starting is explicitly blocked until the installed native artifact reports a real backend.
         check(_state.value.native.available) { "RD_MEDIA_BACKEND_UNAVAILABLE" }
-        native?.close()
-        native = RemoteNativeSession { type, _, _, _ ->
-            when (type) {
-                1, 3 -> stopLocal()
-                2 -> { gate.pause(); _state.value = _state.value.copy(phase = "paused") }
+        stopLocal()
+        try {
+            val nativeGeneration = ++nativeLifetime
+            native = RemoteNativeSession { type, _, _, _ ->
+                scope.launch {
+                    if (nativeLifetime == nativeGeneration) when (type) {
+                        1, 3 -> stopLocal()
+                        2 -> { gate.pause(); _state.value = _state.value.copy(phase = "paused") }
+                    }
+                }
             }
-        }
-        check(requireNotNull(native).capability.available) { "RD_MEDIA_BACKEND_UNAVAILABLE" }
-        val permissions = (pending.transcript.getValue("scope") as JsonArray).map { it.jsonPrimitive.content }.toSet()
-        val created = try { requireNotNull(api).createSession(pending.host.id, pending.id, permissions, pending.requestId) }
-        catch (error: Exception) { stopLocal(); throw error }
-        val session = created["session_id"]?.jsonPrimitive?.content ?: created.string("id")
-        _state.value = _state.value.copy(sessionId = session, phase = "pending_approval")
-        val expectedGeneration = generation
-        scope.launch {
-            delay(60_000)
-            if (generation == expectedGeneration && _state.value.sessionId == session && _state.value.phase != "active") {
-                closeSession(); _state.value = _state.value.copy(error = "RD_CONNECT_TIMEOUT")
+            check(requireNotNull(native).capability.available) { "RD_MEDIA_BACKEND_UNAVAILABLE" }
+            val permissions = (pending.transcript.getValue("scope") as JsonArray).map { it.jsonPrimitive.content }.toSet()
+            val created = requireNotNull(api).createSession(pending.host.id, pending.id, permissions, pending.requestId)
+            val session = created["session_id"]?.jsonPrimitive?.content ?: created.string("id")
+            val selected = requireNotNull(account())
+            val keys = requireNotNull(trustedKeys)
+            authorization = RemoteAuthorization(RemoteAuthorizationBinding(
+                selected.profile.publicBaseUrl.trimEnd('/'), keys.string("server_instance_id"), keys.number("restore_epoch"),
+                session, pending.requestId, created.number("connection_epoch", 0xffffffffL), selected.user.id,
+                requireNotNull(api?.endpointId), pending.host.id, requireNotNull(_state.value.fingerprint), pending.host.fingerprint,
+                permissions, pending.id,
+            ), keys)
+            _state.value = _state.value.copy(sessionId = session, phase = "pending_approval")
+            // Re-read after binding to recover an authorization event that raced the HTTP response.
+            val latest = requireNotNull(api).session(session)
+            if (latest["state"] == JsonPrimitive("authorized")) authorizeSession(latest)
+            val expectedGeneration = generation
+            scope.launch {
+                delay(60_000)
+                if (generation == expectedGeneration && _state.value.sessionId == session && _state.value.phase != "active") {
+                    closeSession(); _state.value = _state.value.copy(error = "RD_CONNECT_TIMEOUT")
+                }
             }
-        }
+        } catch (error: Exception) { stopLocal(); throw error }
     }
     fun cancelPairing() = perform {
         _state.value.pairing?.let { requireNotNull(api).rejectPairing(it.id) }
         _state.value = _state.value.copy(pairing = null)
     }
     private fun signalEvent(event: JsonObject) {
-        when (event.string("type")) {
+        val type = event.string("type")
+        if (type != "auth.expired" && event["session_id"] != JsonPrimitive(_state.value.sessionId)) return
+        when (type) {
             "session.revoked", "auth.expired" -> { stopLocal(); _state.value = _state.value.copy(error = "RD_AUTH_REVOKED") }
             "session.authorized" -> {
-                try { native?.start(event.getValue("payload").jsonObject.string("ticket_jws")) }
+                try { authorizeSession(event.getValue("payload").jsonObject) }
                 catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_PROTOCOL_MISMATCH") }
             }
-            "peer.offer", "peer.answer", "peer.candidates", "peer.candidates_done", "session.lease_updated" -> {
+            "session.state", "session.lease_updated" -> {
+                try {
+                    val payload = event.getValue("payload").jsonObject
+                    if (payload["state"] in setOf(JsonPrimitive("closing"), JsonPrimitive("closed"), JsonPrimitive("failed"), JsonPrimitive("expired"))) stopLocal()
+                    else if (verifiedAuthorization != null) renewLease(payload.string("lease_jws"))
+                } catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_PROTOCOL_MISMATCH") }
+            }
+            "peer.offer", "peer.answer", "peer.candidates", "peer.candidates_done" -> {
                 // The shared native engine owns all ticket, peer identity and path proof checks.
                 try { native?.signal(event.toString().toByteArray()) }
                 catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_PROTOCOL_MISMATCH") }
+            }
+        }
+    }
+    private fun authorizeSession(snapshot: JsonObject) {
+        val verifier = requireNotNull(authorization) { "RD_SESSION_CONTEXT" }
+        if (verifiedAuthorization != null) {
+            require(snapshot["ticket_jws"] == verifiedTicket) { "RD_SESSION_CONTEXT" }
+            renewLease(snapshot.string("lease_jws")); return
+        }
+        val verified = verifier.authorize(snapshot)
+        gate.authorized(verified.ticket.number("connection_epoch"),
+            (verified.ticket.getValue("permissions") as JsonArray).map { it.jsonPrimitive.content }.toSet(),
+            verified.remainingLeaseMs, verified.lease.number("lease_seq"))
+        gate.foreground(foreground)
+        verifiedAuthorization = verified; verifiedTicket = snapshot["ticket_jws"] as JsonPrimitive
+        requireNotNull(native).start(snapshot.string("ticket_jws"))
+        _state.value = _state.value.copy(phase = "connecting")
+        enforceLeaseDeadline(verified.remainingLeaseMs)
+    }
+    private var verifiedTicket: JsonPrimitive? = null
+    private fun renewLease(compact: String) {
+        val current = requireNotNull(verifiedAuthorization)
+        val now = Instant.now()
+        val lease = requireNotNull(authorization).lease(compact, current.ticket, now)
+        if (current.grant["expires_at"] != JsonNull) require(Instant.parse(current.grant.string("expires_at")).epochSecond >= lease.number("exp")) { "RD_GRANT_EXPIRED" }
+        if (lease == current.lease) return
+        val remaining = RemoteAuthorization.remainingLeaseMs(lease, now)
+        gate.renew(lease.number("connection_epoch"), lease.number("lease_seq"), remaining)
+        verifiedAuthorization = current.copy(lease = lease, remainingLeaseMs = remaining)
+        native?.signal(buildJsonObject {
+            put("v", JsonPrimitive(1)); put("session_id", JsonPrimitive(_state.value.sessionId))
+            put("connection_epoch", lease.getValue("connection_epoch"))
+            put("type", JsonPrimitive("session.lease_updated"))
+            put("payload", buildJsonObject { put("lease_jws", JsonPrimitive(compact)) })
+        }.toString().toByteArray())
+        enforceLeaseDeadline(remaining)
+    }
+    private fun enforceLeaseDeadline(remaining: Long) {
+        val session = _state.value.sessionId
+        val expected = generation
+        scope.launch {
+            delay(remaining + 1)
+            if (generation == expected && _state.value.sessionId == session && !gate.live()) {
+                stopLocal(); _state.value = _state.value.copy(error = "RD_LEASE_EXPIRED")
             }
         }
     }
@@ -223,7 +297,7 @@ class RemoteController(
     fun onAccountChanged() {
         generation++; signalingGeneration++; scope.coroutineContext.cancelChildren(); operation = null
         stopLocal(); signaling?.close(); signaling = null; api?.clear(); api = null
-        identity = null; serverInstance = null; accountKey = null
+        identity = null; serverInstance = null; trustedKeys = null; accountKey = null
         _state.value = RemoteViewState()
     }
     fun closeSession() {
@@ -232,7 +306,9 @@ class RemoteController(
         if (id != null) perform { api?.closeSession(id) }
     }
     private fun stopLocal() {
-        gate.close(); native?.close(); native = null; sequence = 0; controlSequence = 0
+        nativeLifetime++; gate.close(); native?.close(); native = null; sequence = 0; controlSequence = 0
+        gate = RemoteSessionGate(SystemClock::elapsedRealtime)
+        authorization = null; verifiedAuthorization = null; verifiedTicket = null
         _state.value = _state.value.copy(sessionId = null, phase = "idle")
     }
     private fun clearAuthentication() {

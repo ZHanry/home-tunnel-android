@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "repository": "ZHanry/home-tunnel-server",
-  "source_revision": "1a7b52895d77d272cd36f0e9031fff843a4b269a",
-  "source_tree_dirty": true,
+  "source_revision": "651d757fca752dfe2811140e1f5c27f91e441edc",
+  "source_tree_dirty": false,
   "published_contract_ref": null,
-  "source_tree_sha256": "9a2ee8c147dfa84777bc2149208d6f115db23a1947eec0b722e4485bf8e02d4d",
+  "source_tree_sha256": "23f4718f6417928b43e28eadfda35522706eabab4c95853434a9879ed40a1347",
   "files": [
     {
       "source": "contracts/remote-desktop.v1.json",
@@ -15,6 +15,11 @@
       "source": "contracts/remote-test-vectors.json",
       "path": "contracts/remote-test-vectors.json",
       "sha256": "e4c47ea288cf92266f09ea2b40e595c1dd333132dc3262d42e86ef9ea042b168"
+    },
+    {
+      "source": "contracts/remote-authorization-vectors.json",
+      "path": "contracts/remote-authorization-vectors.json",
+      "sha256": "6ddafdaeb937cd8500c736e62bc21cb3ee92148173c4ae984d3fb9121a26cece"
     },
     {
       "source": "control-center/test-fixtures/rd-keyset-vectors.json",

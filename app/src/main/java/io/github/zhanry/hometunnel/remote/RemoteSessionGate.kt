@@ -1,6 +1,12 @@
 package io.github.zhanry.hometunnel.remote
 
 import io.github.zhanry.hometunnel.remote.protocol.RemoteProtocol as P
+import java.util.UUID
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** Local fail-closed gate. Native independently verifies tickets, proofs and the UDP path. */
 class RemoteSessionGate(private val elapsedMillis: () -> Long) {
@@ -14,6 +20,9 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
     private var peerReady = false
     private var surfaceReady = false
     private var inputSynchronized = false
+    private var inputRequestId: String? = null
+    private var inputRequestDeadline = 0L
+    private var inputStateSent = false
     private var foreground = false
     private var closed = true
     private val enabledFeatures = mutableSetOf<String>()
@@ -23,7 +32,7 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         require(remainingLeaseMs in 1..900_000 && leaseSequence > 0)
         this.epoch = epoch; this.permissions = granted.toSet(); this.leaseSequence = leaseSequence
         lastClock = elapsedMillis(); leaseDeadline = Math.addExact(lastClock, remainingLeaseMs)
-        peerReady = false; inputSynchronized = false; inputEpoch = 0; layoutEpoch = 0; closed = false
+        peerReady = false; releaseInput(); inputEpoch = 0; layoutEpoch = 0; closed = false
         enabledFeatures.clear()
     }
     fun renew(epoch: Long, sequence: Long, remainingMs: Long) {
@@ -36,16 +45,49 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         require(protocol == "udp" && localType in setOf("host", "srflx", "prflx") && remoteType in setOf("host", "srflx", "prflx")) { "RD_NO_DIRECT_PATH" }
         peerReady = true
     }
-    fun acknowledgeInput(epoch: Long, inputEpoch: Long, layoutEpoch: Long) {
-        check(live() && peerReady && foreground && surfaceReady && epoch == this.epoch)
-        require(inputEpoch > this.inputEpoch && inputEpoch <= 0xffffffffL && layoutEpoch in 1..0xffffffffL)
-        this.inputEpoch = inputEpoch; this.layoutEpoch = layoutEpoch; inputSynchronized = true
+    fun displayLayout(epoch: Long, layoutEpoch: Long) {
+        check(live() && epoch == this.epoch)
+        require(layoutEpoch > this.layoutEpoch && layoutEpoch <= 0xffffffffL)
+        releaseInput(); this.layoutEpoch = layoutEpoch
     }
+    /** Payload for CONTROL_REQUEST. A request alone never enables input. */
+    fun requestInput(): JsonObject {
+        check(live() && peerReady && foreground && surfaceReady && layoutEpoch > 0 && permissions.any { it.startsWith("input.") })
+        val requestId = UUID.randomUUID().toString()
+        releaseInput(); inputRequestId = requestId
+        inputRequestDeadline = Math.addExact(elapsedMillis(), 5000)
+        return buildJsonObject {
+            put("request_id", requestId)
+            put("requested_input_permissions", JsonArray(permissions.filter { it.startsWith("input.") }.sorted().map(::JsonPrimitive)))
+        }
+    }
+    /** Correlated CONTROL_GRANTED returns the empty INPUT_STATE payload for resynchronization. */
+    fun controlGranted(epoch: Long, requestId: String, newInputEpoch: Long): JsonObject? {
+        if (!pendingInput(epoch, requestId) || inputStateSent || newInputEpoch <= inputEpoch || newInputEpoch > 0xffffffffL) {
+            releaseInput(); return null
+        }
+        inputEpoch = newInputEpoch; inputStateSent = true
+        return buildJsonObject {
+            put("request_id", requestId); put("generation", inputEpoch)
+            put("keys", JsonArray(emptyList())); put("buttons", 0); put("motion_sequence", 0)
+        }
+    }
+    /** Delayed INPUT_SYNC_ACKs leave video alive and input disabled. */
+    fun acknowledgeInput(epoch: Long, requestId: String, inputEpoch: Long, layoutEpoch: Long): Boolean {
+        if (!pendingInput(epoch, requestId) || !inputStateSent || inputSynchronized || inputEpoch != this.inputEpoch || layoutEpoch != this.layoutEpoch) {
+            releaseInput(); return false
+        }
+        inputSynchronized = true
+        return true
+    }
+    private fun pendingInput(epoch: Long, requestId: String): Boolean = live() && peerReady && foreground && surfaceReady &&
+        epoch == this.epoch && inputRequestId != null && inputRequestId == requestId && elapsedMillis() < inputRequestDeadline
+    fun releaseInput() { inputSynchronized = false; inputStateSent = false; inputRequestId = null; inputRequestDeadline = 0 }
     fun foreground(value: Boolean) {
         foreground = value
-        if (!value) { inputSynchronized = false; enabledFeatures.clear() }
+        if (!value) { releaseInput(); enabledFeatures.clear() }
     }
-    fun surface(value: Boolean) { surfaceReady = value; if (!value) inputSynchronized = false }
+    fun surface(value: Boolean) { surfaceReady = value; if (!value) releaseInput() }
     fun feature(permission: String, enabled: Boolean) {
         require(permission in P.permissions)
         if (enabled) { check(canUse(permission)); enabledFeatures += permission } else enabledFeatures -= permission
@@ -59,6 +101,6 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         lastClock = now
         return !closed
     }
-    fun pause() { peerReady = false; inputSynchronized = false; enabledFeatures.clear() }
-    fun close() { closed = true; peerReady = false; inputSynchronized = false; enabledFeatures.clear(); permissions = emptySet() }
+    fun pause() { peerReady = false; releaseInput(); enabledFeatures.clear() }
+    fun close() { closed = true; peerReady = false; releaseInput(); enabledFeatures.clear(); permissions = emptySet() }
 }

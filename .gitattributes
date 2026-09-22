@@ -51,6 +51,8 @@ native/remote-source/**/*.patch -text -whitespace
 contracts/remote-desktop.v1.json -text whitespace=cr-at-eol
 contracts/remote-test-vectors.json -text whitespace=cr-at-eol
 contracts/rd-keyset-vectors.json -text whitespace=cr-at-eol
+contracts/remote-authorization-vectors.json -text whitespace=cr-at-eol
 app/src/test/resources/remote-test-vectors.json -text whitespace=cr-at-eol
 app/src/test/resources/rd-keyset-vectors.json -text whitespace=cr-at-eol
+app/src/test/resources/remote-authorization-vectors.json -text whitespace=cr-at-eol
 app/src/main/java/io/github/zhanry/hometunnel/remote/protocol/RemoteProtocol.kt -text whitespace=cr-at-eol
