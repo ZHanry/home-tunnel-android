@@ -350,7 +350,7 @@ class RemoteController(
         gate.foreground(foreground)
         verifiedAuthorization = verified; verifiedTicket = snapshot["ticket_jws"] as JsonPrimitive
         requireNotNull(native).start(verifier.nativeContext(snapshot, stunUrls = stunUrls))
-        if (!foreground) native?.pause()
+        if (foreground) native?.resume() else native?.pause()
         _state.value = _state.value.copy(phase = "connecting")
         enforceLeaseDeadline(verified.remainingLeaseMs)
     }
@@ -396,7 +396,11 @@ class RemoteController(
         if (surface == null) _state.value = _state.value.copy(inputEnabled = false)
         try { native?.surface(surface) } catch (_: Exception) { stopLocal() }
     }
-    fun onForeground() { foreground = true; gate.foreground(true); native?.resume() }
+    fun onForeground() {
+        foreground = true; gate.foreground(true)
+        try { native?.resume() }
+        catch (_: RuntimeException) { stopLocal(); _state.value = _state.value.copy(error = "RD_SESSION_EXPIRED") }
+    }
     fun onBackground() { foreground = false; gate.foreground(false); native?.pause() }
     fun onAccountChanged() {
         generation++; signalingGeneration++; scope.coroutineContext.cancelChildren(); operation = null
