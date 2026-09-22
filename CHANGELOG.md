@@ -1,5 +1,13 @@
 # Changelog
 
+## 8.0.0 development preview — unreleased
+
+- Add account-isolated AndroidKeyStore P-256 identities, DPoP authentication, WebSocket challenge/reauthentication, server trust pins and explicit pairing confirmation.
+- Add strict protocol parsing, shared cryptographic/wire vectors, foreground/lease/input gates, JNI/Surface integration and bounded SAF, clipboard and file-integrity primitives.
+- Bundle a hash-locked same-source native security core. Its media backend remains unavailable; video, audio, remote input and file sessions are **not usable** in this preview. Physical devices and full remote-desktop interoperability remain unverified.
+- Keep RC version names visible and enforce a strictly increasing Android versionCode for every candidate and stable release.
+- Prevent an in-flight account refresh from restoring a session after logout.
+
 ## 7.0.0 — 2026-09-19
 
 All first-party components and the managed Agent now use 7.0.0. Upgrade the server,

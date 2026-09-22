@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "status": "source-pinned-build-unverified",
+  "webrtc": {
+    "repository": "https://webrtc.googlesource.com/src",
+    "revision": "94e682e18fbcc0751463be2257b09d2a646a5a68",
+    "deps_sha256": "d92343c460ab45dbf4399c40ac03d9c75b489687b0cf40c47f62c832ffcbbea4",
+    "license_sha256": "ab00a482b6a3902e40211b43c5d0441962ea99b6cc7c25c0f243fa270b78d482"
+  },
+  "depot_tools": {
+    "repository": "https://chromium.googlesource.com/chromium/tools/depot_tools",
+    "revision": "55a39e603bee1ad299545508bc96e2a5d29d3cc4"
+  },
+  "toolchain": {
+    "chromium_tools_revision": "c60db23bebc8938b6bfa250eee92fefee66bd571",
+    "clang_revision": "llvmorg-24-init-7747-g62397f8b",
+    "clang_sub_revision": 29,
+    "clang_update_script_sha256": "b3e6cf906e75bc5ab18fe6ef0b600897b5d95aa7ac019cfb098224616f8025e4",
+    "windows_visual_studio": "2022",
+    "android_ndk": "2@30.0.16248370"
+  },
+  "gn_args": {
+    "is_debug": false,
+    "is_component_build": false,
+    "rtc_include_tests": false,
+    "rtc_build_examples": false,
+    "rtc_use_h264": true,
+    "proprietary_codecs": true,
+    "rtc_include_internal_audio_device": true,
+    "rtc_use_h265": true
+  },
+  "patches": [],
+  "artifact_sha256": null,
+  "notes": [
+    "Source revisions and DEPS/toolchain digests were read from immutable upstream URLs. No media build or interoperability claim is made.",
+    "Native host capture/input/hardware codecs and app microphone injection are separate implementation work.",
+    "H.264/HEVC distribution terms and each compiled dependency NOTICE must be reviewed before a public media package."
+  ]
+}

@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -31,7 +32,7 @@ def local_version():
 def validate_release_tag(tag, source_version, stage):
     if stage not in ("internal-testing", "public-release"):
         raise SystemExit("Unknown release stage; set compatibility.json explicitly")
-    match = re.fullmatch(r"v(\d+\.\d+\.\d+)(?:-rc\.(\d+))?", tag)
+    match = re.fullmatch(r"v(\d+\.\d+\.\d+)(?:-rc\.([1-9]\d*))?", tag)
     if not match:
         raise SystemExit("Release tags must be vX.Y.Z or vX.Y.Z-rc.N")
     version, candidate = match.groups()
@@ -41,9 +42,57 @@ def validate_release_tag(tag, source_version, stage):
         raise SystemExit("Internal testing publishes prereleases only; use vX.Y.Z-rc.N")
     return version, candidate
 
+
+def release_version():
+    """Full identity shown inside APK/AAB and in asset filenames, including RC suffix."""
+    validate_release_tag(TAG, local_version(), PROJECT.get("stage"))
+    return TAG.removeprefix("v")
+
+
+def validate_android_version_code(code, previous):
+    if type(code) is not int or not 1 <= code <= 2_100_000_000:
+        raise SystemExit("Android versionCode must be a positive integer <= 2100000000")
+    if any(type(value) is not int or not 1 <= value <= 2_100_000_000 for value in previous):
+        raise SystemExit("Published Android version evidence is invalid")
+    if previous and code <= max(previous):
+        raise SystemExit("Every new Android RC and stable release must have a larger versionCode than all published packages")
+
+
+def check_android_upgrade_sequence():
+    if COMPONENT != "android":
+        return
+    code = int(re.search(r'^HOME_TUNNEL_VERSION_CODE=(\d+)$', (ROOT / "gradle.properties").read_text(), re.M).group(1))
+    previous = [7_000_000]
+    page = 1
+    while True:
+        releases = api(f"repos/{REPO}/releases?per_page=100&page={page}")
+        for release in releases:
+            if release.get("draft"):
+                continue
+            if release["tag_name"] == TAG:
+                raise SystemExit("This Android release is already public; published artifacts cannot be rebuilt or replaced")
+            evidence = next((asset for asset in release.get("assets", []) if asset["name"] == "android-release-evidence.json"), None)
+            # Pre-7 releases had no durable evidence; the known 7.0 signer baseline bounds them.
+            if evidence is None:
+                if re.fullmatch(r"v(?:[0-6])\.\d+\.\d+(?:-rc\.\d+)?", release["tag_name"]):
+                    continue
+                raise SystemExit("Published Android release lacks versionCode evidence")
+            with tempfile.TemporaryDirectory(prefix="ht-android-evidence-") as directory:
+                run("gh", "release", "download", release["tag_name"], "--repo", REPO,
+                    "--pattern", "android-release-evidence.json", "--dir", directory)
+                record = json.loads((Path(directory) / "android-release-evidence.json").read_text())
+                if record.get("application_id") != "io.github.zhanry.hometunnel":
+                    raise SystemExit("Published Android application identity changed")
+                previous.append(record.get("version_code"))
+        if len(releases) < 100:
+            break
+        page += 1
+    validate_android_version_code(code, previous)
+
 def metadata():
     version, candidate = validate_release_tag(TAG, local_version(), PROJECT.get("stage"))
     run("python3", "scripts/check-repository.py")
+    check_android_upgrade_sequence()
     run("git", "fetch", "--tags", "origin", "main")
     run("git", "merge-base", "--is-ancestor", SHA, "origin/main")
     checks = api(f"repos/{REPO}/commits/{SHA}/check-runs?per_page=100")["check_runs"]
@@ -62,13 +111,13 @@ def metadata():
             output.write(f"{key}={value}\n")
 
 def required_assets(directory):
-    version = local_version()
+    version = release_version() if COMPONENT == "android" else local_version()
     if COMPONENT == "client":
         expected = [f"HomeTunnel-Setup-{version}-x64.exe", f"HomeTunnel-Windows-{version}-x64.zip"]
         expected += [f"home-tunnel-{platform}-{version}-{arch}.tar.gz" for platform in ("linux","macos") for arch in ("amd64","arm64")]
         expected += ["agent-provenance.json"]
     elif COMPONENT == "android":
-        expected = [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}.aab", "android-release-evidence.json"]
+        expected = [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}.aab", "android-release-evidence.json", "android-native-evidence.json", "android-native-source.lock.json"]
     else:
         expected = ["image-control-center.json", "image-traffic-gateway.json", "home-tunnel.v1.json"]
         for name in ("control-center", "traffic-gateway"):
@@ -82,7 +131,7 @@ def required_assets(directory):
 def seal():
     directory = ROOT / "release"
     required_assets(directory)
-    manifest={"component":COMPONENT,"version":local_version(),"repository":REPO,"revision":SHA,"api_major":1,"rc_tag":TAG}
+    manifest={"component":COMPONENT,"version":local_version(),"release_version":release_version(),"repository":REPO,"revision":SHA,"api_major":1,"rc_tag":TAG}
     (directory/'release-manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
     if COMPONENT == 'server':
         records = [json.loads((directory/f'image-{name}.json').read_text()) for name in ('control-center','traffic-gateway')]
@@ -112,7 +161,7 @@ def verify(directory, rc_tag):
     if actual != listed:
         raise SystemExit('Unsealed or missing release assets')
     manifest=json.loads((directory/'release-manifest.json').read_text())
-    for key,value in {'repository':REPO,'revision':SHA,'version':local_version(),'component':COMPONENT,'rc_tag':rc_tag}.items():
+    for key,value in {'repository':REPO,'revision':SHA,'version':local_version(),'release_version':release_version(),'component':COMPONENT,'rc_tag':rc_tag}.items():
         if manifest.get(key)!=value: raise SystemExit(f'Release manifest mismatch: {key}')
     required_assets(directory)
     return identity
@@ -141,11 +190,12 @@ def publish(stable=False):
     # Publish the exact sealed set, including SBOMs, scan results and signatures.
     # Keeping the signed checksum manifest unchanged makes evidence independently verifiable.
     selected=sorted(path.name for path in directory.iterdir() if path.is_file())
-    missing=set(public_asset_names(COMPONENT,local_version()))-set(selected)
+    asset_version = release_version() if COMPONENT == "android" else local_version()
+    missing=set(public_asset_names(COMPONENT,asset_version))-set(selected)
     if missing: raise SystemExit(f'Missing public deliverables: {missing}')
     for name in selected:
         shutil.copyfile(directory/name,public/name)
-    packages=public_asset_names(COMPONENT,local_version())
+    packages=public_asset_names(COMPONENT,asset_version)
     downloads='\n'.join(f'- [{name}](https://github.com/{REPO}/releases/download/{TAG}/{name})' for name in packages)
     checksums=''.join(f"{hashlib.sha256((public/name).read_bytes()).hexdigest()}  {name}\n" for name in packages)
     title=f'Home Tunnel {COMPONENT} {local_version()}' + ('' if stable else f' ({TAG.rsplit("-",1)[1]})')

@@ -12,8 +12,30 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import org.junit.Test
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.supervisorScope
+import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 
 class SessionManagerTest {
+    @Test
+    fun `logout during an in flight refresh cannot restore the cleared session`() = runTest {
+        val now = Instant.parse("2026-08-23T00:00:00Z")
+        var persisted = false
+        val manager = SessionManager(Clock.fixed(now, ZoneOffset.UTC)) { _, _ -> persisted = true }
+        manager.install(SessionResponse(UserInfo("u", "user", "User", "user", "normal"), accessToken = "expired",
+            refreshToken = "refresh", accessExpiresAt = now.minusSeconds(1).toString(), refreshExpiresAt = now.plusSeconds(3600).toString()))
+        val started = CompletableDeferred<Unit>()
+        val complete = CompletableDeferred<Unit>()
+        supervisorScope {
+            val request = async {
+                manager.accessToken { started.complete(Unit); complete.await(); RefreshResponse("new", "rotated", now.plusSeconds(600).toString()) }
+            }
+            started.await(); manager.clear(); complete.complete(Unit)
+            assertFailsWith<NoSessionException> { request.await() }
+        }
+        assertFalse(manager.hasSession()); assertFalse(persisted)
+    }
     @Test
     fun `concurrent callers perform exactly one refresh`() = runTest {
         val now = Instant.parse("2026-08-23T00:00:00Z")

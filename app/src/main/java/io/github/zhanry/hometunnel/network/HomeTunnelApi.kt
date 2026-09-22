@@ -73,6 +73,13 @@ class HomeTunnelApi(
 
     suspend fun currentUser(): UserInfo = authenticatedJson("GET", "auth/me")
 
+    /** Only account-authenticated RD bootstrap routes; RD tokens use their own DPoP transport. */
+    suspend fun remoteAccountRequest(method: String, path: String, body: JsonObject? = null): JsonObject {
+        require((method == "POST" && path in setOf("rd/reauth", "rd/enrollment-challenges", "rd/endpoints", "rd/token-challenges", "rd/tokens")) ||
+            (method == "GET" && path == "rd/endpoints")) { "Unsupported RD account operation" }
+        return authenticatedJson(method, path, body)
+    }
+
     override suspend fun adminSummary(): AdminSummary = authenticatedJson("GET", "admin/summary")
     override suspend fun adminUsers(search: String): AdminUserList =
         authenticatedJson("GET", "admin/users?search=${queryValue(search.trim())}")
@@ -333,6 +340,11 @@ class HomeTunnelApi(
                 return Unit as T
             }
             if (bytes.isEmpty()) throw IOException("Control-center returned an empty response")
+            if (spec.path.startsWith("rd/")) {
+                // Bootstrap security responses share the strict RD parser, including duplicate-key rejection.
+                @Suppress("UNCHECKED_CAST")
+                return io.github.zhanry.hometunnel.remote.RemoteJson.parse(bytes) as T
+            }
             return json.decodeFromString(bytes.decodeToString())
         }
     }

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "repository": "ZHanry/home-tunnel-server",
+  "source_revision": "1a7b52895d77d272cd36f0e9031fff843a4b269a",
+  "source_tree_dirty": true,
+  "published_contract_ref": null,
+  "source_tree_sha256": "9a2ee8c147dfa84777bc2149208d6f115db23a1947eec0b722e4485bf8e02d4d",
+  "files": [
+    {
+      "source": "contracts/remote-desktop.v1.json",
+      "path": "contracts/remote-desktop.v1.json",
+      "sha256": "2a78014b00b8c1f0938a6fedab23b75140d66aa4f991cc17f424482563d4d8bb"
+    },
+    {
+      "source": "contracts/remote-test-vectors.json",
+      "path": "contracts/remote-test-vectors.json",
+      "sha256": "e4c47ea288cf92266f09ea2b40e595c1dd333132dc3262d42e86ef9ea042b168"
+    },
+    {
+      "source": "control-center/test-fixtures/rd-keyset-vectors.json",
+      "path": "contracts/rd-keyset-vectors.json",
+      "sha256": "455530edd2a23912c58fd18364cafdce90027e8da089c59b13128ea1973e63f4"
+    },
+    {
+      "source": "contracts/generated/remote_protocol.kt",
+      "path": "app/src/main/java/io/github/zhanry/hometunnel/remote/protocol/RemoteProtocol.kt",
+      "sha256": "2517ae736467e6469c9dbefb69395ec049235803339c05805f23e8a0031bea5f"
+    }
+  ]
+}

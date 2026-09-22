@@ -60,7 +60,7 @@ jobs:
       working-directory: ${{ github.workspace }}
       shell: bash
       env:
-        VERSION: ${{ needs.metadata.outputs.base-version }}
+        VERSION: ${{ needs.metadata.outputs.version }}
         ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
         ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
         ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
@@ -87,9 +87,11 @@ jobs:
         printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
         test -s "$keystore"
         export ANDROID_RELEASE_STORE_FILE="$keystore"
+        sdkmanager 'ndk;27.2.12479018' 'cmake;3.22.1'
+        python3 scripts/build-remote-native.py
         (
           cd "$GITHUB_WORKSPACE"
-          ./gradlew --no-daemon clean test lint assembleRelease bundleRelease
+          ./gradlew --no-daemon -PremoteNativeRoot="$PWD/.cache/remote-native" -PHOME_TUNNEL_RELEASE_VERSION="$VERSION" clean test lint assembleRelease bundleRelease
         )
         source_apk=app/build/outputs/apk/release/app-release.apk
         source_aab=app/build/outputs/bundle/release/app-release.aab
@@ -102,6 +104,8 @@ jobs:
         aab="$PWD/release-android/HomeTunnel-Android-$VERSION.aab"
         cp "$source_apk" "$apk"
         cp "$source_aab" "$aab"
+        cp .cache/remote-native/arm64-v8a/remote-artifact.json release-android/android-native-evidence.json
+        cp native/remote-source.lock.json release-android/android-native-source.lock.json
         {
           echo "apk=$apk"
           echo "aab=$aab"
@@ -116,7 +120,7 @@ jobs:
         APK: ${{ steps.android.outputs.apk }}
         AAB: ${{ steps.android.outputs.aab }}
         EVIDENCE: ${{ steps.android.outputs.evidence }}
-        VERSION: ${{ needs.metadata.outputs.base-version }}
+        VERSION: ${{ needs.metadata.outputs.version }}
         RELEASE_CHANNEL: ${{ needs.metadata.outputs.stable == 'true' && 'stable' || 'prerelease' }}
       run: |
         set -euo pipefail
@@ -148,7 +152,12 @@ jobs:
         test "$min_sdk" -eq 26
         test "$target_sdk" -ge 35
         apk_abis=$(unzip -Z1 "$APK" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)
-        test -z "$apk_abis" || test "$apk_abis" = arm64-v8a
+        test "$apk_abis" = arm64-v8a
+        for library in libhome_tunnel_remote.so libhome_tunnel_remote_jni.so libc++_shared.so; do
+          unzip -Z1 "$APK" | grep -Fxq "lib/arm64-v8a/$library"
+        done
+        core_sha=$(unzip -p "$APK" lib/arm64-v8a/libhome_tunnel_remote.so | sha256sum | awk '{print $1}')
+        test "$core_sha" = "$(jq -r .library_sha256 release-android/android-native-evidence.json)"
         if unzip -Z1 "$APK" | grep -q libhometunnel_agent; then echo "Management APK must not bundle a tunnel Agent" >&2; exit 1; fi
 
         bundletool="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
@@ -165,8 +174,10 @@ jobs:
         test "$(java -jar "$bundletool" dump manifest --bundle="$AAB" --xpath=/manifest/@android:versionName)" = "$VERSION"
         test "$(java -jar "$bundletool" dump manifest --bundle="$AAB" --xpath=/manifest/@android:versionCode)" = "$expected_code"
         aab_abis=$(unzip -Z1 "$AAB" | sed -n 's#^base/lib/\([^/]*\)/.*#\1#p' | sort -u)
-        test -z "$aab_abis" || test "$aab_abis" = arm64-v8a
+        test "$aab_abis" = arm64-v8a
+        test "$(unzip -p "$AAB" base/lib/arm64-v8a/libhome_tunnel_remote.so | sha256sum | awk '{print $1}')" = "$core_sha"
         if unzip -Z1 "$AAB" | grep -q libhometunnel_agent; then echo "Management APK must not bundle a tunnel Agent" >&2; exit 1; fi
+        python3 scripts/verify-remote-packages.py "$APK" "$AAB" release-android/android-native-evidence.json
 
         apk_sha=$(sha256sum "$APK" | awk '{print $1}')
         aab_sha=$(sha256sum "$AAB" | awk '{print $1}')
@@ -187,9 +198,9 @@ jobs:
             platform:"android",application_id:"io.github.zhanry.hometunnel",
             version_name:$version,version_code:$version_code,min_sdk:$min_sdk,target_sdk:$target_sdk,
             abis:["arm64-v8a"],apk_sha256:$apk_sha256,aab_sha256:$aab_sha256,
-            management_only:true,signing_certificate_sha256:$signing_certificate_sha256,
+            tunnel_agent_included:false,remote_desktop_backend:"security-core-only-media-unavailable",signing_certificate_sha256:$signing_certificate_sha256,
             repository_revision:$revision,build_identity:$build_identity,
-            validations:["unit_tests","lint","apk_signature_v2","aab_signature","bundletool_validate","package_identity","version","arm64_abi","management_only_no_agent"],
+            validations:["unit_tests","lint","apk_signature_v2","aab_signature","bundletool_validate","package_identity","version","arm64_abi","no_tunnel_agent","native_source_lock","native_library_digest","native_runtime_libraries","native_16k_page_alignment"],
             physical_arm64_install:"not_run_in_github_actions"}' > "$EVIDENCE"
     - id: android-syft
       name: Install the pinned Android SBOM scanner

@@ -5,8 +5,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-val versionNameValue = providers.gradleProperty("HOME_TUNNEL_VERSION_NAME").get()
+val productVersionValue = providers.gradleProperty("HOME_TUNNEL_VERSION_NAME").get()
+val versionNameValue = providers.gradleProperty("HOME_TUNNEL_RELEASE_VERSION").orElse(productVersionValue).get()
 val versionCodeValue = providers.gradleProperty("HOME_TUNNEL_VERSION_CODE").get().toInt()
+require(Regex(Regex.escape(productVersionValue) + "(?:-rc\\.[1-9][0-9]*)?").matches(versionNameValue)) {
+    "Release display version must match the source version or its RC tag"
+}
+require(versionCodeValue in 1..2_100_000_000) { "Android versionCode is outside the supported range" }
+val remoteNativeRoot = providers.gradleProperty("remoteNativeRoot").orNull
 
 fun signingValue(environmentName: String, propertyName: String): String? =
     providers.environmentVariable(environmentName).orNull
@@ -37,6 +43,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         resourceConfigurations += listOf("en", "zh-rCN")
+        if (remoteNativeRoot != null) {
+            externalNativeBuild.cmake.arguments += "-DHOME_TUNNEL_REMOTE_ROOT=${file(remoteNativeRoot).absolutePath.replace('\\', '/')}"
+            // The imported core uses shared libc++; package one matching NDK runtime with JNI.
+            externalNativeBuild.cmake.arguments += "-DANDROID_STL=c++_shared"
+            externalNativeBuild.cmake.arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        }
     }
 
     if (completeReleaseSigning) {
@@ -79,6 +91,14 @@ android {
         buildConfig = true
     }
 
+    if (remoteNativeRoot != null) {
+        ndkVersion = "27.2.12479018"
+        externalNativeBuild.cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -86,6 +106,7 @@ android {
     kotlinOptions.jvmTarget = "17"
 
     packaging {
+        jniLibs.keepDebugSymbols += "**/libhome_tunnel_remote.so"
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "META-INF/DEPENDENCIES",
@@ -106,6 +127,15 @@ android {
         // warnings remain release-blocking.
         disable += setOf("GradleDependency", "ChromeOsAbiSupport", "OldTargetApi", "PluralsCandidate", "UnusedResources")
     }
+}
+
+if (remoteNativeRoot != null) {
+    val verifyRemoteNative = tasks.register<Exec>("verifyRemoteNative") {
+        workingDir(rootProject.projectDir)
+        commandLine(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
+            "scripts/verify-remote-native.py", file(remoteNativeRoot).absolutePath)
+    }
+    tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(verifyRemoteNative) }
 }
 
 dependencies {

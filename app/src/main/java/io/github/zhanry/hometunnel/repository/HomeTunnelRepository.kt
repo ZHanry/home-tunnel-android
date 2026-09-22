@@ -55,6 +55,16 @@ class HomeTunnelRepository(
     @Volatile private var sessionGeneration = 0
     private val _uiState = MutableStateFlow(AppUiState())
     val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
+    val remote = io.github.zhanry.hometunnel.remote.RemoteController(
+        context,
+        account = {
+            val profile = _uiState.value.persisted.profile
+            val user = _uiState.value.currentUser
+            if (profile != null && user != null && user.deviceId == null && user.passwordState == "normal")
+                io.github.zhanry.hometunnel.remote.RemoteAccount(profile, user) else null
+        },
+        parentRequest = { method, path, body -> accountAction { it.remoteAccountRequest(method, path, body) } },
+    )
     val administration: AdminRepository = AdminRepository(
         api = { ensureSignedInApi(_uiState.value.persisted) },
         identity = { _uiState.value.currentUser },
@@ -98,6 +108,7 @@ class HomeTunnelRepository(
         operationMutex.withLock {
             setBusy(true)
             try {
+                remote.onAccountChanged()
                 sessionGeneration++
                 administration.reset()
                 val profile = ServerDiscovery.discover(server)
@@ -233,6 +244,7 @@ class HomeTunnelRepository(
     }
 
     suspend fun clearLocalState() {
+        remote.onAccountChanged()
         sessionGeneration++
         administration.reset()
         val cleared = store.update { it.withoutActiveAccount(remove = true) }
@@ -244,6 +256,7 @@ class HomeTunnelRepository(
 
     fun logout(stopTunnel: () -> Unit) = scope.launch {
         operationMutex.withLock {
+            remote.onAccountChanged()
             setBusy(true)
             stopTunnel()
             var serverRevokedOrAlreadyInvalid = false
@@ -275,6 +288,7 @@ class HomeTunnelRepository(
 
     fun addServer() = scope.launch {
         operationMutex.withLock {
+            remote.onAccountChanged()
             sessionGeneration++
             administration.reset()
             val saved = store.update { it.withoutActiveAccount(remove = false) }
@@ -285,6 +299,7 @@ class HomeTunnelRepository(
 
     fun switchServer(id: String) = scope.launch {
         operationMutex.withLock {
+            remote.onAccountChanged()
             setBusy(true)
             try {
                 sessionGeneration++

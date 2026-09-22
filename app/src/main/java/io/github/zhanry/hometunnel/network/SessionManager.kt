@@ -16,7 +16,7 @@ class SessionManager(
     @Volatile
     private var session: MemorySession? = null
 
-    fun install(value: SessionResponse) {
+    @Synchronized fun install(value: SessionResponse) {
         session = MemorySession(
             accessToken = value.accessToken,
             refreshToken = value.refreshToken,
@@ -24,7 +24,7 @@ class SessionManager(
         )
     }
 
-    fun clear() {
+    @Synchronized fun clear() {
         session = null
     }
 
@@ -39,9 +39,10 @@ class SessionManager(
                 return@withLock afterLock.accessToken
             }
             val refreshed = refresher(afterLock.refreshToken)
-            install(refreshed)
+            val installed = installIfCurrent(afterLock, refreshed)
             onRefresh(afterLock.refreshToken, refreshed)
-            requireNotNull(session).accessToken
+            if (session !== installed) throw NoSessionException()
+            installed.accessToken
         }
     }
 
@@ -56,17 +57,20 @@ class SessionManager(
             return@withLock current.accessToken
         }
         val refreshed = refresher(current.refreshToken)
-        install(refreshed)
+        val installed = installIfCurrent(current, refreshed)
         onRefresh(current.refreshToken, refreshed)
-        requireNotNull(session).accessToken
+        if (session !== installed) throw NoSessionException()
+        installed.accessToken
     }
 
-    private fun install(value: RefreshResponse) {
-        session = MemorySession(
+    @Synchronized private fun installIfCurrent(expected: MemorySession, value: RefreshResponse): MemorySession {
+        // A network refresh finishing after logout/account replacement cannot resurrect that identity.
+        if (session !== expected) throw NoSessionException()
+        return MemorySession(
             accessToken = value.accessToken,
             refreshToken = value.refreshToken,
             accessExpiresAt = Instant.parse(value.accessExpiresAt),
-        )
+        ).also { session = it }
     }
 
     private data class MemorySession(

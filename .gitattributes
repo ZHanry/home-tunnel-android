@@ -44,3 +44,12 @@
 *.keystore binary
 *.tar binary
 *.gz binary
+
+# Imported protocol/native snapshots are hashed byte-for-byte against their source artifacts.
+native/remote-source/** -text whitespace=cr-at-eol
+contracts/remote-desktop.v1.json -text whitespace=cr-at-eol
+contracts/remote-test-vectors.json -text whitespace=cr-at-eol
+contracts/rd-keyset-vectors.json -text whitespace=cr-at-eol
+app/src/test/resources/remote-test-vectors.json -text whitespace=cr-at-eol
+app/src/test/resources/rd-keyset-vectors.json -text whitespace=cr-at-eol
+app/src/main/java/io/github/zhanry/hometunnel/remote/protocol/RemoteProtocol.kt -text whitespace=cr-at-eol

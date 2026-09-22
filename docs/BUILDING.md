@@ -7,6 +7,8 @@
 
 ## 调试构建
 
+8.0 的 JNI 构建另外使用 NDK `27.2.12479018`、CMake `3.22.1`。先运行 `python scripts/build-remote-native.py`，然后给下面的 Gradle 命令添加 `-PremoteNativeRoot=本仓库/.cache/remote-native的绝对路径`。CI 和 `RemoteIdentityTest` 要求这一真实原生依赖；省略参数只生成不含远控引擎的管理端开发包。
+
 ```sh
 ./gradlew --no-daemon test lint assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk

@@ -16,6 +16,18 @@ finally:
     os.chdir(previous_directory)
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_android_rc_and_stable_must_strictly_increase_version_code(self):
+        module.validate_android_version_code(8000001, [7000000])
+        module.validate_android_version_code(8000002, [7000000, 8000001])
+        module.validate_android_version_code(8000003, [7000000, 8000001, 8000002])
+        for candidate in (8000001, 8000002, 0, -1, 2100000001, True):
+            with self.assertRaises(SystemExit):
+                module.validate_android_version_code(candidate, [8000001, 8000002])
+
+    def test_rc_zero_is_not_a_release_identity(self):
+        with self.assertRaises(SystemExit):
+            module.validate_release_tag("v8.0.0-rc.0", "8.0.0", "internal-testing")
+
     def test_first_project_version_is_allowed_as_a_test_build(self):
         self.assertEqual(module.validate_release_tag("v0.1.0-rc.1", "0.1.0", "internal-testing"), ("0.1.0", "1"))
 

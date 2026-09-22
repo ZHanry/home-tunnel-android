@@ -1,5 +1,11 @@
 # 发布流程
 
+8.0 开发预览的 `compatibility.json` 使用 `internal-testing`，只允许 `v8.0.0-rc.N` 预发布标签。原生媒体未就绪，不能以正式版或“全部远控功能可用”发布。源码基础版本保持 `8.0.0`；构建通过 `HOME_TUNNEL_RELEASE_VERSION` 设置完整 `8.0.0-rc.N`，APK/AAB 的版本显示与文件名均保留 RC 后缀。
+
+Android `versionCode` 从 `8000001` 开始独立递增，每次新 RC 和后续正式版都必须高于所有已发布 APK/AAB（包含预发布）的编号。例如 RC1 为 8000001，RC2 为 8000002，随后正式版使用 8000003。编号在 `gradle.properties` 中显式提交，不根据 Actions 次数、时间或语义版本公式重用。发布任务读取所有历史 Release 的证据并阻止降号、重复编号或覆盖已公开产物；同一个尚未公开标签的失败重试保持编号。
+
+发行流水线从锁定的同源文本快照构建 arm64 JNI/安全核心，验证源码与库摘要，将 `android-native-evidence.json` 和源码锁作为封存附件。`available=false` 的事实保留在证据中，不以编译通过代表媒体或实机通过。签名证书、applicationId 必须保持不变，RC→正式版需要重新构建与验证。
+
 正式版本使用 `vX.Y.Z` 标签。7.0.0 将四个仓库与自有 Agent 统一版本，各组件独立构建，FRP 保留其第三方版本。源码版本与标签必须一致，`compatibility.json` 的阶段设为 `public-release`。
 
 1. 提交代码到 `main`，等待 Quality Gate（包括 Android API 26 / 35 的密钥库与界面检查）、CodeQL 和 Secret scan 成功。

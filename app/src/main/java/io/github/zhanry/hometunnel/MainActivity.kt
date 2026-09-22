@@ -18,7 +18,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        repository.remote.onForeground()
         repository.refreshConnections(silent = true)
+    }
+
+    override fun onPause() {
+        repository.remote.onBackground()
+        super.onPause()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -36,7 +36,9 @@ jobs:
           gradle/wrapper/gradle-wrapper.properties
     - name: Test, lint, and assemble the unsigned debug client
       run: |
-        ./gradlew --no-daemon test lint assembleDebug assembleDebugAndroidTest
+        sdkmanager 'ndk;27.2.12479018' 'cmake;3.22.1'
+        python3 scripts/build-remote-native.py
+        ./gradlew --no-daemon -PremoteNativeRoot="$PWD/.cache/remote-native" test lint assembleDebug assembleDebugAndroidTest
     - name: Share compiled debug instrumentation packages
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
@@ -91,6 +93,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
     - run: |
         python3 scripts/check-repository.py
+        python3 scripts/build-remote-native.py --verify-only
     - name: Check release policy
       run: |
         python3 -m unittest discover -s scripts -p "test_release_policy.py"

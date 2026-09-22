@@ -10,6 +10,8 @@
 Android 8.0+ 的 Home Tunnel 远程管理客户端。手机负责管理，实际隧道持续运行在
 Windows、macOS、Linux 电脑或 NAS 上。
 
+当前源码为 **8.0 开发预览**：新增控制端安全身份、配对界面和同源 JNI 核心。原生媒体引擎尚不可用，不能进行画面、音频、键鼠或文件连接；应用会明确显示这一状态。已有隧道管理功能继续可用，实际可下载的稳定版本仍见下方 7.0 链接。[预览能力与验证边界](docs/REMOTE_DESKTOP.md)。
+
 [下载 7.0.0 正式 APK（arm64-v8a）](https://github.com/ZHanry/home-tunnel-android/releases/download/v7.0.0/HomeTunnel-Android-7.0.0-arm64-v8a.apk) · [Release 与签名证据](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0)
 
 ## 登录后能做什么
@@ -32,6 +34,8 @@ JDK 17、Android SDK 35，使用仓库内已锁定的 Gradle wrapper：
 ./gradlew test lint assembleDebug assembleDebugAndroidTest
 python3 scripts/check-repository.py
 ```
+
+包含 JNI 的发行构建还需 NDK 27.2.12479018、CMake 3.22.1，并先运行 `python scripts/build-remote-native.py`；Gradle 传入 `-PremoteNativeRoot=已验证产物目录`。详细步骤见[预览构建说明](docs/REMOTE_DESKTOP.md)。
 
 正式发行必须使用既有 Android 签名身份，证书摘要固定在 `release-signing-cert.sha256`。
 CI 在 Android API 26 和 35 上检查 KeyStore 与管理界面；发行保留 APK、AAB、

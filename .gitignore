@@ -91,3 +91,6 @@ tests/frpc-https.toml
 release/
 release-public/
 release-notes.md
+# Reproducible native build products (the same-source text snapshot is tracked).
+.cache/
+.cxx/

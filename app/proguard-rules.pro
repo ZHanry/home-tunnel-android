@@ -2,3 +2,5 @@
 -keepclassmembers class **$$serializer { *; }
 -keep,includedescriptorclasses class io.github.zhanry.hometunnel.model.** { *; }
 -dontwarn org.conscrypt.**
+-keep,includedescriptorclasses class io.github.zhanry.hometunnel.remote.RemoteNativeBridge { *; }
+-keepclassmembers class io.github.zhanry.hometunnel.remote.RemoteNativeSession { public void onNativeEvent(int, int, long, byte[]); }

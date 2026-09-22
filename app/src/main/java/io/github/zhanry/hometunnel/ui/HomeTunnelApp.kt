@@ -364,6 +364,11 @@ internal fun HomeScreen(
     snackbar: SnackbarHostState,
 ) {
     var editor by remember { mutableStateOf<ConnectionEdit?>(null) }
+    var remoteOpen by rememberSaveable { mutableStateOf(false) }
+    if (remoteOpen) {
+        io.github.zhanry.hometunnel.remote.RemoteScreen(repository.remote) { remoteOpen = false }
+        return
+    }
     var deleteTarget by remember { mutableStateOf<TunnelConnection?>(null) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var selectedDevice by rememberSaveable { mutableStateOf("") }
@@ -435,6 +440,9 @@ internal fun HomeScreen(
                 when (tab) {
                     0 -> {
                         item { ManagementStatusCard(state) }
+                        item { OutlinedButton(onClick = { remoteOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(platformText("远程桌面", "Remote desktop"))
+                        } }
                         item { Button(onClick = createConnection, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.add_connection))
@@ -456,6 +464,9 @@ internal fun HomeScreen(
                         } }
                     }
                     1 -> {
+                        item { OutlinedButton(onClick = { remoteOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(platformText("远程桌面", "Remote desktop"))
+                        } }
                         item { Text(stringResource(R.string.device_scope_hint), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         if (state.devices.isEmpty()) item { EmptyConnectionsCard() }
                         items(state.devices.sortedByDescending { it.favorite }, key = { it.id }) { device ->
