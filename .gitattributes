@@ -47,6 +47,7 @@
 
 # Imported protocol/native snapshots are hashed byte-for-byte against their source artifacts.
 native/remote-source/** -text whitespace=cr-at-eol
+native/remote-source/**/*.patch -text -whitespace
 contracts/remote-desktop.v1.json -text whitespace=cr-at-eol
 contracts/remote-test-vectors.json -text whitespace=cr-at-eol
 contracts/rd-keyset-vectors.json -text whitespace=cr-at-eol

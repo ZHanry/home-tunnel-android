@@ -27,6 +27,7 @@ public:
     virtual ~InputSink() = default;
     virtual bool key(uint16_t usage, bool down, bool repeat) = 0;
     virtual bool button(uint8_t button, bool down) = 0;
+    virtual bool pointer(uint16_t display_slot, uint16_t x, uint16_t y) = 0;
 };
 class SessionGate {
 public:
@@ -39,9 +40,10 @@ public:
     GateResult peer_authenticated(uint32_t epoch, uint64_t now);
     GateResult selected_pair(uint32_t epoch, const SelectedPair&, uint64_t now);
     GateResult first_frame(uint32_t epoch, uint64_t now);
-    GateResult synchronize_input(uint32_t epoch, uint32_t input_epoch, uint32_t layout_epoch, uint64_t now);
+    GateResult synchronize_input(uint32_t epoch, uint32_t input_epoch, uint32_t layout_epoch, uint64_t now, uint16_t display_slot = 0);
     GateResult heartbeat(uint32_t epoch, uint32_t input_epoch, uint64_t state_version, uint64_t now);
     GateResult accept_key(std::span<const uint8_t> message, uint64_t now);
+    GateResult accept_button(std::span<const uint8_t> message, uint64_t now);
     GateResult tick(uint64_t now);
     GateResult reconnect(uint32_t epoch, uint64_t now);
     void pause();
@@ -50,6 +52,7 @@ public:
     bool input_allowed() const { return media_allowed() && first_frame_ && input_enabled_; }
     uint32_t input_epoch() const { return input_epoch_; }
     uint64_t deadline_ms() const { return deadline_; }
+    bool input_releases_pending() const { return !pressed_keys_.empty() || !pressed_buttons_.empty(); }
 private:
     void release_inputs();
     GateResult lease_deadline(const VerifiedLease&, int64_t, uint64_t, uint64_t&) const;
@@ -58,5 +61,7 @@ private:
     uint32_t epoch_ = 0, input_epoch_ = 0, layout_epoch_ = 0, input_sequence_ = 0;
     uint64_t lease_sequence_ = 0, permissions_ = 0, deadline_ = 0, last_now_ = 0, heartbeat_at_ = 0, heartbeat_version_ = 0, pair_revision_ = 0;
     std::set<uint16_t> pressed_keys_;
+    std::set<uint8_t> pressed_buttons_;
+    uint16_t display_slot_ = 0;
 };
 }

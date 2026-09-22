@@ -40,10 +40,12 @@ jint with_bytes(JNIEnv* env, jlong handle, jbyteArray bytes, jsize maximum, Byte
   if (!bytes) return HT_RD_INVALID_ARGUMENT;
   const jsize length = env->GetArrayLength(bytes);
   if (length < 1 || length > maximum) return HT_RD_RESOURCE_LIMIT;
-  std::vector<uint8_t> copy(static_cast<size_t>(length));
-  env->GetByteArrayRegion(bytes, 0, length, reinterpret_cast<jbyte*>(copy.data()));
-  if (env->ExceptionCheck()) return HT_RD_INTERNAL_ERROR;
-  return call(static_cast<ht_rd_handle>(handle), copy.data(), copy.size());
+  try {
+    std::vector<uint8_t> copy(static_cast<size_t>(length));
+    env->GetByteArrayRegion(bytes, 0, length, reinterpret_cast<jbyte*>(copy.data()));
+    if (env->ExceptionCheck()) return HT_RD_INTERNAL_ERROR;
+    return call(static_cast<ht_rd_handle>(handle), copy.data(), copy.size());
+  } catch (...) { return HT_RD_INTERNAL_ERROR; }
 }
 }
 
@@ -53,21 +55,39 @@ extern "C" JNIEXPORT jint JNICALL JNI_METHOD(abi)(JNIEnv*, jobject) { return ht_
 extern "C" JNIEXPORT jlong JNICALL JNI_METHOD(create)(JNIEnv* env, jobject, jobject target) {
   if (!target) return 0;
   auto cls = env->GetObjectClass(target);
+  if (!cls) return 0;
   auto method = env->GetMethodID(cls, "onNativeEvent", "(IIJ[B)V");
   env->DeleteLocalRef(cls);
   if (!method) return 0;
-  auto owner = std::make_unique<Owner>();
-  owner->object = env->NewGlobalRef(target); owner->callback = method;
-  if (!owner->object) return 0;
-  const ht_rd_config_v1 config{sizeof(ht_rd_config_v1), HT_RD_ABI_V1, 1, 0};
-  const ht_rd_callbacks_v1 callbacks{sizeof(ht_rd_callbacks_v1), HT_RD_ABI_V1, event_callback, owner.get()};
+  jobject reference = nullptr;
   ht_rd_handle handle = 0;
-  if (ht_rd_create(&config, &callbacks, &handle) != HT_RD_OK || !handle) {
-    env->DeleteGlobalRef(owner->object); return 0;
+  std::unique_ptr<Owner> owner;
+  try {
+    owner = std::make_unique<Owner>();
+    reference = env->NewGlobalRef(target);
+    if (!reference) return 0;
+    owner->object = reference; owner->callback = method;
+    const ht_rd_config_v1 config{sizeof(ht_rd_config_v1), HT_RD_ABI_V1, 1, 0};
+    const ht_rd_callbacks_v1 callbacks{sizeof(ht_rd_callbacks_v1), HT_RD_ABI_V1, event_callback, owner.get()};
+    if (ht_rd_create(&config, &callbacks, &handle) != HT_RD_OK || !handle) {
+      if (handle) ht_rd_release(handle);
+      env->DeleteGlobalRef(reference); return 0;
+    }
+    std::lock_guard<std::mutex> lock(owners_mutex);
+    // Allocate the registry entry before moving callback ownership; on allocation
+    // failure the catch block must keep Owner alive until native release drains callbacks.
+    auto entry = owners.try_emplace(handle);
+    if (!entry.second) {
+      ht_rd_release(handle); env->DeleteGlobalRef(reference); return 0;
+    }
+    entry.first->second = std::move(owner);
+    return static_cast<jlong>(handle);
+  } catch (...) {
+    // Native allocation failures must neither unwind into the JVM nor retain callback refs.
+    if (handle) ht_rd_release(handle);
+    if (reference) env->DeleteGlobalRef(reference);
+    return 0;
   }
-  std::lock_guard<std::mutex> lock(owners_mutex);
-  owners.emplace(handle, std::move(owner));
-  return static_cast<jlong>(handle);
 }
 extern "C" JNIEXPORT jlongArray JNICALL JNI_METHOD(capabilities)(JNIEnv* env, jobject, jlong handle) {
   ht_rd_capabilities_v1 capability{};

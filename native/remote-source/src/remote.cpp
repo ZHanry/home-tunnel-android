@@ -1,5 +1,6 @@
 #include "home_tunnel/remote.h"
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -8,6 +9,9 @@ namespace {
 struct Session {
     ht_rd_callbacks_v1 callbacks{};
     std::mutex mutex;
+    std::condition_variable callback_done;
+    size_t callbacks_running = 0;
+    bool releasing = false;
     bool closed = false;
     uint64_t generation = 0;
 };
@@ -38,15 +42,25 @@ ht_rd_result notify(ht_rd_handle handle, uint32_t reason, bool close) {
     ht_rd_callbacks_v1 callbacks{};
     {
         const std::lock_guard lock(session->mutex);
+        if (session->releasing) return HT_RD_INVALID_HANDLE;
         if (session->closed) return close ? HT_RD_OK : HT_RD_STATE_CONFLICT;
         session->closed = close;
         event = {sizeof(event), HT_RD_ABI_V1, static_cast<uint32_t>(close ? HT_RD_EVENT_CLOSED : HT_RD_EVENT_PAUSED),
                  reason, ++session->generation, nullptr, 0};
         callbacks = session->callbacks;
+        if (callbacks.on_event) ++session->callbacks_running;
     }
-    // No native lock is held while invoking application code. The owner keeps callbacks alive.
-    if (callbacks.on_event) callbacks.on_event(callbacks.user_data, &event);
-    return HT_RD_OK;
+    // No native lock is held while invoking application code. Release waits for
+    // all callbacks to return before the caller may destroy its callback context.
+    auto result = HT_RD_OK;
+    if (callbacks.on_event) {
+        try { callbacks.on_event(callbacks.user_data, &event); }
+        catch (...) { result = HT_RD_INTERNAL_ERROR; }
+        const std::lock_guard lock(session->mutex);
+        --session->callbacks_running;
+        session->callback_done.notify_all();
+    }
+    return result;
 }
 }
 
@@ -97,7 +111,18 @@ ht_rd_result ht_rd_set_surface(ht_rd_handle handle, const ht_rd_surface_v1* surf
 ht_rd_result ht_rd_pause(ht_rd_handle handle, uint32_t reason) { return notify(handle, reason, false); }
 ht_rd_result ht_rd_close(ht_rd_handle handle, uint32_t reason) { return notify(handle, reason, true); }
 void ht_rd_release(ht_rd_handle handle) {
-    const std::lock_guard lock(registry_mutex);
-    sessions.erase(handle);
+    std::shared_ptr<Session> session;
+    {
+        const std::lock_guard lock(registry_mutex);
+        const auto found = sessions.find(handle);
+        if (found == sessions.end()) return;
+        session = std::move(found->second);
+        sessions.erase(found);
+    }
+    std::unique_lock lock(session->mutex);
+    session->releasing = true;
+    session->closed = true;
+    session->callback_done.wait(lock, [&] { return session->callbacks_running == 0; });
+    session->callbacks = {};
 }
 }

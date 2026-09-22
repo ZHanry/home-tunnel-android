@@ -10,6 +10,8 @@
 # else
 #  define HT_RD_API __declspec(dllimport)
 # endif
+#elif defined(__GNUC__)
+# define HT_RD_API __attribute__((visibility("default")))
 #else
 # define HT_RD_API
 #endif
@@ -102,7 +104,11 @@ HT_RD_API ht_rd_result ht_rd_set_surface(ht_rd_handle, const ht_rd_surface_v1*);
 HT_RD_API ht_rd_result ht_rd_get_capabilities(ht_rd_handle, ht_rd_capabilities_v1*);
 HT_RD_API ht_rd_result ht_rd_pause(ht_rd_handle, uint32_t reason);
 HT_RD_API ht_rd_result ht_rd_close(ht_rd_handle, uint32_t reason);
-/* Idempotent. The owner serializes release with API calls and callbacks. */
+/* Idempotent. The owner serializes release with API calls. Release waits for
+ * callbacks to finish; none may start after it returns. Do not call release
+ * from a callback (schedule it on the owning thread instead). After return the
+ * owner may destroy callback user_data. Successful surface attachments retain
+ * the platform reference until detach/release. */
 HT_RD_API void ht_rd_release(ht_rd_handle);
 
 #ifdef __cplusplus

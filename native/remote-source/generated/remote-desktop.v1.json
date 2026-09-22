@@ -5,7 +5,7 @@
   "permissions": ["view", "input.keyboard", "input.pointer", "input.text", "audio.system", "audio.microphone", "clipboard.read", "clipboard.write", "files.send", "files.receive"],
   "direction": "Permissions are from the controller perspective: read/receive is host to controller, write/send is controller to host.",
   "header": { "magic": 21060, "length": 24, "byte_order": "big", "fields": { "magic": 0, "version": 2, "type": 3, "flags": 4, "header_length": 6, "connection_epoch": 8, "input_epoch": 12, "sequence": 16, "payload_length": 20 } },
-  "limits": { "sequence_reconnect_at": 4294963200, "text_bytes": 4096, "clipboard_bytes": 65536, "file_chunk_bytes": 16384, "send_queue_bytes": 131072, "input_watchdog_ms": 2000, "input_heartbeat_ms": 250, "ice_deadline_ms": 20000 },
+  "limits": { "sequence_reconnect_at": 4294963200, "text_bytes": 4096, "clipboard_bytes": 65536, "file_chunk_bytes": 16384, "file_bytes": 8589934592, "batch_file_bytes": 34359738368, "batch_files": 64, "send_queue_bytes": 131072, "input_watchdog_ms": 2000, "input_heartbeat_ms": 250, "ice_deadline_ms": 20000 },
   "channels": {
     "control": { "ordered": true, "max_message_bytes": 16384 },
     "input": { "ordered": true, "max_message_bytes": 8192 },

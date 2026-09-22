@@ -1,10 +1,17 @@
 #include "home_tunnel/remote.h"
 #include "protocol.hpp"
 #include "session_gate.hpp"
+#include "crypto.hpp"
 #include "../generated/test_vectors.hpp"
+#if defined(_WIN32)
+#include "platform/windows_input.hpp"
+#endif
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#include <future>
+#include <thread>
 #include <tuple>
 #include <string>
 #include <vector>
@@ -14,9 +21,12 @@ using namespace ht::rd;
 namespace {
 struct Sink : InputSink {
     std::vector<std::tuple<uint16_t, bool, bool>> calls;
+    std::vector<std::pair<uint8_t,bool>> buttons;
+    uint16_t pointer_x=0, pointer_y=0;
     bool fail = false;
     bool key(uint16_t code, bool down, bool repeat) override { calls.emplace_back(code, down, repeat); return !fail; }
-    bool button(uint8_t, bool) override { return !fail; }
+    bool button(uint8_t button, bool down) override { buttons.emplace_back(button,down);return !fail; }
+    bool pointer(uint16_t, uint16_t x, uint16_t y) override { pointer_x=x;pointer_y=y;return !fail; }
 };
 void put32(std::vector<uint8_t>& bytes, size_t offset, uint32_t value) {
     for (unsigned n=0; n<4; ++n) bytes[offset+n] = static_cast<uint8_t>(value >> (24-n*8));
@@ -66,7 +76,8 @@ void watchdog_and_epoch() {
     CHECK(session.synchronize_input(1,1,1,3002)==GateResult::state);
     CHECK(session.synchronize_input(1,2,1,3002)==GateResult::ok);
     CHECK(session.accept_key(key(1,1,1),3003)==GateResult::replay);
-    CHECK(session.accept_key(key(1,2,1),3003)==GateResult::ok);
+    CHECK(session.accept_key(key(1,2,1),3003)==GateResult::replay);
+    CHECK(session.accept_key(key(1,2,2),3003)==GateResult::ok);
     const auto deadline=session.deadline_ms();
     CHECK(session.reconnect(2,3004)==GateResult::ok);CHECK(session.deadline_ms()==deadline);
     CHECK(!session.media_allowed() && !session.input_allowed());
@@ -88,6 +99,31 @@ void network_gate() {
     CHECK(session.selected_pair(1,{"udp",Candidate::host,Candidate::host,false,true,3},1003)==GateResult::path);
     CHECK(session.selected_pair(1,{"udp",Candidate::host,Candidate::host,true,true,4},1004)==GateResult::ok);
     CHECK(!session.input_allowed());
+}
+void button_coordinates_and_watchdog() {
+    Sink sink;SessionGate session(sink);ready(session,1000,7);
+    auto bytes=key();bytes.resize(56,0);bytes[3]=protocol::BUTTON;put32(bytes,20,32);
+    put32(bytes,24,1);bytes[28]=0;bytes[29]=0;bytes[30]=0x80;bytes[31]=0;bytes[32]=0x40;bytes[33]=0;bytes[34]=1;bytes[35]=1;
+    CHECK(session.accept_button(bytes,1001)==GateResult::ok);
+    CHECK(sink.pointer_x==32768 && sink.pointer_y==16384 && sink.buttons.size()==1 && sink.buttons.back().second);
+    CHECK(session.tick(3000)==GateResult::ok);
+    CHECK(sink.buttons.size()==2 && !sink.buttons.back().second);
+    CHECK(session.accept_button(bytes,3001)==GateResult::state);
+}
+void rejected_release_blocks_reenable() {
+    Sink sink;SessionGate session(sink);ready(session);
+    CHECK(session.accept_key(key(),1001)==GateResult::ok);
+    sink.fail=true;
+    CHECK(session.tick(3000)==GateResult::ok);
+    CHECK(!session.input_allowed());
+    CHECK(session.synchronize_input(1,2,1,3001)==GateResult::backend);
+    sink.fail=false;
+    CHECK(session.tick(3002)==GateResult::ok);
+    CHECK(session.synchronize_input(1,2,1,3003)==GateResult::ok);
+    CHECK(session.accept_key(key(1,2,2),3004)==GateResult::ok);
+    sink.fail=true;session.close();CHECK(session.input_releases_pending());
+    CHECK(session.tick(3005)==GateResult::closed && session.input_releases_pending());
+    sink.fail=false;CHECK(session.tick(3006)==GateResult::closed && !session.input_releases_pending());
 }
 void lease_and_isolation() {
     Sink first,second;SessionGate a(first),b(second);ready(a);ready(b);
@@ -121,6 +157,29 @@ void abi_contract() {
     ht_rd_release(handle);ht_rd_release(handle);
     CHECK(ht_rd_get_capabilities(handle,&capabilities)==HT_RD_INVALID_HANDLE);
 }
+void callback_quiescence() {
+    struct Context { std::promise<void> entered; std::shared_future<void> proceed; } context;
+    std::promise<void> proceed;
+    context.proceed=proceed.get_future().share();
+    auto entered=context.entered.get_future();
+    ht_rd_config_v1 config{sizeof(config),1,1,0};
+    ht_rd_callbacks_v1 callbacks{sizeof(callbacks),1,[](void* data,const ht_rd_event_v1*) {
+        auto& state=*static_cast<Context*>(data);
+        state.entered.set_value();state.proceed.wait();
+    },&context};
+    ht_rd_handle handle=0;CHECK(ht_rd_create(&config,&callbacks,&handle)==HT_RD_OK);
+    auto notify=std::async(std::launch::async,[&] { return ht_rd_pause(handle,0); });
+    CHECK(entered.wait_for(std::chrono::seconds(2))==std::future_status::ready);
+    auto release=std::async(std::launch::async,[&] { ht_rd_release(handle); });
+    ht_rd_capabilities_v1 capabilities{};capabilities.size=sizeof(capabilities);capabilities.abi_version=1;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+    while(ht_rd_get_capabilities(handle,&capabilities)!=HT_RD_INVALID_HANDLE && std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
+    CHECK(ht_rd_get_capabilities(handle,&capabilities)==HT_RD_INVALID_HANDLE);
+    CHECK(release.wait_for(std::chrono::seconds(0))==std::future_status::timeout);
+    proceed.set_value();
+    CHECK(notify.get()==HT_RD_OK);release.get();
+    CHECK(ht_rd_pause(handle,0)==HT_RD_INVALID_HANDLE);
+}
 void transcript() {
     std::array<uint8_t,16> id{};std::array<std::array<uint8_t,32>,5> fields{};
     const auto bytes=proof_transcript(id,7,fields);
@@ -134,8 +193,32 @@ void transcript() {
     for (auto byte:actual) { hex.push_back("0123456789abcdef"[byte>>4]);hex.push_back("0123456789abcdef"[byte&15]); }
     CHECK(hex==protocol::PROOF_VECTOR_HEX);
 }
+std::vector<uint8_t> decode_hex(std::string_view hex) {
+    const auto digit=[](char c)->uint8_t { return static_cast<uint8_t>(c<='9' ? c-'0' : c-'a'+10); };
+    std::vector<uint8_t> result;
+    for(size_t n=0;n<hex.size();n+=2) result.push_back(static_cast<uint8_t>((digit(hex[n])<<4)|digit(hex[n+1])));
+    return result;
+}
+void signature_verification() {
+    auto transcript=decode_hex(protocol::PROOF_VECTOR_HEX);
+    const auto key_bytes=decode_hex(protocol::PROOF_PUBLIC_KEY_HEX),signature_bytes=decode_hex(protocol::PROOF_SIGNATURE_HEX);
+    std::array<uint8_t,64> key{},signature{};
+    std::copy(key_bytes.begin(),key_bytes.end(),key.begin());std::copy(signature_bytes.begin(),signature_bytes.end(),signature.begin());
+#if defined(_WIN32)
+    CHECK(verify_p256(transcript,key,signature)==CryptoResult::valid);
+    transcript[17]^=1;CHECK(verify_p256(transcript,key,signature)==CryptoResult::invalid);transcript[17]^=1;
+    signature[3]^=1;CHECK(verify_p256(transcript,key,signature)==CryptoResult::invalid);signature[3]^=1;
+    key.fill(0);CHECK(verify_p256(transcript,key,signature)==CryptoResult::invalid);
+#else
+    CHECK(verify_p256(transcript,key,signature)==CryptoResult::unavailable);
+#endif
+}
 }
 int main() {
-    framing();watchdog_and_epoch();network_gate();lease_and_isolation();abi_contract();transcript();
+    framing();watchdog_and_epoch();network_gate();button_coordinates_and_watchdog();rejected_release_blocks_reenable();lease_and_isolation();abi_contract();callback_quiescence();transcript();signature_verification();
+#if defined(_WIN32)
+    CHECK(WindowsInputSink::scan_code(4)==0x1e && WindowsInputSink::scan_code(224)==0x1d && WindowsInputSink::scan_code(228)==0xe01d);
+    CHECK(WindowsInputSink::scan_code(0)==0 && WindowsInputSink::scan_code(300)==0);
+#endif
     std::puts("Remote core: framing, transcript, UDP path, lease, watchdog, isolation and fail-closed ABI passed");
 }

@@ -42,10 +42,11 @@ GateResult SessionGate::renew(const VerifiedLease& lease, int64_t wall, uint64_t
     return GateResult::ok;
 }
 GateResult SessionGate::tick(uint64_t now) {
-    if (closed_) return GateResult::closed;
+    if (closed_) { if(input_releases_pending()) release_inputs(); return GateResult::closed; }
     if (now < last_now_ || now >= deadline_) { close(); return GateResult::expired; }
     last_now_ = now;
     if (input_enabled_ && now - heartbeat_at_ >= protocol::INPUT_WATCHDOG_MS) release_inputs();
+    else if (!input_enabled_ && (!pressed_keys_.empty() || !pressed_buttons_.empty())) release_inputs();
     return GateResult::ok;
 }
 GateResult SessionGate::peer_authenticated(uint32_t epoch, uint64_t now) {
@@ -76,14 +77,15 @@ GateResult SessionGate::first_frame(uint32_t epoch, uint64_t now) {
     first_frame_ = true;
     return GateResult::ok;
 }
-GateResult SessionGate::synchronize_input(uint32_t epoch, uint32_t input_epoch, uint32_t layout, uint64_t now) {
+GateResult SessionGate::synchronize_input(uint32_t epoch, uint32_t input_epoch, uint32_t layout, uint64_t now, uint16_t display_slot) {
     const auto result = tick(now);
     if (result != GateResult::ok) return result;
-    if (epoch != epoch_ || !media_allowed() || !first_frame_ || input_epoch == 0 || input_epoch <= input_epoch_ || layout == 0 || layout < layout_epoch_) return GateResult::state;
+    if (epoch != epoch_ || !media_allowed() || !first_frame_ || input_epoch == 0 || input_epoch <= input_epoch_ || layout == 0 || layout < layout_epoch_ || display_slot >= 16) return GateResult::state;
     release_inputs();
+    if (!pressed_keys_.empty() || !pressed_buttons_.empty()) return GateResult::backend;
     input_epoch_ = input_epoch;
     layout_epoch_ = layout;
-    input_sequence_ = 0;
+    display_slot_ = display_slot;
     heartbeat_version_ = 0;
     heartbeat_at_ = now;
     input_enabled_ = true;
@@ -104,7 +106,7 @@ GateResult SessionGate::accept_key(std::span<const uint8_t> bytes, uint64_t now)
     if ((permissions_ & protocol::PERMISSION_INPUT_KEYBOARD) == 0) return GateResult::permission;
     Frame frame;
     if (parse_frame(bytes, Channel::input, epoch_, frame) != FrameError::ok || frame.type != protocol::KEY) return GateResult::malformed;
-    if (frame.input_epoch != input_epoch_ || frame.sequence != input_sequence_ + 1) return GateResult::replay;
+    if (frame.input_epoch != input_epoch_ || frame.sequence <= input_sequence_) return GateResult::replay;
     const auto usage = read_u16(frame.payload, 2);
     if (usage < 4 || usage > 231) return GateResult::malformed;
     const bool down = frame.payload[4] == 1, repeat = frame.payload[5] == 1;
@@ -117,10 +119,40 @@ GateResult SessionGate::accept_key(std::span<const uint8_t> bytes, uint64_t now)
     return GateResult::ok;
 }
 void SessionGate::release_inputs() {
-    for (const auto usage : pressed_keys_) (void)sink_.key(usage, false, false);
-    pressed_keys_.clear();
+    // A permission/desktop transition can temporarily reject key-up. Retain that
+    // debt and retry while paused; never enable new input before releases succeed.
+    for (auto item=pressed_keys_.begin();item!=pressed_keys_.end();) {
+        if(sink_.key(*item,false,false)) item=pressed_keys_.erase(item); else ++item;
+    }
+    for (auto item=pressed_buttons_.begin();item!=pressed_buttons_.end();) {
+        if(sink_.button(*item,false)) item=pressed_buttons_.erase(item); else ++item;
+    }
     input_enabled_ = false;
     // The next enable requires a strictly newer input epoch even after a watchdog timeout.
+}
+GateResult SessionGate::accept_button(std::span<const uint8_t> bytes, uint64_t now) {
+    const auto result = tick(now);
+    if (result != GateResult::ok) return result;
+    if (!input_allowed()) return GateResult::state;
+    if ((permissions_ & protocol::PERMISSION_INPUT_POINTER) == 0) return GateResult::permission;
+    Frame frame;
+    if (parse_frame(bytes, Channel::input, epoch_, frame) != FrameError::ok || frame.type != protocol::BUTTON) return GateResult::malformed;
+    if (frame.input_epoch != input_epoch_ || frame.sequence <= input_sequence_) return GateResult::replay;
+    if (read_u32(frame.payload,0) != layout_epoch_ || read_u16(frame.payload,4) != display_slot_) return GateResult::state;
+    if (frame.flags != 0) return GateResult::backend; // Relative backend is not implemented yet.
+    const auto button = frame.payload[10];
+    const bool down = frame.payload[11] == 1;
+    const bool pressed = pressed_buttons_.contains(button);
+    if (down && pressed) return GateResult::state;
+    if (!down && !pressed) { input_sequence_ = frame.sequence; return GateResult::ok; }
+    // The reliable button contains its own absolute coordinates, so losing the
+    // latest unreliable motion message cannot turn this into a click elsewhere.
+    if (!sink_.pointer(display_slot_,read_u16(frame.payload,6),read_u16(frame.payload,8)) || !sink_.button(button,down)) {
+        release_inputs(); return GateResult::backend;
+    }
+    input_sequence_ = frame.sequence;
+    if (down) pressed_buttons_.insert(button); else pressed_buttons_.erase(button);
+    return GateResult::ok;
 }
 void SessionGate::pause() {
     release_inputs();
