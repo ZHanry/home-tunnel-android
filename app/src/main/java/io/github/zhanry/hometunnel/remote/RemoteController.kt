@@ -83,6 +83,7 @@ class RemoteController(
     private var offerJws: String? = null
     private var answerJws: String? = null
     private var pendingText: String? = null
+    private var firstFramePresented = false
     private var foreground = true
 
     fun refresh() = perform {
@@ -256,7 +257,7 @@ class RemoteController(
             }
             6 -> {
                 gate.authenticatedDirectPath(payload.number("epoch"), payload.string("protocol"), payload.string("local_candidate_type"), payload.string("remote_candidate_type"))
-                if (_state.value.phase == "paused" && foreground) _state.value = _state.value.copy(phase = "active")
+                if (_state.value.phase == "paused" && foreground && firstFramePresented) _state.value = _state.value.copy(phase = "active")
             }
             7 -> {
                 val epoch = payload.number("epoch")
@@ -291,6 +292,7 @@ class RemoteController(
             }
             8 -> {
                 require(gate.live() && payload.number("epoch") == gate.epoch && payload.number("frames_presented") > 0) { "RD_STATE_CONFLICT" }
+                firstFramePresented = true
                 _state.value = _state.value.copy(phase = if (foreground) "active" else "paused")
                 val session = requireNotNull(_state.value.sessionId)
                 val lifetime = nativeLifetime
@@ -415,7 +417,7 @@ class RemoteController(
     }
     private fun stopLocal() {
         nativeLifetime++; gate.close(); native?.close(); native = null; sequence = 0; controlSequence = 0; motionChannelSequence = 0; motionSequence = 0
-        peerSequence = 0; offerJws = null; answerJws = null; pendingText = null
+        peerSequence = 0; offerJws = null; answerJws = null; pendingText = null; firstFramePresented = false
         gate = RemoteSessionGate(SystemClock::elapsedRealtime)
         authorization = null; verifiedAuthorization = null; verifiedTicket = null
         _state.value = _state.value.copy(sessionId = null, phase = "idle", inputEnabled = false, display = null, textStatus = null)
