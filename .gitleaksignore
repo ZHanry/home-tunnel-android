@@ -10,3 +10,6 @@
 917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:app/src/test/resources/rd-keyset-vectors.json:jwt:56
 917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:app/src/test/resources/rd-keyset-vectors.json:jwt:91
 917f848628f0a3d55e0ea6650bb44fb8d5c9e5da:app/src/test/resources/rd-keyset-vectors.json:jwt:92
+# Public API SemVer literals in the contract-ref validator's acceptance test.
+# This exact historical line contains version tags only, not an API credential.
+0ee24000cc741d21a40df31ae010f9209b70e700:scripts/test_release_policy.py:generic-api-key:25
