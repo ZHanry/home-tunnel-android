@@ -2,7 +2,7 @@
   "component": "android",
   "stage": "internal-testing",
   "api_major": 1,
-  "contract_ref": "api-v1.1.0",
+  "contract_ref": "api-v1.2.0-rc.1",
   "support_policy": "8.0 preview: existing management APIs remain compatible with 7.0 servers. Remote desktop requires the explicit 8.0 capability and matching protocol; the bundled security core has no media backend. Physical-device and end-to-end remote desktop validation are pending. FRP retains its upstream version.",
   "version": "8.0.0-rc.1",
   "minimum_server": "7.0.0",
