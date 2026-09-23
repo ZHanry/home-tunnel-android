@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "repository": "ZHanry/home-tunnel-client",
+  "tag": "v8.0.0",
+  "source_revision": "16d55f0e65b8d0f61d21d9770ecf0f6e94115af3",
+  "asset": "HomeTunnel-Remote-SDK-8.0.0-android-arm64.zip",
+  "sha256": "548116e4a61a9c9d5b2e7eb905cb0620e1d07c2be3d4f7e62baaf6d1c9cd5189",
+  "provenance_sha256": "3673a6dda2e73aad55d86c40c1c36222c4bd57cf1589e4b0961d48c4ef94cfec",
+  "controller_manifest_sha256": "e5aadf77cd31e4c82833c12776b97477383030324257baa1128ccbc76961e32e"
+}

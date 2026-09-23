@@ -32,6 +32,40 @@ the exact upstream lock. The build records source, binary, recipe and notices
 hashes. The production worker and its runtime library list are copied to
 `outputs/native-linux-build`.
 
+The GUI can load this adjacent production worker only when its SHA256 is pinned
+at compile time. Worker version and ABI validation remains mandatory. To prepare
+a complete GUI package from a clean checkout and a clean build of the same
+commit, run:
+
+```sh
+VERSION=8.0.0 REMOTE_HOST_BUILD="$PWD/outputs/native-linux-build/remote-host-build.json" \
+  bash packaging/build-linux-remote-candidate.sh
+```
+
+This entry point verifies the worker's ELF architecture, exact source tree,
+revision, immutable dependency/recipe locks, corresponding-source manifest,
+license notices, authorization tests and separate production/test IPC boundary.
+Both isolated codecs must actually decode over UDP. The package contains only
+the production worker and public evidence; no test executable or executable path
+from an evidence file is used. Dirty or changed builds are refused. Stable
+`8.0.0` and canonical `8.0.0-rc.N` version forms use identical source, byte and
+capability checks; the requested version must match the original worker record
+and source version exactly. The version form does not change acceptance facts:
+physical Xorg, lock/unlock, multi-monitor, browser/device and cross-network
+interoperability remain unverified. Wayland, audio, Unicode text, clipboard and
+file transfer remain unavailable on this Linux host.
+
+The release workflow validates the original tar before preparation and again
+before publication. It verifies the clean tagged source and worker evidence,
+the GUI's pinned worker digest, executable architecture and permissions, and
+rejects missing production files, test executables, unsafe paths and links.
+
+The installer verifies the packaged worker digest before changing the service,
+backs it up with the GUI and Agent, and restores it on a later install failure.
+Updating to a tunnel-only package removes an older native worker. Ordinary
+`packaging/build-release.sh` builds without `REMOTE_HOST_BUILD` remain independent
+for CLI/NAS and the currently unsupported native ARM64 profile.
+
 The separate `home_tunnel_remote_host_xvfb` executable compiles an explicit test
 session allowance. Production does not compile this allowance; setting the
 environment variable on the production worker cannot enable capture. The test

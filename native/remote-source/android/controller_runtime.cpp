@@ -1,7 +1,9 @@
 #include "controller_identity.hpp"
 #include "surface_renderer.hpp"
+#include "surface_lifecycle.hpp"
 #include "../include/home_tunnel/remote.h"
 #include "../webrtc/sdp_policy.hpp"
+#include "../webrtc/no_audio_device.hpp"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/create_peerconnection_factory.h"
@@ -12,7 +14,6 @@
 #include "api/stats/rtc_stats_collector_callback.h"
 #include "api/video_codecs/builtin_video_decoder_factory.h"
 #include "api/video_codecs/builtin_video_encoder_factory.h"
-#include "modules/audio_device/include/audio_device_default.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/ssl_adapter.h"
 #include "rtc_base/thread.h"
@@ -43,17 +44,6 @@ bool candidate_allowed(std::string_view value) {
   const auto& parsed = candidate->candidate();
   return parsed.protocol() == "udp" && parsed.type() != webrtc::IceCandidateType::kRelay && parsed.address().port() > 0;
 }
-// The current controller advertises no audio. WebRTC still requires an ADM when
-// constructing its composite media engine, even for video-only transceivers.
-// This explicit device performs no capture/playout and never touches Java audio.
-class NoAudioDevice : public webrtc::webrtc_impl::AudioDeviceModuleDefault<webrtc::AudioDeviceModule> {
- public:
-  int32_t ActiveAudioLayer(AudioLayer* layer) const override { *layer = kDummyAudio; return 0; }
-  int32_t PlayoutIsAvailable(bool* available) override { *available = false; return 0; }
-  int32_t RecordingIsAvailable(bool* available) override { *available = false; return 0; }
-  int32_t StartPlayout() override { return -1; }
-  int32_t StartRecording() override { return -1; }
-};
 class Runtime {
  public:
   Runtime() {
@@ -176,7 +166,7 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
     }
     if (text(message["type"], "local.resume")) {
       paused_ = false; path_reported_ = false;
-      if (ready_ && !first_frame_) ready_at_ = steady_ms();
+      if (ready_) surface_lifecycle_.RestartWait(steady_ms());
       MaybeReady(); return true;
     }
     if (text(message["type"], "session.lease_updated")) {
@@ -213,8 +203,10 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
   }
   bool Surface(ANativeWindow* window, uint64_t generation) {
     if (closed_ || !renderer_.Attach(window, generation)) return false;
-    surface_ = window != nullptr; if (!surface_) ReleaseInput("surface_detached");
-    else if (ready_ && !first_frame_) ready_at_ = steady_ms();
+    surface_ = window != nullptr;
+    if (!surface_lifecycle_.Replace(generation, surface_, steady_ms())) return false;
+    ReleaseInput(surface_ ? "surface_replaced" : "surface_detached");
+    if (closed_) return false;
     UpdateRendering(); return true;
   }
   void Pause() { if (!closed_) { paused_ = true; ReleaseInput("background"); renderer_.SetAuthorized(false); Emit(HT_RD_EVENT_PAUSED, {}); } }
@@ -238,7 +230,7 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
       Json::Value body; if (!auth::strict_json(std::string_view(reinterpret_cast<const char*>(frame.payload.data()), frame.payload.size()), body)) return false;
       if (frame.type == protocol::CONTROL_REQUEST) {
         std::array<uint8_t,16> id{};
-        if (!surface_ || !first_frame_ || !body["request_id"].isString() || !PeerIdentity::uuid(body["request_id"].asString(), id) ||
+        if (!surface_ || !surface_lifecycle_.presented() || !body["request_id"].isString() || !PeerIdentity::uuid(body["request_id"].asString(), id) ||
             !body["requested_input_permissions"].isArray() || body["requested_input_permissions"].empty()) return false;
         std::set<std::string> names;
         for (const auto& name : body["requested_input_permissions"]) {
@@ -343,7 +335,7 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
     }
     if (frame.type == protocol::SESSION_READY) {
       if (ready_ || !number(body["epoch"], identity_->epoch()) || !capabilities_ || !layout_epoch_) { Close("RD_STATE_CONFLICT"); return; }
-      ready_ = true; ready_at_ = steady_ms(); Json::Value ack; ack["epoch"] = identity_->epoch(); ack["permissions"] = identity_->permissions(); ack["lease_seq"] = Json::UInt64(lease_sequence_);
+      ready_ = true; surface_lifecycle_.RestartWait(steady_ms()); Json::Value ack; ack["epoch"] = identity_->epoch(); ack["permissions"] = identity_->permissions(); ack["lease_seq"] = Json::UInt64(lease_sequence_);
       Send(protocol::SESSION_READY, ack); UpdateRendering(); return;
     }
     if (frame.type == protocol::CONTROL_GRANTED) {
@@ -445,7 +437,7 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
     if (!Live()) return;
     std::erase_if(pending_text_, [](const auto& item) { return steady_ms() >= item.second; });
     if (!ready_ && steady_ms()-started_ >= protocol::ICE_DEADLINE_MS) { Close("RD_NO_DIRECT_PATH"); return; }
-    if (ready_ && !first_frame_ && !paused_ && surface_ && steady_ms()-ready_at_ >= 15000) { Close("RD_MEDIA_FAILED"); return; }
+    if (ready_ && !paused_ && surface_lifecycle_.Expired(steady_ms())) { Close("RD_MEDIA_FAILED"); return; }
     State(0);
     // State/Send and cached stats callbacks may synchronously close the peer.
     // Hold it through GetStats and stop this tick before touching closed state.
@@ -460,7 +452,11 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
     }
     if (closed_) return;
     if (!input_enabled_ && !input_request_.empty() && steady_ms() >= input_deadline_) { ReleaseInput("request_timeout"); Json::Value body; body["reason"]="request_timeout"; Control(protocol::CONTROL_RELEASED,body); }
-    if (!first_frame_ && renderer_.presented_frames()) { first_frame_=true; Json::Value body; body["epoch"]=identity_->epoch(); body["frames_presented"]=Json::UInt64(renderer_.presented_frames()); Emit(first_frame,body); }
+    const auto presentation = renderer_.presentation();
+    if (!paused_ && surface_lifecycle_.Presented(presentation.generation, presentation.frames)) {
+      Json::Value body; body["epoch"]=identity_->epoch(); body["frames_presented"]=Json::UInt64(presentation.frames);
+      body["surface_generation"]=Json::UInt64(surface_lifecycle_.generation()); Emit(first_frame,body);
+    }
     const auto weak=weak_from_this(); runtime().signaling->PostDelayedTask([weak] { if (auto self=weak.lock()) self->Tick(); },webrtc::TimeDelta::Millis(250));
   }
   ht_rd_callbacks_v1 callbacks_{};
@@ -468,19 +464,20 @@ class Controller final : public webrtc::PeerConnectionObserver, public std::enab
   webrtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_;
   webrtc::scoped_refptr<webrtc::VideoTrackInterface> track_;
   SurfaceRenderer renderer_;
+  SurfaceLifecycle surface_lifecycle_;
   std::map<unsigned,std::pair<webrtc::scoped_refptr<webrtc::DataChannelInterface>,std::unique_ptr<ChannelObserver>>> channels_;
   std::array<uint32_t,4> sent_{},received_{},submitted_{};
   std::vector<Json::Value> local_candidates_,remote_candidates_;
   std::set<uint16_t> display_slots_;
   std::set<uint16_t> held_keys_;
   std::map<std::string, uint64_t> pending_text_;
-  uint64_t deadline_=0,lease_sequence_=0,started_=0,ready_at_=0,event_generation_=0,input_deadline_=0,heartbeat_version_=0;
+  uint64_t deadline_=0,lease_sequence_=0,started_=0,event_generation_=0,input_deadline_=0,heartbeat_version_=0;
   uint32_t input_epoch_=0,layout_epoch_=0,held_buttons_=0;
   unsigned local_candidate_count_=0,remote_candidate_count_=0;
   std::string proof_request_,input_request_,selected_pair_,local_type_,remote_type_;
   bool closed_=false,closing_=false,paused_=false,surface_=false,offer_signed_=false,remote_pending_=false,remote_description_=false;
   bool hello_sent_=false,ready_=false,local_path_=false,remote_path_=false,path_reported_=false,capabilities_=false;
-  bool input_enabled_=false,state_sent_=false,stats_pending_=false,first_frame_=false;
+  bool input_enabled_=false,state_sent_=false,stats_pending_=false;
 };
 void ChannelObserver::OnStateChange() { owner_.State(slot_); }
 void ChannelObserver::OnMessage(const webrtc::DataBuffer& message) { owner_.Receive(slot_,message); }

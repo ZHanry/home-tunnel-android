@@ -4,6 +4,7 @@
 #include "clipboard.hpp"
 #include "file_transfer.hpp"
 #include "host_platform.hpp"
+#include "no_audio_device.hpp"
 #include "../generated/host_version.hpp"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
@@ -600,7 +601,10 @@ class HostSession : public webrtc::PeerConnectionObserver,public std::enable_sha
     if(ready_ && clipboard_)clipboard_->tick(now);
     if(files_ && FileCurrent()){FileCall guard(*this);files_->tick(now);}
     if(closed_)return;
-    if(connected_ && !stats_pending_){stats_pending_=true;connection_->GetStats(webrtc::make_ref_counted<Stats>(weak_from_this()).get());}
+    // Cached stats may invoke Path synchronously and close this session. Keep
+    // the peer alive until GetStats returns, then stop scheduling closed work.
+    if(connected_ && !stats_pending_){stats_pending_=true;const auto peer=connection_;peer->GetStats(webrtc::make_ref_counted<Stats>(weak_from_this()).get());}
+    if(closed_)return;
     auto weak=weak_from_this();signaling_.PostDelayedTask([weak]{if(auto self=weak.lock())self->Tick();},webrtc::TimeDelta::Millis(250));
   }
   std::unique_ptr<PeerIdentity> identity_;webrtc::Thread& signaling_;webrtc::PeerConnectionFactoryInterface& factory_;
@@ -680,7 +684,7 @@ int main(int argc,char** argv){
   {
     auto network=webrtc::Thread::CreateWithSocketServer(),signaling=webrtc::Thread::Create();
     if(network->Start() && signaling->Start()){
-      auto factory=webrtc::CreatePeerConnectionFactory(network.get(),network.get(),signaling.get(),nullptr,
+      auto factory=webrtc::CreatePeerConnectionFactory(network.get(),network.get(),signaling.get(),webrtc::make_ref_counted<NoAudioDevice>(),
         webrtc::CreateBuiltinAudioEncoderFactory(),webrtc::CreateBuiltinAudioDecoderFactory(),
         webrtc::CreateBuiltinVideoEncoderFactory(),webrtc::CreateBuiltinVideoDecoderFactory(),nullptr,nullptr);
       if(factory)result=serve(*factory,*signaling);factory=nullptr;
