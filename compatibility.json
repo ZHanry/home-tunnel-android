@@ -2,7 +2,7 @@
   "component": "android",
   "stage": "public-release",
   "api_major": 1,
-  "contract_ref": "api-v1.2.0-rc.1",
+  "contract_ref": "api-v1.2.0",
   "support_policy": "8.0.0: existing management APIs remain compatible with 7.0 servers. Release requires the verified same-source Android controller SDK. VP8/Surface and keyboard/pointer/text use direct UDP; physical-device decoding and end-to-end input remain unverified. System audio, microphone return, clipboard/file delivery, multi-session UI and AV1/HEVC are unavailable. FRP retains its upstream version.",
   "version": "8.0.0",
   "minimum_server": "7.0.0",
