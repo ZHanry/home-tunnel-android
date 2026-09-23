@@ -1,7 +1,10 @@
 """Release-stage regressions; these tests do not contact GitHub or publish artifacts."""
 from pathlib import Path
 import importlib.util
+import hashlib
+import json
 import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +24,34 @@ repository_policy = importlib.util.module_from_spec(repository_spec)
 repository_spec.loader.exec_module(repository_policy)
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_seal_requires_the_same_controller_library_as_the_reviewed_sdk(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); native = root / "native"; native.mkdir()
+            output = root / "release"; output.mkdir()
+            source = {"source_revision": "a" * 40, "source_tree_sha256": "b" * 64, "source_files": {"fixture": "c" * 64}}
+            build = dict(source, source_modified=False, controller_backend_linked=True, device_media_accepted=False,
+                         files={"lib/arm64-v8a/libhome_tunnel_remote.so": "d" * 64})
+            provenance = {"source_revision": source["source_revision"], "tag": "v8.0.0-rc.1", "archive": "SDK.zip", "archive_sha256": "e" * 64}
+            build_bytes = json.dumps(build).encode(); provenance_bytes = json.dumps(provenance).encode()
+            lock = {"tag": provenance["tag"], "asset": provenance["archive"], "sha256": provenance["archive_sha256"],
+                    "controller_manifest_sha256": hashlib.sha256(build_bytes).hexdigest(), "provenance_sha256": hashlib.sha256(provenance_bytes).hexdigest()}
+            for name, data in (("controller-sdk.lock.json", lock), ("remote-source.lock.json", source)):
+                (native / name).write_text(json.dumps(data))
+            (output / "android-controller-sdk.lock.json").write_bytes((native / "controller-sdk.lock.json").read_bytes())
+            (output / "android-native-source.lock.json").write_bytes((native / "remote-source.lock.json").read_bytes())
+            (output / "android-controller-build.json").write_bytes(build_bytes)
+            (output / "android-controller-sdk-provenance.json").write_bytes(provenance_bytes)
+            evidence = {"status": "webrtc-controller-linked-device-acceptance-required", "available": True, "device_media_accepted": False,
+                        "source_revision": source["source_revision"], "controller_manifest_sha256": lock["controller_manifest_sha256"], "library_sha256": "d" * 64}
+            (output / "android-native-evidence.json").write_text(json.dumps(evidence))
+            with patch.object(module, "ROOT", root), patch.object(module, "run") as verify_packages:
+                module.verify_controller_evidence(output, "8.0.0-rc.1")
+                verify_packages.assert_called_once()  # Real APK/AAB ELF/hash checks run separately; no media acceptance is claimed here.
+                evidence["library_sha256"] = "f" * 64
+                (output / "android-native-evidence.json").write_text(json.dumps(evidence))
+                with self.assertRaisesRegex(SystemExit, "library/source identity"):
+                    module.verify_controller_evidence(output, "8.0.0-rc.1")
+
     def test_contract_ref_accepts_only_exact_ascii_stable_or_rc_versions(self):
         for value in ("api-v0.0.0", "api-v1.2.0", "api-v1.2.0-rc.1", "api-v12.30.4-rc.123"):
             with self.subTest(value=value):

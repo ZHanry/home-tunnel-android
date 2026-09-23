@@ -23,6 +23,8 @@ def verify(directory, abis):
             if abi != "arm64-v8a" or record.get("available") is not True or record.get("device_media_accepted") is not False or digest(manifest_path) != record.get("controller_manifest_sha256"):
                 raise SystemExit("Unexpected controller ABI/capability or reviewed build manifest")
             manifest = json.loads(manifest_path.read_text())
+            if manifest.get("source_revision") != lock.get("source_revision") or record.get("controller_source_revision") != lock.get("source_revision") or manifest.get("source_modified") is not False:
+                raise SystemExit("Controller build commit differs from the immutable source snapshot")
             if manifest.get("source_files") != lock.get("source_files") or manifest.get("source_tree_sha256") != lock.get("source_tree_sha256") or manifest.get("upstream_lock_sha256") != lock.get("deps_lock_sha256"):
                 raise SystemExit("Controller build has a different same-source identity")
             if manifest.get("files", {}).get("lib/arm64-v8a/libhome_tunnel_remote.so") != record.get("library_sha256"):

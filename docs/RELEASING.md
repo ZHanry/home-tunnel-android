@@ -4,7 +4,11 @@
 
 Android `versionCode` 从 `8000001` 开始独立递增，每次新 RC 和后续正式版都必须高于所有已发布 APK/AAB（包含预发布）的编号。例如 RC1 为 8000001，RC2 为 8000002，随后正式版使用 8000003。编号在 `gradle.properties` 中显式提交，不根据 Actions 次数、时间或语义版本公式重用。发布任务读取所有历史 Release 的证据并阻止降号、重复编号或覆盖已公开产物；同一个尚未公开标签的失败重试保持编号。
 
-发行流水线从锁定的同源文本快照构建 arm64 JNI/安全核心，验证源码与库摘要，将 `android-native-evidence.json` 和源码锁作为封存附件。`available=false` 的事实保留在证据中，不以编译通过代表媒体或实机通过。签名证书、applicationId 必须保持不变，RC→正式版需要重新构建与验证。
+发行流水线必须导入桌面仓库已发布、已验证且带签名的 Android Controller SDK，再构建 arm64 JNI；默认 CI 的双 ABI 安全核心不再作为远控发行包。SDK 尚未发布或缺少审核后的 `native/controller-sdk.lock.json` 时，发行在接触签名密钥前失败。签名证书、applicationId 必须保持不变，RC→正式版需要重新构建与验证。
+
+客户端先从最终 tag 构建 `HomeTunnel-Remote-SDK-<完整版本>-android-arm64.zip`，与原始桌面候选安装包一起经过原字节验收、封存并发布。Android 的只读 native snapshot 必须由该 SDK 的 `source/remote-artifact.json` 和源码 tar 导入，不能用开发 CI artifact 替代最终 Release。之后提交 `native/controller-sdk.lock.json`：`schema_version=1`、`repository=ZHanry/home-tunnel-client`、实际 `tag` / `source_revision` / `asset`，以及经审核的 SDK `sha256`、`android-sdk-provenance.json` 的 `provenance_sha256`、SDK 内 `android-webrtc-build.json` 的 `controller_manifest_sha256`。这些摘要只能取自真实产物，仓库当前不填占位摘要。
+
+`scripts/fetch-remote-controller.py` 验证 GitHub 已发布 Release、annotated tag 解引用后的 commit、固定 tag 的 Cosign 身份、客户端 `verification_stage=verified`、签名 SHA256 清单和上述固定摘要，再安全解包并调用严格同源导入器。发行附件保留 SDK 锁、SDK provenance、controller build manifest、native library 摘要和源码锁。`device_media_accepted=false` 保留在构建证据中；APK 构建通过不代表 Surface 解码、触控或实机验收通过。
 
 正式版本使用 `vX.Y.Z` 标签。7.0.0 将四个仓库与自有 Agent 统一版本，各组件独立构建，FRP 保留其第三方版本。源码版本与标签必须一致，`compatibility.json` 的阶段设为 `public-release`。
 

@@ -30,10 +30,10 @@ class ControllerImportPolicy(unittest.TestCase):
         recipe.write_text(json.dumps({"gn_args": {"target_cpu": "arm64"}}))
         source_files = {"android/android-build.lock.json": IMPORT.sha(recipe)}
         tree = hashlib.sha256(json.dumps(source_files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        lock = {"source_tree_dirty": False, "source_files": source_files, "source_tree_sha256": tree,
+        lock = {"source_revision": "a" * 40, "source_tree_dirty": False, "source_files": source_files, "source_tree_sha256": tree,
                 "deps_lock_sha256": "a" * 64, "header_sha256": IMPORT.sha(header)}
         (root / "native/remote-source.lock.json").write_text(json.dumps(lock))
-        manifest = {"source_modified": False, "target": "arm64-v8a", "android_api": 26, "controller_backend_linked": True,
+        manifest = {"source_revision": "a" * 40, "source_modified": False, "target": "arm64-v8a", "android_api": 26, "controller_backend_linked": True,
                     "source_files": source_files, "source_tree_sha256": tree, "upstream_lock_sha256": "a" * 64,
                     "recipe_sha256": IMPORT.sha(recipe), "gn_args": {"target_cpu": "arm64"},
                     "files": {p.relative_to(sdk).as_posix(): IMPORT.sha(p) for p in sdk.rglob("*") if p.is_file()}}

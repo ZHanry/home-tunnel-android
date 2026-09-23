@@ -35,7 +35,7 @@ JDK 17、Android SDK 35，使用仓库内已锁定的 Gradle wrapper：
 python3 scripts/check-repository.py
 ```
 
-包含 JNI 的发行构建还需 NDK 27.2.12479018、CMake 3.22.1，并先运行 `python scripts/build-remote-native.py`；Gradle 传入 `-PremoteNativeRoot=已验证产物目录`。详细步骤见[预览构建说明](docs/REMOTE_DESKTOP.md)。
+包含 JNI 的构建还需 NDK 27.2.12479018、CMake 3.22.1。`python scripts/build-remote-native.py` 提供开发/CI 使用的双 ABI 安全核心；远控发行必须从客户端正式封存的 Release 导入固定摘要的 arm64 Controller SDK。Gradle 显式选择对应 profile，详细步骤见[预览构建说明](docs/REMOTE_DESKTOP.md)和[发行步骤](docs/RELEASING.md)。
 
 正式发行必须使用既有 Android 签名身份，证书摘要固定在 `release-signing-cert.sha256`。
 CI 在 Android API 26 和 35 上检查 KeyStore 与管理界面；发行保留 APK、AAB、

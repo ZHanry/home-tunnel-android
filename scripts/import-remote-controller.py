@@ -30,6 +30,8 @@ def verify_sdk(directory, expected_manifest):
     lock = json.loads((ROOT / "native/remote-source.lock.json").read_text())
     if manifest.get("source_modified") is not False or lock.get("source_tree_dirty") is not False:
         raise SystemExit("Modified source builds cannot be imported")
+    if manifest.get("source_revision") != lock.get("source_revision") or not re.fullmatch(r"[0-9a-f]{40}", str(lock.get("source_revision", ""))):
+        raise SystemExit("Controller commit differs from the app's immutable source snapshot")
     if manifest.get("target") != "arm64-v8a" or manifest.get("android_api") != 26 or manifest.get("controller_backend_linked") is not True:
         raise SystemExit("SDK has no reviewed Android arm64/API26 backend")
     if manifest.get("source_files") != lock.get("source_files") or manifest.get("source_tree_sha256") != lock.get("source_tree_sha256"):

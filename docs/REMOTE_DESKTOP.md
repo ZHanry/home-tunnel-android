@@ -15,7 +15,7 @@ python scripts/build-remote-native.py
 ./gradlew -PremoteNativeRoot="$PWD/.cache/remote-native" test lint assembleDebug assembleDebugAndroidTest
 ```
 
-The builder produces arm64 and x86_64 core libraries; Gradle validates their hashes before linking JNI. Release packages include arm64 only. Missing native artifacts are reported as unavailable in a management-only developer build. Release CI requires the locked core, JNI and matching C++ runtime, verifies their identical APK/AAB library sets and 16 KiB ELF page alignment, and publishes native provenance. No independent WebRTC AAR or second transport stack is included.
+The builder produces arm64 and x86_64 security-core libraries for development/CI; Gradle validates their hashes before linking JNI. Missing native artifacts are reported as unavailable in a management-only developer build. Release CI requires the separately published, signed, hash-locked arm64 controller SDK, JNI and matching C++ runtime, verifies their identical APK/AAB library sets and 16 KiB ELF page alignment, and publishes native provenance. It fails before signing if the final SDK lock is absent. No independent WebRTC AAR or second transport stack is included. See [RELEASING.md](RELEASING.md) for the published-release import path; the following manual import is for development diagnosis only.
 
 For the real controller, build `scripts/build-remote-android-webrtc.py --build` in
 the exact clean client repository on Linux. The Android source lock must first be

@@ -15,12 +15,15 @@ foundation. Existing tunnel management remains available. The source version is
 - Preserve the Android application ID and persistent signing certificate. Each RC
   and stable package requires a strictly increasing versionCode.
 
-The bundled shared core currently reports `security-core-only-media-unavailable`.
-Remote video, keyboard/pointer sessions, system audio, microphone return, clipboard
-delivery and file transfer are **not available** in this candidate. The UI blocks
-session creation rather than claiming a successful connection. Multi-session media
-and optional AV1/HEVC are also not implemented. These limitations block a stable
-release claiming the complete 8.0 plan.
+The default development/CI shared core reports `security-core-only-media-unavailable`
+and blocks session creation. The separately compiled controller implements VP8/Surface
+and keyboard/pointer/text through verified direct UDP, but physical-device decoding
+and input remain unverified. Release now requires that controller SDK from the final
+client tag, a verified published Release and committed digest lock; developer CI
+artifacts cannot satisfy the release gate. No final SDK lock has been fabricated.
+System audio, microphone return, clipboard/file delivery, multi-session UI and optional
+AV1/HEVC remain unavailable in the Android controller profile. These limitations block
+a stable release claiming the complete 8.0 plan.
 
 Local verification covers JVM tests, Lint, JNI compilation and package contents.
 The release workflow also requires API 26/35 instrumentation CI and persistent

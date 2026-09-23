@@ -117,7 +117,8 @@ def required_assets(directory):
         expected += [f"home-tunnel-{platform}-{version}-{arch}.tar.gz" for platform in ("linux","macos") for arch in ("amd64","arm64")]
         expected += ["agent-provenance.json"]
     elif COMPONENT == "android":
-        expected = [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}.aab", "android-release-evidence.json", "android-native-evidence.json", "android-native-source.lock.json"]
+        expected = [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}.aab", "android-release-evidence.json", "android-native-evidence.json", "android-native-source.lock.json",
+                    "android-controller-sdk.lock.json", "android-controller-sdk-provenance.json", "android-controller-build.json"]
     else:
         expected = ["image-control-center.json", "image-traffic-gateway.json", "home-tunnel.v1.json"]
         for name in ("control-center", "traffic-gateway"):
@@ -127,6 +128,41 @@ def required_assets(directory):
     for name in expected:
         if not (directory/name).is_file() or not (directory/name).stat().st_size:
             raise SystemExit(f"Missing release asset: {name}")
+    if COMPONENT == "android":
+        verify_controller_evidence(directory, version)
+
+
+def verify_controller_evidence(directory, version):
+    """Do not seal an APK whose SDK evidence differs from the committed release lock."""
+    lock_path = ROOT / "native/controller-sdk.lock.json"
+    if not lock_path.is_file():
+        raise SystemExit("Android release requires the reviewed published controller SDK lock")
+    for published, original in (("android-controller-sdk.lock.json", lock_path),
+                                ("android-native-source.lock.json", ROOT / "native/remote-source.lock.json")):
+        if (directory / published).read_bytes() != original.read_bytes():
+            raise SystemExit("Android release changed its committed native source or SDK lock")
+    lock = json.loads(lock_path.read_text())
+    source = json.loads((ROOT / "native/remote-source.lock.json").read_text())
+    build_path = directory / "android-controller-build.json"
+    provenance_path = directory / "android-controller-sdk-provenance.json"
+    if hashlib.sha256(build_path.read_bytes()).hexdigest() != lock.get("controller_manifest_sha256") or hashlib.sha256(provenance_path.read_bytes()).hexdigest() != lock.get("provenance_sha256"):
+        raise SystemExit("Android release SDK provenance or build manifest differs from its reviewed digest")
+    build = json.loads(build_path.read_text())
+    provenance = json.loads(provenance_path.read_text())
+    native = json.loads((directory / "android-native-evidence.json").read_text())
+    if (build.get("source_revision") != source["source_revision"] or build.get("source_modified") is not False or
+            build.get("source_tree_sha256") != source["source_tree_sha256"] or build.get("source_files") != source["source_files"] or
+            build.get("controller_backend_linked") is not True or build.get("device_media_accepted") is not False or
+            provenance.get("source_revision") != source["source_revision"] or provenance.get("tag") != lock.get("tag") or
+            provenance.get("archive_sha256") != lock.get("sha256") or provenance.get("archive") != lock.get("asset") or
+            native.get("status") != "webrtc-controller-linked-device-acceptance-required" or native.get("available") is not True or
+            native.get("device_media_accepted") is not False or native.get("source_revision") != source["source_revision"] or
+            native.get("controller_manifest_sha256") != lock.get("controller_manifest_sha256") or
+            native.get("library_sha256") != build.get("files", {}).get("lib/arm64-v8a/libhome_tunnel_remote.so")):
+        raise SystemExit("Android release has a different controller library/source identity or capability")
+    run(sys.executable, str(ROOT / "scripts/verify-remote-packages.py"),
+        str(directory / f"HomeTunnel-Android-{version}-arm64-v8a.apk"), str(directory / f"HomeTunnel-Android-{version}.aab"),
+        str(directory / "android-native-evidence.json"))
 
 def seal():
     directory = ROOT / "release"
