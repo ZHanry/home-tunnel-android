@@ -98,6 +98,7 @@ jobs:
       run: |
         python3 -m unittest discover -s scripts -p "test_release_policy.py"
         python3 -m unittest discover -s scripts -p "test_remote_controller_import.py"
+        python3 -m unittest discover -s scripts -p "test_remote_contract_import.py"
   dependency-review:
     name: Dependency Review
     if: ${{ github.event_name == 'pull_request' }}
