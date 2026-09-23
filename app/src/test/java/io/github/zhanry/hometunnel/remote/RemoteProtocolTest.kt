@@ -177,17 +177,23 @@ class RemoteProtocolTest {
         gate.foreground(true); gate.authorized(1, setOf("view", "input.keyboard"), 900_000, 1)
         gate.authenticatedDirectPath(1, "udp", "host", "host"); gate.displayLayout(1, 1)
         val firstSurface = gate.surface(true)
+        assertFalse(gate.connectionEstablished)
         assertFails { gate.requestInput() }
         assertTrue(gate.presentedFrame(1, firstSurface, 20))
+        assertTrue(gate.connectionEstablished)
         val request = gate.requestInput().string("request_id")
         gate.controlGranted(1, request, 1); assertTrue(gate.acknowledgeInput(1, request, 1, 1))
         val replacement = gate.surface(true) // Direct replacement with no detach callback.
         assertFalse(gate.canUse("input.keyboard")); assertFalse(gate.firstFramePresented)
+        assertTrue(gate.connectionEstablished) // Initial-connect timeout must not close an established session during replacement.
         assertFalse(gate.presentedFrame(1, firstSurface, 21)); assertFails { gate.requestInput() }
         assertFalse(gate.presentedFrame(1, replacement, 0)); assertFails { gate.requestInput() }
         assertTrue(gate.presentedFrame(1, replacement, 1))
         assertFalse(gate.acknowledgeInput(1, request, 1, 1))
         gate.surface(false)
+        gate.foreground(false)
+        assertTrue(gate.connectionEstablished) // Nor when it happens to be in the background at the original deadline.
+        gate.foreground(true)
         assertFalse(gate.presentedFrame(1, replacement, 2))
         val reattached = gate.surface(true)
         assertFalse(gate.presentedFrame(1, replacement, 3)); assertFails { gate.requestInput() }

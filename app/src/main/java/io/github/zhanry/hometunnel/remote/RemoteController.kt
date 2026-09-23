@@ -216,7 +216,7 @@ class RemoteController(
             val expectedGeneration = generation
             scope.launch {
                 delay(60_000)
-                if (generation == expectedGeneration && _state.value.sessionId == session && _state.value.phase != "active") {
+                if (generation == expectedGeneration && _state.value.sessionId == session && !gate.connectionEstablished) {
                     closeSession(); _state.value = _state.value.copy(error = "RD_CONNECT_TIMEOUT")
                 }
             }

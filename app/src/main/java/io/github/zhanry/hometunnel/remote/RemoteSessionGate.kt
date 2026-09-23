@@ -22,6 +22,7 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
     private var surfaceAttached = false
     private var surfaceGeneration = 0L
     val firstFramePresented: Boolean get() = surfaceReady
+    var connectionEstablished = false; private set
     private var inputSynchronized = false
     private var inputRequestId: String? = null
     private var inputRequestDeadline = 0L
@@ -35,7 +36,7 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         require(remainingLeaseMs in 1..900_000 && leaseSequence > 0)
         this.epoch = epoch; this.permissions = granted.toSet(); this.leaseSequence = leaseSequence
         lastClock = elapsedMillis(); leaseDeadline = Math.addExact(lastClock, remainingLeaseMs)
-        peerReady = false; surfaceReady = false; releaseInput(); inputEpoch = 0; layoutEpoch = 0; closed = false
+        peerReady = false; surfaceReady = false; connectionEstablished = false; releaseInput(); inputEpoch = 0; layoutEpoch = 0; closed = false
         enabledFeatures.clear()
     }
     fun renew(epoch: Long, sequence: Long, remainingMs: Long) {
@@ -97,7 +98,7 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
     }
     fun presentedFrame(epoch: Long, generation: Long, frames: Long): Boolean {
         if (!live() || epoch != this.epoch || generation != surfaceGeneration || !surfaceAttached || frames <= 0 || surfaceReady) return false
-        surfaceReady = true
+        surfaceReady = true; connectionEstablished = true
         return true
     }
     fun feature(permission: String, enabled: Boolean) {
