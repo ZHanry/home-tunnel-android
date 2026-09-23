@@ -15,7 +15,23 @@ try:
 finally:
     os.chdir(previous_directory)
 
+repository_spec = importlib.util.spec_from_file_location(
+    "repository_policy_under_test", Path(__file__).with_name("check-repository.py"))
+repository_policy = importlib.util.module_from_spec(repository_spec)
+repository_spec.loader.exec_module(repository_policy)
+
 class ReleasePolicyTests(unittest.TestCase):
+    def test_contract_ref_accepts_only_exact_ascii_stable_or_rc_versions(self):
+        for value in ("api-v0.0.0", "api-v1.2.0", "api-v1.2.0-rc.1", "api-v12.30.4-rc.123"):
+            with self.subTest(value=value):
+                self.assertTrue(repository_policy.valid_contract_ref(value))
+        for value in ("main", "api-v1.2", "api-v01.2.0", "api-v1.02.0", "api-v1.2.00",
+                      "api-v1.2.0-rc.0", "api-v1.2.0-rc.01", "api-v1.2.0-rc.١",
+                      "api-v١.2.0", "api-v1.2.0+build", "api-v1.2.0-rc.1+build",
+                      "api-v1.2.0/bad", "api-v1.2.0\n", "api-v1.2.0-rc.1\n", None):
+            with self.subTest(value=value):
+                self.assertFalse(repository_policy.valid_contract_ref(value))
+
     def test_android_rc_and_stable_must_strictly_increase_version_code(self):
         module.validate_android_version_code(8000001, [7000000])
         module.validate_android_version_code(8000002, [7000000, 8000001])
