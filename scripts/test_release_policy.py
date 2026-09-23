@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 script = Path(__file__).with_name("release.py")
@@ -54,9 +55,16 @@ class ReleasePolicyTests(unittest.TestCase):
             evidence = {"status": "webrtc-controller-linked-device-acceptance-required", "available": True, "device_media_accepted": False,
                         "source_revision": source["source_revision"], "controller_manifest_sha256": lock["controller_manifest_sha256"], "library_sha256": "d" * 64}
             (output / "android-native-evidence.json").write_text(json.dumps(evidence))
+            with zipfile.ZipFile(output / "HomeTunnel-Android-8.0.0-rc.1-arm64-v8a.apk", "w") as package:
+                for name in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json"):
+                    package.writestr("assets/licenses/" + name, b"fixture notice")
+                    (output / ("android-native-" + name)).write_bytes(b"fixture notice")
             with patch.object(module, "ROOT", root), patch.object(module, "run") as verify_packages:
                 module.verify_controller_evidence(output, "8.0.0-rc.1")
                 verify_packages.assert_called_once()  # Real APK/AAB ELF/hash checks run separately; no media acceptance is claimed here.
+                (output / "android-native-NDK-NOTICE").write_bytes(b"changed fixture")
+                with self.assertRaisesRegex(SystemExit, "notices differ"):
+                    module.verify_controller_evidence(output, "8.0.0-rc.1")
                 evidence["library_sha256"] = "f" * 64
                 (output / "android-native-evidence.json").write_text(json.dumps(evidence))
                 with self.assertRaisesRegex(SystemExit, "library/source identity"):

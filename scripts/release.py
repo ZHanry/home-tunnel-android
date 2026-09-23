@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -119,6 +120,7 @@ def required_assets(directory):
     elif COMPONENT == "android":
         expected = [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}.aab", "android-release-evidence.json", "android-native-evidence.json", "android-native-source.lock.json",
                     "android-controller-sdk.lock.json", "android-controller-sdk-provenance.json", "android-controller-build.json"]
+        expected += ["android-native-" + name for name in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json")]
     else:
         expected = ["image-control-center.json", "image-traffic-gateway.json", "home-tunnel.v1.json"]
         for name in ("control-center", "traffic-gateway"):
@@ -162,7 +164,11 @@ def verify_controller_evidence(directory, version):
         raise SystemExit("Android release has a different controller library/source identity or capability")
     run(sys.executable, str(ROOT / "scripts/verify-remote-packages.py"),
         str(directory / f"HomeTunnel-Android-{version}-arm64-v8a.apk"), str(directory / f"HomeTunnel-Android-{version}.aab"),
-        str(directory / "android-native-evidence.json"))
+        str(directory / "android-native-evidence.json"), "--controller-build", str(build_path))
+    with zipfile.ZipFile(directory / f"HomeTunnel-Android-{version}-arm64-v8a.apk") as package:
+        for name in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json"):
+            if (directory / ("android-native-" + name)).read_bytes() != package.read("assets/licenses/" + name):
+                raise SystemExit("Android release native notices differ from the installable package")
 
 def seal():
     directory = ROOT / "release"

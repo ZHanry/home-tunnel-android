@@ -10,6 +10,8 @@ Android `versionCode` 从 `8000001` 开始独立递增，当前 8.0.0 使用 `80
 
 `scripts/fetch-remote-controller.py` 验证 GitHub 已发布 Release、annotated tag 解引用后的 commit、固定 tag 的 Cosign 身份、客户端 `verification_stage=verified`、签名 SHA256 清单和上述固定摘要，再安全解包并调用严格同源导入器。发行附件保留 SDK 锁、SDK provenance、controller build manifest、native library 摘要和源码锁。`device_media_accepted=false` 保留在构建证据中；APK 构建通过不代表 Surface 解码、触控或实机验收通过。
 
+APK/AAB 的 `assets/licenses` 同时保留项目许可证、SDK 中与链接目标对应的原始许可证、NDK 27.2.12479018 的 `NOTICE` 与 `NOTICE.toolchain`，以及绑定源码和库摘要的清单。发布校验核对两种安装包中的通知字节与 SDK 一致，Release 的 `android-native-*` 通知附件必须与包内文件相同。
+
 正式版本使用 `vX.Y.Z` 标签。7.0.0 将四个仓库与自有 Agent 统一版本，各组件独立构建，FRP 保留其第三方版本。源码版本与标签必须一致，`compatibility.json` 的阶段设为 `public-release`。
 
 1. 提交代码到 `main`，等待 Quality Gate（包括 Android API 26 / 35 的密钥库与界面检查）、CodeQL 和 Secret scan 成功。

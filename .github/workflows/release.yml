@@ -113,6 +113,9 @@ jobs:
         cp native/controller-sdk.lock.json release-android/android-controller-sdk.lock.json
         cp .cache/controller-sdk-release/android-sdk-provenance.json release-android/android-controller-sdk-provenance.json
         cp .cache/remote-controller/android-webrtc-build.json release-android/android-controller-build.json
+        for notice in PROJECT-LICENSE WEBRTC-LICENSE.md NDK-NOTICE NDK-NOTICE.toolchain native-notices.json; do
+          unzip -p "$apk" "assets/licenses/$notice" > "release-android/android-native-$notice"
+        done
         {
           echo "apk=$apk"
           echo "aab=$aab"
@@ -184,7 +187,7 @@ jobs:
         test "$aab_abis" = arm64-v8a
         test "$(unzip -p "$AAB" base/lib/arm64-v8a/libhome_tunnel_remote.so | sha256sum | awk '{print $1}')" = "$core_sha"
         if unzip -Z1 "$AAB" | grep -q libhometunnel_agent; then echo "Management APK must not bundle a tunnel Agent" >&2; exit 1; fi
-        python3 scripts/verify-remote-packages.py "$APK" "$AAB" release-android/android-native-evidence.json
+        python3 scripts/verify-remote-packages.py "$APK" "$AAB" release-android/android-native-evidence.json --controller-build release-android/android-controller-build.json
 
         apk_sha=$(sha256sum "$APK" | awk '{print $1}')
         aab_sha=$(sha256sum "$AAB" | awk '{print $1}')

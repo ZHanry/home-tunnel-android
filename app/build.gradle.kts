@@ -5,6 +5,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+abstract class PackageNativeNoticesTask : Exec() {
+    @get:OutputDirectory
+    abstract val assetOutput: DirectoryProperty
+}
+
 val productVersionValue = providers.gradleProperty("HOME_TUNNEL_VERSION_NAME").get()
 val versionNameValue = providers.gradleProperty("HOME_TUNNEL_RELEASE_VERSION").orElse(productVersionValue).get()
 val versionCodeValue = providers.gradleProperty("HOME_TUNNEL_VERSION_CODE").get().toInt()
@@ -139,6 +144,27 @@ if (remoteNativeRoot != null) {
             if (remoteControllerArm64) listOf("--abis", "arm64-v8a") else emptyList())
     }
     tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(verifyRemoteNative) }
+    if (remoteControllerArm64) {
+        val noticeNdk = androidComponents.sdkComponents.sdkDirectory.map { it.dir("ndk/27.2.12479018") }
+        androidComponents.onVariants { variant ->
+            val taskName = "package${variant.name.replaceFirstChar { it.uppercaseChar() }}NativeNotices"
+            val packageNativeNotices = tasks.register<PackageNativeNoticesTask>(taskName) {
+                dependsOn(verifyRemoteNative)
+                workingDir(rootProject.projectDir)
+                inputs.files(rootProject.file("LICENSE"), rootProject.file("scripts/package-native-notices.py"),
+                    file("$remoteNativeRoot/LICENSE.md"), file("$remoteNativeRoot/android-webrtc-build.json"))
+                inputs.files(noticeNdk.map { it.file("NOTICE") }, noticeNdk.map { it.file("NOTICE.toolchain") },
+                    noticeNdk.map { it.file("source.properties") })
+                doFirst {
+                    commandLine(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
+                        "scripts/package-native-notices.py", "--sdk", file(remoteNativeRoot).absolutePath,
+                        "--ndk", noticeNdk.get().asFile.absolutePath,
+                        "--output", assetOutput.get().dir("licenses").asFile.absolutePath)
+                }
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(packageNativeNotices) { it.assetOutput }
+        }
+    }
 }
 
 dependencies {
