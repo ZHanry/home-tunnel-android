@@ -10,7 +10,7 @@
 The Android 8.0+ management app for Home Tunnel. Your phone controls devices and
 connections; tunnels run continuously on a Windows/macOS/Linux computer or NAS.
 
-The current source is an **8.0 development preview** with controller identities, pairing UI and the shared JNI security core. The native media engine is unavailable: video, audio, input and file sessions cannot be established. The app reports this limitation explicitly. Existing tunnel management remains available; the stable download below is still 7.0. [Preview capabilities and validation](docs/REMOTE_DESKTOP.md).
+The current source is **8.0.0** with controller identities, pairing UI and the shared JNI core. Release packages require the verified native SDK from the final client Release. The controller implements direct-UDP VP8/Surface and keyboard/pointer/text; physical Android decoding and input remain unverified. Audio, microphone return, clipboard/file delivery, multi-session UI and AV1/HEVC remain unavailable. Existing tunnel management remains available; the links below retain the historical 7.0 download. [Capabilities and validation](docs/REMOTE_DESKTOP.md).
 
 [Download signed 7.0.0 APK (arm64-v8a)](https://github.com/ZHanry/home-tunnel-android/releases/download/v7.0.0/HomeTunnel-Android-7.0.0-arm64-v8a.apk) · [Release evidence](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0)
 

@@ -87,10 +87,12 @@ class RemoteSurfaceAcceptanceTest {
         val height = fixture.number("height", 4096).toInt()
         require(width >= 64 && height >= 64)
         val images = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+        val replacement = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+        val replacementFrames = AtomicInteger()
         val imageThread = HandlerThread("remote-surface-acceptance").apply { start() }
         val evidenceFile = File(context.filesDir, "remote-surface-evidence.json")
         evidenceFile.delete()
-        images.setOnImageAvailableListener({ reader ->
+        val imageListener = ImageReader.OnImageAvailableListener { reader ->
             try {
                 reader.acquireLatestImage()?.use { image ->
                     require(image.width == width && image.height == height) { "RD_ACCEPTANCE_FRAME_SIZE" }
@@ -115,9 +117,12 @@ class RemoteSurfaceAcceptanceTest {
                     if (distinctHashes.size < 128) distinctHashes += hash
                     if (colors.size >= 8) variedFrames.incrementAndGet()
                     frames.incrementAndGet()
+                    if (reader === replacement) replacementFrames.incrementAndGet()
                 }
             } catch (error: Exception) { imageFailure.compareAndSet(null, error) }
-        }, Handler(imageThread.looper))
+        }
+        images.setOnImageAvailableListener(imageListener, Handler(imageThread.looper))
+        replacement.setOnImageAvailableListener(imageListener, Handler(imageThread.looper))
         try {
             withContext(Dispatchers.Main) {
                 // Pin the explicitly selected fixture server before any account mutation.
@@ -159,6 +164,20 @@ class RemoteSurfaceAcceptanceTest {
                 awaitFrames(controller, imageFailure, frames, pausedAt + 10)
                 assertEquals("active", controller.state.value.phase)
 
+                controller.setSurface(replacement.surface)
+                assertEquals("connecting", controller.state.value.phase)
+                assertTrue("Replacement must release control", !controller.state.value.inputEnabled)
+                awaitFrames(controller, imageFailure, replacementFrames, 10)
+                assertEquals("active", controller.state.value.phase)
+                controller.setSurface(null)
+                delay(750)
+                val detachedAt = frames.get()
+                delay(1500)
+                assertEquals("Detached targets must stop rendering", detachedAt, frames.get())
+                controller.setSurface(images.surface)
+                awaitFrames(controller, imageFailure, frames, detachedAt + 10)
+                assertEquals("active", controller.state.value.phase)
+
                 controller.closeSession()
                 delay(750)
                 val closedAt = frames.get()
@@ -170,6 +189,8 @@ class RemoteSurfaceAcceptanceTest {
                     put("distinct_sample_hashes", distinctHashes.size); put("first_sample_sha256", firstHash.get())
                     put("width", width); put("height", height); put("background_stopped", true)
                     put("foreground_resumed", true); put("close_stopped", true)
+                    put("direct_surface_replacement", true); put("replacement_frames", replacementFrames.get())
+                    put("detach_stopped", true); put("reattached_presented", true)
                     put("native_backend", "linked-controller"); put("transport_policy", "verified-direct-udp")
                     put("app_version", BuildConfig.VERSION_NAME); put("android_api", android.os.Build.VERSION.SDK_INT)
                     put("device_manufacturer", android.os.Build.MANUFACTURER); put("device_model", android.os.Build.MODEL)
@@ -183,6 +204,8 @@ class RemoteSurfaceAcceptanceTest {
             }
             images.setOnImageAvailableListener(null, null)
             images.close()
+            replacement.setOnImageAvailableListener(null, null)
+            replacement.close()
             imageThread.quitSafely()
             imageThread.join(5000)
             parentHttp.dispatcher.executorService.shutdown()
@@ -198,7 +221,7 @@ class RemoteSurfaceAcceptanceTest {
 
     private suspend fun awaitFrames(controller: RemoteController, failure: AtomicReference<Throwable>, frames: AtomicInteger, count: Int) {
         withTimeout(25_000) {
-            while (frames.get() < count) {
+            while (frames.get() < count || controller.state.value.phase != "active") {
                 check(failure.get() == null) { "RD_ACCEPTANCE_IMAGE_READ_FAILED" }
                 check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_SESSION" }
                 delay(50)

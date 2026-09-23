@@ -50,9 +50,11 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
         checkAvailable(); require(message.size in 24..8192)
         checkResult(RemoteNativeBridge.input(handle, message))
     }
-    @Synchronized fun surface(surface: Surface?) {
+    @Synchronized fun surface(surface: Surface?, surfaceGeneration: Long) {
         if (closed || !capability.available) return
-        checkResult(RemoteNativeBridge.surface(handle, surface, ++generation))
+        require(surfaceGeneration > generation)
+        checkResult(RemoteNativeBridge.surface(handle, surface, surfaceGeneration))
+        generation = surfaceGeneration
     }
     @Synchronized fun pause() { if (!closed && handle != 0L) RemoteNativeBridge.pause(handle, 1) }
     @Synchronized fun resume() { if (!closed && started) signal("{\"type\":\"local.resume\"}".toByteArray()) }

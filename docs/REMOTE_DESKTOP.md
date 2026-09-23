@@ -1,6 +1,8 @@
-# Android remote desktop preview
+# Android 8.0.0 remote desktop
 
-This preview implements account-bound P-256 AndroidKeyStore identities, DPoP REST authentication, single-use WebSocket authentication, server-key pinning, pairing confirmation, bounded protocol parsing, and local input/lease gates. The existing tunnel-management app remains available.
+This release implements account-bound P-256 AndroidKeyStore identities, DPoP REST authentication, single-use WebSocket authentication, server-key pinning, pairing confirmation, bounded protocol parsing, and local input/lease gates. The existing tunnel-management app remains available. The stable version label does not replace the outstanding device acceptance evidence.
+
+Each Surface attachment has a fresh generation. Direct replacement and detach release input immediately; the matching new Surface must present a frame before control can be requested again. Old queued frame callbacks are ignored, and a ready foreground target with no first frame times out after 15 seconds. Native state-machine and JVM regressions cover replacement, stale callbacks, timeout and detach/reattach. The opt-in device test now creates two distinct ImageReaders and verifies real replacement, but has not been run on a physical device.
 
 The default native artifact is a **security core with no media backend** and returns `available=false`. A separately built, same-source Android arm64 controller now implements real WebRTC/VP8 receive and Surface output, native ticket/lease/grant and proof verification, selected direct-UDP checks, and synchronized keyboard/pointer/text input. It must pass the import checks below before JNI may link it. Audio, clipboard and files remain unavailable in this controller profile. A successful compile or imported library is not physical-device acceptance.
 

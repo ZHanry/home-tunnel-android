@@ -1,8 +1,8 @@
-# Home Tunnel Android 8.0.0-rc.1 development candidate
+# Home Tunnel Android 8.0.0
 
-This prerelease adds the Android controller's remote-desktop protocol and security
+This release adds the Android controller's remote-desktop protocol and security
 foundation. Existing tunnel management remains available. The source version is
-`8.0.0-rc.1`; the source, tag, APK/AAB display version and asset names must match exactly.
+`8.0.0` with versionCode `8000002`; the source, tag, APK/AAB display version and asset names must match exactly.
 
 - Add a remote-desktop entry, endpoint enrollment, parent-account reauthentication,
   AndroidKeyStore P-256 identity, DPoP requests, WSS authentication and pairing-code
@@ -10,6 +10,8 @@ foundation. Existing tunnel management remains available. The source version is
 - Add strict JSON/JWS validation, account-change cancellation, signed server-key rotation,
   foreground and permission gates, and explicit text-only clipboard/SAF access.
 - Fix account-token refresh races that could restore a cleared login.
+- Bind first-frame readiness to the current Surface generation. Replacing or detaching
+  the target releases input; queued frames from an old target cannot re-enable it.
 - Integrate the hash-locked shared C ABI through JNI and package its matching C++
   runtime. Native-source and library digests accompany the APK/AAB release evidence.
 - Preserve the Android application ID and persistent signing certificate. Each RC
@@ -22,8 +24,8 @@ and input remain unverified. Release now requires that controller SDK from the f
 client tag, a verified published Release and committed digest lock; developer CI
 artifacts cannot satisfy the release gate. No final SDK lock has been fabricated.
 System audio, microphone return, clipboard/file delivery, multi-session UI and optional
-AV1/HEVC remain unavailable in the Android controller profile. These limitations block
-a stable release claiming the complete 8.0 plan.
+AV1/HEVC remain unavailable in the Android controller profile. The 8.0.0 label does
+not imply completion of these features or of physical-device acceptance.
 
 Local verification covers JVM tests, Lint, JNI compilation and package contents.
 The release workflow also requires API 26/35 instrumentation CI and persistent

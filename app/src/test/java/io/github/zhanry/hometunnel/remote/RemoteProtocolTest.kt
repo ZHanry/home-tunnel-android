@@ -109,7 +109,7 @@ class RemoteProtocolTest {
         assertFails { gate.authenticatedDirectPath(1, "udp", "relay", "host") }
         gate.authenticatedDirectPath(1, "udp", "host", "srflx")
         assertFalse(gate.canUse("input.keyboard"))
-        gate.surface(true); gate.displayLayout(1, 1)
+        gate.presentedFrame(1, gate.surface(true), 1); gate.displayLayout(1, 1)
         val first = gate.requestInput().string("request_id")
         assertEquals(first, requireNotNull(gate.controlGranted(1, first, 1)).string("request_id"))
         assertTrue(gate.acknowledgeInput(1, first, 1, 1))
@@ -140,8 +140,9 @@ class RemoteProtocolTest {
     @Test fun `input grants and synchronization acknowledgements bind a fresh request and never kill video`() {
         var now = 100L
         val gate = RemoteSessionGate { now }
-        gate.foreground(true); gate.surface(true)
+        gate.foreground(true)
         gate.authorized(3, setOf("view", "input.keyboard"), 900_000, 1)
+        gate.presentedFrame(3, gate.surface(true), 1)
         gate.authenticatedDirectPath(3, "udp", "host", "host"); gate.displayLayout(3, 7)
         val first = gate.requestInput().string("request_id")
         assertFalse(gate.acknowledgeInput(3, first, 1, 7)) // No CONTROL_GRANTED / INPUT_STATE.
@@ -170,5 +171,27 @@ class RemoteProtocolTest {
         assertTrue(gate.acknowledgeInput(3, sixth, 6, 8)); assertTrue(gate.canUse("input.keyboard"))
         gate.surface(false); gate.surface(true)
         assertFalse(gate.acknowledgeInput(3, sixth, 6, 8)); assertTrue(gate.canUse("view"))
+    }
+    @Test fun `surface replacement requires its own frame and rejects queued old callbacks`() {
+        val gate = RemoteSessionGate { 100L }
+        gate.foreground(true); gate.authorized(1, setOf("view", "input.keyboard"), 900_000, 1)
+        gate.authenticatedDirectPath(1, "udp", "host", "host"); gate.displayLayout(1, 1)
+        val firstSurface = gate.surface(true)
+        assertFails { gate.requestInput() }
+        assertTrue(gate.presentedFrame(1, firstSurface, 20))
+        val request = gate.requestInput().string("request_id")
+        gate.controlGranted(1, request, 1); assertTrue(gate.acknowledgeInput(1, request, 1, 1))
+        val replacement = gate.surface(true) // Direct replacement with no detach callback.
+        assertFalse(gate.canUse("input.keyboard")); assertFalse(gate.firstFramePresented)
+        assertFalse(gate.presentedFrame(1, firstSurface, 21)); assertFails { gate.requestInput() }
+        assertFalse(gate.presentedFrame(1, replacement, 0)); assertFails { gate.requestInput() }
+        assertTrue(gate.presentedFrame(1, replacement, 1))
+        assertFalse(gate.acknowledgeInput(1, request, 1, 1))
+        gate.surface(false)
+        assertFalse(gate.presentedFrame(1, replacement, 2))
+        val reattached = gate.surface(true)
+        assertFalse(gate.presentedFrame(1, replacement, 3)); assertFails { gate.requestInput() }
+        assertTrue(gate.presentedFrame(1, reattached, 1))
+        assertFalse(gate.presentedFrame(1, reattached, 2))
     }
 }

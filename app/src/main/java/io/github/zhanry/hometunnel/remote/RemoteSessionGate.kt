@@ -19,6 +19,9 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
     private var lastClock = 0L
     private var peerReady = false
     private var surfaceReady = false
+    private var surfaceAttached = false
+    private var surfaceGeneration = 0L
+    val firstFramePresented: Boolean get() = surfaceReady
     private var inputSynchronized = false
     private var inputRequestId: String? = null
     private var inputRequestDeadline = 0L
@@ -32,7 +35,7 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         require(remainingLeaseMs in 1..900_000 && leaseSequence > 0)
         this.epoch = epoch; this.permissions = granted.toSet(); this.leaseSequence = leaseSequence
         lastClock = elapsedMillis(); leaseDeadline = Math.addExact(lastClock, remainingLeaseMs)
-        peerReady = false; releaseInput(); inputEpoch = 0; layoutEpoch = 0; closed = false
+        peerReady = false; surfaceReady = false; releaseInput(); inputEpoch = 0; layoutEpoch = 0; closed = false
         enabledFeatures.clear()
     }
     fun renew(epoch: Long, sequence: Long, remainingMs: Long) {
@@ -87,7 +90,16 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         foreground = value
         if (!value) { releaseInput(); enabledFeatures.clear() }
     }
-    fun surface(value: Boolean) { surfaceReady = value; if (!value) releaseInput() }
+    fun surface(value: Boolean): Long {
+        surfaceGeneration = Math.addExact(surfaceGeneration, 1)
+        surfaceAttached = value; surfaceReady = false; releaseInput()
+        return surfaceGeneration
+    }
+    fun presentedFrame(epoch: Long, generation: Long, frames: Long): Boolean {
+        if (!live() || epoch != this.epoch || generation != surfaceGeneration || !surfaceAttached || frames <= 0 || surfaceReady) return false
+        surfaceReady = true
+        return true
+    }
     fun feature(permission: String, enabled: Boolean) {
         require(permission in P.permissions)
         if (enabled) { check(canUse(permission)); enabledFeatures += permission } else enabledFeatures -= permission

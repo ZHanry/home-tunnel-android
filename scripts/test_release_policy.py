@@ -24,6 +24,16 @@ repository_policy = importlib.util.module_from_spec(repository_spec)
 repository_spec.loader.exec_module(repository_policy)
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_committed_8_0_release_identity_and_certificate_are_preserved(self):
+        root = Path(__file__).resolve().parents[1]
+        compatibility = json.loads((root / "compatibility.json").read_text())
+        properties = (root / "gradle.properties").read_text()
+        self.assertEqual((compatibility["version"], compatibility["stage"]), ("8.0.0", "public-release"))
+        self.assertIn("HOME_TUNNEL_VERSION_NAME=8.0.0\n", properties)
+        self.assertIn("HOME_TUNNEL_VERSION_CODE=8000002\n", properties)
+        self.assertEqual((root / "release-signing-cert.sha256").read_text().strip(), "d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702")
+        self.assertIn('applicationId = "io.github.zhanry.hometunnel"', (root / "app/build.gradle.kts").read_text())
+
     def test_seal_requires_the_same_controller_library_as_the_reviewed_sdk(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); native = root / "native"; native.mkdir()
