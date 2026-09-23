@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 import zipfile
 
@@ -13,6 +14,14 @@ SPEC.loader.exec_module(FETCH)
 
 
 class ControllerSDKReleasePolicy(unittest.TestCase):
+    def test_pinned_header_volume_fits_without_removing_the_member_limit(self):
+        entries = [zipfile.ZipInfo(f"include/header-{index}.h") for index in range(FETCH.MAX_SDK_FILES)]
+        bundle = SimpleNamespace(infolist=lambda: entries)
+        self.assertEqual(len(FETCH.checked_members(bundle)), FETCH.MAX_SDK_FILES)
+        entries.append(zipfile.ZipInfo("include/overflow.h"))
+        with self.assertRaisesRegex(SystemExit, "oversized"):
+            FETCH.checked_members(bundle)
+
     def lock(self):
         return {"schema_version": 1, "repository": FETCH.REPOSITORY, "tag": "v8.0.0-rc.1", "source_revision": "a" * 40,
                 "asset": "HomeTunnel-Remote-SDK-8.0.0-rc.1-android-arm64.zip", "sha256": "b" * 64,

@@ -12,6 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "ZHanry/home-tunnel-client"
+MAX_SDK_FILES = 65536  # Match the client SDK's bounded, roughly 40,000-header inventory.
 
 
 def digest(path):
@@ -79,22 +80,27 @@ def verify_release_files(directory, lock):
         raise SystemExit("Controller SDK or provenance differs from the committed digest lock")
 
 
+def checked_members(bundle):
+    members = {}
+    total = 0
+    for item in bundle.infolist():
+        name = item.filename
+        path = PurePosixPath(name)
+        total += item.file_size
+        if (not name or name != path.as_posix() or path.is_absolute() or any(part in (".", "..") for part in name.split("/")) or
+                "\\" in name or ":" in name or any(ord(c) < 32 for c in name) or item.is_dir() or
+                stat.S_ISLNK(item.external_attr >> 16) or name in members or item.flag_bits & 1 or
+                item.file_size > 1024 ** 3 or total > 3 * 1024 ** 3 or len(members) >= MAX_SDK_FILES):
+            raise SystemExit("Unsafe, duplicate or oversized controller SDK member")
+        members[name] = item
+    return members
+
+
 def extract_sdk(archive_path, output, record):
     if output.exists():
         raise SystemExit("Controller SDK extraction directory must be new")
     with zipfile.ZipFile(archive_path) as bundle:
-        members = {}
-        total = 0
-        for item in bundle.infolist():
-            name = item.filename
-            path = PurePosixPath(name)
-            total += item.file_size
-            if (not name or name != path.as_posix() or path.is_absolute() or any(part in (".", "..") for part in name.split("/")) or
-                    "\\" in name or ":" in name or any(ord(c) < 32 for c in name) or item.is_dir() or
-                    stat.S_ISLNK(item.external_attr >> 16) or name in members or item.flag_bits & 1 or
-                    item.file_size > 1024 ** 3 or total > 3 * 1024 ** 3 or len(members) >= 30000):
-                raise SystemExit("Unsafe, duplicate or oversized controller SDK member")
-            members[name] = item
+        members = checked_members(bundle)
         if set(members) != set(record.get("files", {})):
             raise SystemExit("Controller SDK inventory differs from its release provenance")
         output.mkdir(parents=True)
