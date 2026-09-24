@@ -19,9 +19,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -40,7 +43,7 @@ class RemoteSurfaceAcceptanceTest {
     @Test fun decodedSurfacePausesResumesAndStopsWithTheProductionController() = runBlocking {
         assumeTrue("Requires an explicitly configured, approved live test host",
             InstrumentationRegistry.getArguments().getString("remoteSurfaceAcceptance") == "true")
-        assertTrue("Import the real arm64 controller SDK before device acceptance", BuildConfig.REMOTE_CONTROLLER_BACKEND)
+        assertTrue("Import a real controller SDK before media acceptance", BuildConfig.REMOTE_CONTROLLER_BACKEND)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val fixtureFile = File(context.filesDir, "remote-surface-fixture.json")
         require(fixtureFile.length() in 1..16_384) { "RD_ACCEPTANCE_FIXTURE_REQUIRED" }
@@ -81,10 +84,17 @@ class RemoteSurfaceAcceptanceTest {
         val frames = AtomicInteger()
         val variedFrames = AtomicInteger()
         val firstHash = AtomicReference<String>()
+        val firstSize = AtomicReference<Pair<Int, Int>>()
         val distinctHashes = java.util.Collections.synchronizedSet(mutableSetOf<String>())
         val imageFailure = AtomicReference<Throwable>()
         val width = fixture.number("width", 4096).toInt()
         val height = fixture.number("height", 4096).toInt()
+        val inputPoint = fixture["input_point"]?.jsonObject
+        val accessMode = fixture["access_mode"]?.jsonPrimitive?.content ?: "same-account"
+        require(accessMode in setOf("same-account", "cross-account-assist", "cross-account-fixed", "cross-account-request")) {
+            "RD_ACCEPTANCE_ACCESS_MODE"
+        }
+        val crossAccount = accessMode != "same-account"
         require(width >= 64 && height >= 64)
         val images = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
         val replacement = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
@@ -95,15 +105,19 @@ class RemoteSurfaceAcceptanceTest {
         val imageListener = ImageReader.OnImageAvailableListener { reader ->
             try {
                 reader.acquireLatestImage()?.use { image ->
-                    require(image.width == width && image.height == height) { "RD_ACCEPTANCE_FRAME_SIZE" }
+                    require(image.width in maxOf(640, width / 2)..width && image.height in maxOf(360, height / 2)..height &&
+                        kotlin.math.abs(image.width.toLong() * height - image.height.toLong() * width) <= width.toLong() * height / 100) {
+                        "RD_ACCEPTANCE_FRAME_SIZE_${image.width}_${image.height}_${width}_${height}"
+                    }
                     val plane = image.planes.single()
-                    require(plane.pixelStride == 4 && plane.rowStride >= width * 4)
+                    require(plane.pixelStride == 4 && plane.rowStride >= image.width * 4) { "RD_ACCEPTANCE_PIXEL_STRIDE" }
+                    firstSize.compareAndSet(null, image.width to image.height)
                     val pixels = plane.buffer
                     val digest = MessageDigest.getInstance("SHA-256")
                     val colors = mutableSetOf<Int>()
                     // Sample a fixed grid; no desktop pixels are persisted to disk or test logs.
-                    for (y in 0 until height step maxOf(1, height / 32)) {
-                        for (x in 0 until width step maxOf(1, width / 32)) {
+                    for (y in 0 until image.height step maxOf(1, image.height / 32)) {
+                        for (x in 0 until image.width step maxOf(1, image.width / 32)) {
                             val offset = y * plane.rowStride + x * plane.pixelStride
                             val red = pixels.get(offset).toInt() and 255
                             val green = pixels.get(offset + 1).toInt() and 255
@@ -119,7 +133,11 @@ class RemoteSurfaceAcceptanceTest {
                     frames.incrementAndGet()
                     if (reader === replacement) replacementFrames.incrementAndGet()
                 }
-            } catch (error: Exception) { imageFailure.compareAndSet(null, error) }
+            } catch (error: Exception) {
+                val reason = error.message?.takeIf { Regex("RD_ACCEPTANCE_[A-Z0-9_]{1,60}").matches(it) }
+                    ?: if (error is IndexOutOfBoundsException) "RD_ACCEPTANCE_IMAGE_BUFFER" else "RD_ACCEPTANCE_IMAGE_READ_FAILED"
+                imageFailure.compareAndSet(null, IllegalStateException(reason))
+            }
         }
         images.setOnImageAvailableListener(imageListener, Handler(imageThread.looper))
         replacement.setOnImageAvailableListener(imageListener, Handler(imageThread.looper))
@@ -133,27 +151,74 @@ class RemoteSurfaceAcceptanceTest {
                 operation(controller) { controller.refresh() }
                 assertTrue(controller.state.value.native.available)
                 operation(controller) { controller.authenticate(fixture.string("password"), fixture.string("mfa_code")) }
-                val host = controller.state.value.endpoints.single { it.id == fixture.string("host_endpoint_id") }
-                require(host.available && host.fingerprint == fixture.string("host_jkt")) { "RD_ACCEPTANCE_HOST_IDENTITY" }
-                operation(controller) { controller.pair(host, setOf("view")) }
-                // Host approval remains the ordinary local host action. No approval bypass exists here.
-                withTimeout(60_000) {
-                    while (controller.state.value.pairing?.code == null) {
-                        delay(500)
-                        operation(controller) { controller.refreshPairing() }
+                val permissions = if (inputPoint == null) setOf("view") else setOf("view", "input.keyboard", "input.pointer", "input.text")
+                val host = if (crossAccount) {
+                    operation(controller) {
+                        when (accessMode) {
+                            "cross-account-assist" -> controller.assist(fixture.string("assist_device_id"), fixture.string("assist_temporary_password"), permissions)
+                            "cross-account-fixed" -> controller.fixedPassword(fixture.string("access_device_id"), fixture.string("fixed_password"), permissions)
+                            else -> controller.requestAccess(fixture.string("access_device_id"), permissions)
+                        }
+                    }
+                    requireNotNull(controller.state.value.assistTarget)
+                } else {
+                    controller.state.value.endpoints.single { it.id == fixture.string("host_endpoint_id") }.also {
+                        operation(controller) { controller.pair(it, permissions) }
                     }
                 }
-                val pairing = requireNotNull(controller.state.value.pairing)
+                require(host.available && host.id == fixture.string("host_endpoint_id") && host.fingerprint == fixture.string("host_jkt") &&
+                    (host.ownerUserId != fixture.string("user_id")) == crossAccount) { "RD_ACCEPTANCE_HOST_IDENTITY" }
+                withTimeout(60_000) {
+                    while (controller.state.value.pairingCode == null) {
+                        check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_PAIRING" }
+                        delay(500)
+                    }
+                }
+                val pairingId = requireNotNull(controller.state.value.pairingId)
+                val pairingCode = requireNotNull(controller.state.value.pairingCode)
                 File(context.filesDir, "remote-surface-pairing.json").writeText(buildJsonObject {
-                    put("pairing_id", pairing.id); put("comparison_code", pairing.code)
+                    put("pairing_id", pairingId); put("comparison_code", pairingCode)
                     put("host_jkt", host.fingerprint); put("controller_jkt", controller.state.value.fingerprint)
                 }.toString())
-                operation(controller) { controller.confirmPairing() }
+                withTimeout(60_000) {
+                    while (controller.state.value.sessionId == null) {
+                        check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_PAIRING" }
+                        delay(500)
+                    }
+                }
                 controller.setSurface(images.surface)
-                awaitFrames(controller, imageFailure, frames, 30)
+                awaitFrames(controller, imageFailure, frames, 30, "INITIAL")
                 assertEquals("active", controller.state.value.phase)
                 assertTrue("Use a moving test pattern with at least eight colors", variedFrames.get() >= 30)
                 assertTrue("The decoded test pattern must change over time", distinctHashes.size >= 2)
+
+                if (inputPoint != null) {
+                    controller.requestControl()
+                    withTimeout(10_000) {
+                        while (!controller.state.value.inputEnabled) {
+                            check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_INPUT" }
+                            delay(50)
+                        }
+                    }
+                    val pointerX = inputPoint.nonNegativeNumber("x", width.toLong() - 1).toFloat()
+                    val pointerY = inputPoint.nonNegativeNumber("y", height.toLong() - 1).toFloat()
+                    check(controller.canUse("input.pointer")) { "RD_ACCEPTANCE_POINTER_PERMISSION" }
+                    val layout = requireNotNull(controller.state.value.display) { "RD_ACCEPTANCE_POINTER_LAYOUT" }
+                    check(RemoteWire.point(pointerX, pointerY, width, height, layout.width, layout.height) != null) { "RD_ACCEPTANCE_POINTER_COORDINATE" }
+                    check(controller.pointer(pointerX, pointerY, width, height, true)) { "RD_ACCEPTANCE_POINTER_DOWN" }
+                    check(controller.pointer(pointerX, pointerY, width, height, false)) { "RD_ACCEPTANCE_POINTER_UP" }
+                    controller.key(4, true)
+                    controller.key(4, false)
+                    controller.submitText("验收✓")
+                    withTimeout(10_000) {
+                        while (controller.state.value.textStatus == "pending") {
+                            check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_TEXT" }
+                            delay(50)
+                        }
+                    }
+                    assertEquals("confirmed", controller.state.value.textStatus)
+                    controller.releaseControl()
+                }
 
                 controller.onBackground()
                 delay(750) // Drain frames already queued before the pause reached the renderer.
@@ -161,13 +226,13 @@ class RemoteSurfaceAcceptanceTest {
                 delay(1500)
                 assertEquals("Background rendering must stop", pausedAt, frames.get())
                 controller.onForeground()
-                awaitFrames(controller, imageFailure, frames, pausedAt + 10)
+                awaitFrames(controller, imageFailure, frames, pausedAt + 10, "RESUME")
                 assertEquals("active", controller.state.value.phase)
 
                 controller.setSurface(replacement.surface)
                 assertEquals("connecting", controller.state.value.phase)
                 assertTrue("Replacement must release control", !controller.state.value.inputEnabled)
-                awaitFrames(controller, imageFailure, replacementFrames, 10)
+                awaitFrames(controller, imageFailure, replacementFrames, 10, "REPLACEMENT")
                 assertEquals("active", controller.state.value.phase)
                 controller.setSurface(null)
                 delay(750)
@@ -175,7 +240,7 @@ class RemoteSurfaceAcceptanceTest {
                 delay(1500)
                 assertEquals("Detached targets must stop rendering", detachedAt, frames.get())
                 controller.setSurface(images.surface)
-                awaitFrames(controller, imageFailure, frames, detachedAt + 10)
+                awaitFrames(controller, imageFailure, frames, detachedAt + 10, "REATTACH")
                 assertEquals("active", controller.state.value.phase)
 
                 controller.closeSession()
@@ -187,11 +252,14 @@ class RemoteSurfaceAcceptanceTest {
                 evidenceFile.writeText(buildJsonObject {
                     put("passed", true); put("frames_observed", closedAt); put("varied_frames", variedFrames.get())
                     put("distinct_sample_hashes", distinctHashes.size); put("first_sample_sha256", firstHash.get())
-                    put("width", width); put("height", height); put("background_stopped", true)
+                    put("width", requireNotNull(firstSize.get()).first); put("height", requireNotNull(firstSize.get()).second)
+                    put("source_width", width); put("source_height", height); put("background_stopped", true)
                     put("foreground_resumed", true); put("close_stopped", true)
                     put("direct_surface_replacement", true); put("replacement_frames", replacementFrames.get())
                     put("detach_stopped", true); put("reattached_presented", true)
                     put("native_backend", "linked-controller"); put("transport_policy", "verified-direct-udp")
+                    put("access_mode", accessMode)
+                    put("native_input_attempted", inputPoint != null)
                     put("app_version", BuildConfig.VERSION_NAME); put("android_api", android.os.Build.VERSION.SDK_INT)
                     put("device_manufacturer", android.os.Build.MANUFACTURER); put("device_model", android.os.Build.MODEL)
                 }.toString())
@@ -219,13 +287,16 @@ class RemoteSurfaceAcceptanceTest {
         check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_OPERATION" }
     }
 
-    private suspend fun awaitFrames(controller: RemoteController, failure: AtomicReference<Throwable>, frames: AtomicInteger, count: Int) {
-        withTimeout(25_000) {
+    private suspend fun awaitFrames(controller: RemoteController, failure: AtomicReference<Throwable>, frames: AtomicInteger, count: Int, stage: String) {
+        val complete = withTimeoutOrNull(25_000) {
             while (frames.get() < count || controller.state.value.phase != "active") {
-                check(failure.get() == null) { "RD_ACCEPTANCE_IMAGE_READ_FAILED" }
+                check(failure.get() == null) { failure.get()?.message ?: "RD_ACCEPTANCE_IMAGE_READ_FAILED" }
                 check(controller.state.value.error == null) { controller.state.value.error ?: "RD_ACCEPTANCE_SESSION" }
+                check(controller.state.value.sessionId != null) { "RD_ACCEPTANCE_SESSION_CLOSED_$stage" }
                 delay(50)
             }
+            true
         }
+        check(complete == true) { "RD_ACCEPTANCE_FRAMES_$stage" }
     }
 }

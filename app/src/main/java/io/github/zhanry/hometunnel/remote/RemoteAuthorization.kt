@@ -55,9 +55,12 @@ class RemoteAuthorization(private val binding: RemoteAuthorizationBinding, priva
     )
 
     fun authorize(snapshot: JsonObject, now: Instant = Instant.now()): RemoteVerifiedAuthorization {
-        require(snapshot["session_id"] == JsonPrimitive(binding.sessionId) && snapshot["session_request_id"] == JsonPrimitive(binding.sessionRequestId) &&
-            snapshot["connection_epoch"] == JsonPrimitive(binding.connectionEpoch) && snapshot["host_endpoint_id"] == JsonPrimitive(binding.hostEndpointId) &&
-            snapshot["controller_endpoint_id"] == JsonPrimitive(binding.controllerEndpointId) && permissions(snapshot, "permissions") == binding.permissions) { "RD_SESSION_CONTEXT" }
+        require(snapshot["session_id"] == JsonPrimitive(binding.sessionId)) { "RD_SESSION_ID_MISMATCH" }
+        require(snapshot["session_request_id"] == JsonPrimitive(binding.sessionRequestId)) { "RD_SESSION_REQUEST_MISMATCH" }
+        require(snapshot["connection_epoch"] == JsonPrimitive(binding.connectionEpoch)) { "RD_SESSION_EPOCH_MISMATCH" }
+        require(snapshot["host_endpoint_id"] == JsonPrimitive(binding.hostEndpointId)) { "RD_SESSION_HOST_MISMATCH" }
+        require(snapshot["controller_endpoint_id"] == JsonPrimitive(binding.controllerEndpointId)) { "RD_SESSION_CONTROLLER_MISMATCH" }
+        require(permissions(snapshot, "permissions") == binding.permissions) { "RD_SESSION_SCOPE_MISMATCH" }
         val hostKey = snapshot.getValue("host_public_jwk").jsonObject
         require(RemoteCrypto.thumbprint(hostKey) == binding.hostJkt &&
             RemoteCrypto.thumbprint(snapshot.getValue("controller_public_jwk").jsonObject) == binding.controllerJkt) { "RD_PEER_IDENTITY_MISMATCH" }
@@ -72,6 +75,7 @@ class RemoteAuthorization(private val binding: RemoteAuthorizationBinding, priva
     fun nativeContext(snapshot: JsonObject, now: Instant = Instant.now(), stunUrls: List<String> = emptyList()): ByteArray {
         val verified = authorize(snapshot, now)
         require(stunUrls.size <= 4 && stunUrls.all(RemoteConnectionPolicy::validStun)) { "RD_PATH_REJECTED" }
+        val nativeKeys = JsonObject(trustedKeys.filterKeys { it != "rotation_proofs" } + ("rotation_proofs" to JsonArray(emptyList())))
         val context = buildJsonObject {
             put("stun_urls", JsonArray(stunUrls.map(::JsonPrimitive)))
             put("session_id", binding.sessionId); put("connection_epoch", binding.connectionEpoch)
@@ -85,7 +89,7 @@ class RemoteAuthorization(private val binding: RemoteAuthorizationBinding, priva
             put("local_grant_revoked", false)
             put("host_public_jwk", snapshot.getValue("host_public_jwk"))
             put("controller_public_jwk", snapshot.getValue("controller_public_jwk"))
-            put("initial_trust_pin", trustedKeys); put("server_keyset", trustedKeys)
+            put("initial_trust_pin", nativeKeys); put("server_keyset", nativeKeys)
             for (name in listOf("ticket_jws", "lease_jws", "grant_jws")) put(name, snapshot.getValue(name))
         }.toString().toByteArray()
         require(context.size in 1..64 * 1024) { "RD_AUTHORIZATION_TOO_LARGE" }
@@ -162,4 +166,9 @@ internal fun JsonObject.number(field: String, maximum: Long = 9_007_199_254_740_
     val value = getValue(field).jsonPrimitive
     require(!value.isString)
     return requireNotNull(value.longOrNull).also { require(it in 1..maximum) { "RD_NUMBER" } }
+}
+internal fun JsonObject.nonNegativeNumber(field: String, maximum: Long): Long {
+    val value = getValue(field).jsonPrimitive
+    require(!value.isString)
+    return requireNotNull(value.longOrNull).also { require(it in 0..maximum) { "RD_NUMBER" } }
 }

@@ -1,3 +1,20 @@
+# Home Tunnel Android 9.0.0
+
+The app refreshes navigation and the remote-control surface and exposes
+host-approved requests, fixed-password access and one-time temporary-password
+access with matching 9.0.0 server and desktop components. Login asks for an MFA
+code only when the server requires one. The APK keeps the existing application
+ID and release signing identity and uses versionCode `9000000`.
+
+The Android controller requires the exact reviewed 9.0.0 native SDK from the
+published desktop release. The x86_64 API 35 emulator exercised local-network
+video and input, but the arm64 APK and real phones were not run. Clipboard
+delivery remains unverified; audio, microphone return and file transport are
+not available. Build and release evidence must not be presented as arm64
+runtime acceptance.
+
+## Previous release: 8.0.0
+
 # Home Tunnel Android 8.0.0
 
 This release adds the Android controller's remote-desktop protocol and security

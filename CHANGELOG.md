@@ -1,5 +1,11 @@
 # Changelog
 
+## 9.0.0
+
+- Add three cross-account connection modes, a foreground-only text clipboard source path and refreshed navigation/session visuals.
+- The clipboard source requires an exact matching published native SDK. End-to-end clipboard delivery remains unverified.
+- Audio, microphone return and file transport remain unavailable on Android; arm64 runtime is not verified by the x86_64 emulator run.
+
 ## 8.0.0 development preview — unreleased
 
 - Add account-isolated AndroidKeyStore P-256 identities, DPoP authentication, WebSocket challenge/reauthentication, server trust pins and explicit pairing confirmation.

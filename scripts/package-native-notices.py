@@ -19,8 +19,15 @@ def notice(path):
     return data
 
 
-def package(sdk, ndk, output):
-    build = json.loads((sdk / "android-webrtc-build.json").read_text())
+def package(sdk, ndk, output, local_candidate=False):
+    build = json.loads((sdk / ("local-candidate.json" if local_candidate else "android-webrtc-build.json")).read_text())
+    if local_candidate:
+        if build.get("status") != "local-test-only" or build.get("release_eligible") is not False:
+            raise SystemExit("Local candidate cannot provide release notices")
+        build = {"source_revision": "local-test-only", "files": {
+            "LICENSE.md": build["notice_sha256"],
+            "lib/arm64-v8a/libhome_tunnel_remote.so": build["abis"]["arm64-v8a"]["library_sha256"],
+        }}
     properties = (ndk / "source.properties").read_text()
     if not re.search(r"^Pkg\.Revision\s*=\s*" + re.escape(NDK_VERSION) + r"\s*$", properties, re.MULTILINE):
         raise SystemExit("Native runtime notices must come from the pinned NDK")
@@ -48,5 +55,6 @@ if __name__ == "__main__":
     parser.add_argument("--sdk", type=Path, required=True)
     parser.add_argument("--ndk", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--local-candidate", action="store_true")
     args = parser.parse_args()
-    package(args.sdk, args.ndk, args.output)
+    package(args.sdk, args.ndk, args.output, args.local_candidate)

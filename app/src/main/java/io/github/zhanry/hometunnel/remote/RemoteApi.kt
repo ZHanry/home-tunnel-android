@@ -120,17 +120,40 @@ class RemoteApi(
     suspend fun accountEndpoints(): JsonObject = parentRequest("GET", "rd/endpoints", null)
     suspend fun endpoints(): JsonObject = request("GET", "rd/endpoints")
     suspend fun grants(): JsonObject = request("GET", "rd/grants")
-    suspend fun pairing(host: String, permissions: Set<String>, requestId: String, nonce: String): JsonObject = request("POST", "rd/pairings", buildJsonObject {
-        put("host_endpoint_id", uuid(host)); put("session_request_id", uuid(requestId))
-        put("permissions", JsonArray(permissions.sorted().map(::JsonPrimitive)))
-        put("mode", "one_session"); put("nonce_controller", nonce)
-    })
+    suspend fun redeemAssist(deviceId: String, temporaryPassword: String): JsonObject {
+        require(Regex("[0-9]{9}").matches(deviceId) && temporaryPassword.length in 1..128)
+        return request("POST", "rd/assist-invites/redeem", buildJsonObject {
+            put("device_id", deviceId); put("temporary_password", temporaryPassword)
+        })
+    }
+    suspend fun redeemFixed(deviceId: String, password: String): JsonObject {
+        require(Regex("[0-9]{9}").matches(deviceId) && password.length in 1..128)
+        return request("POST", "rd/access/fixed/redeem", buildJsonObject {
+            put("device_id", deviceId); put("password", password)
+        })
+    }
+    suspend fun requestAccess(deviceId: String): JsonObject {
+        require(Regex("[0-9]{9}").matches(deviceId))
+        return request("POST", "rd/access/requests", buildJsonObject { put("device_id", deviceId) })
+    }
+    suspend fun accessRequest(id: String): JsonObject = request("GET", "rd/access/requests/${uuid(id)}")
+    suspend fun pairing(host: String, permissions: Set<String>, requestId: String, nonce: String, assistInviteId: String? = null,
+        mode: String = "one_session"): JsonObject {
+        require(mode in setOf("one_session", "persistent") && (mode != "persistent" || assistInviteId == null))
+        return request("POST", "rd/pairings", buildJsonObject {
+            put("host_endpoint_id", uuid(host)); put("session_request_id", uuid(requestId))
+            put("permissions", JsonArray(permissions.sorted().map(::JsonPrimitive)))
+            put("mode", mode); put("nonce_controller", nonce)
+            if (assistInviteId != null) put("assist_invite_id", uuid(assistInviteId))
+        })
+    }
     suspend fun pairing(id: String): JsonObject = request("GET", "rd/pairings/${uuid(id)}")
     suspend fun confirmPairing(id: String, proof: String): JsonObject = request("POST", "rd/pairings/${uuid(id)}/confirm", buildJsonObject { put("signed_proof", proof) })
     suspend fun rejectPairing(id: String): JsonObject = request("POST", "rd/pairings/${uuid(id)}/reject", buildJsonObject { })
-    suspend fun createSession(host: String, grant: String, permissions: Set<String>, requestId: String): JsonObject = request("POST", "rd/sessions", buildJsonObject {
+    suspend fun createSession(host: String, grant: String, permissions: Set<String>, requestId: String, displayId: String): JsonObject = request("POST", "rd/sessions", buildJsonObject {
         put("host_endpoint_id", uuid(host)); put("grant_id", uuid(grant))
         put("permissions", JsonArray(permissions.sorted().map(::JsonPrimitive)))
+        put("display_id", displayId.also { require(it.isNotBlank() && it.length <= 128) })
         put("protocol", buildJsonObject { put("major", 1); put("minor", 0) }); put("quality", "balanced")
     }, idempotency = uuid(requestId))
     suspend fun session(id: String): JsonObject = request("GET", "rd/sessions/${uuid(id)}")

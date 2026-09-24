@@ -6,6 +6,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
@@ -68,6 +70,7 @@ class AdminIdentityTest {
     @Test fun restoredAdministratorGetsManagementAndRoleChangesClearItsData() {
         restore()
         val restored = requireNotNull(repository)
+        compose.onAllNodesWithText(context.getString(R.string.nav_account)).onLast().performClick()
         compose.onNodeWithText(context.getString(R.string.nav_management)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.nav_management)).performClick()
         compose.waitUntil(5_000) { restored.administration.state.value.summary != null && !restored.administration.state.value.loading }

@@ -3,12 +3,24 @@
 
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
 
 
 PACKAGE = "io.github.zhanry.hometunnel.debug"
 TEST = "io.github.zhanry.hometunnel.remote.RemoteSurfaceAcceptanceTest"
+
+
+def valid_decoded_size(fixture, evidence):
+    source_width, source_height = fixture.get("width"), fixture.get("height")
+    decoded_width, decoded_height = evidence.get("width"), evidence.get("height")
+    return (isinstance(source_width, int) and isinstance(source_height, int)
+            and isinstance(decoded_width, int) and isinstance(decoded_height, int)
+            and evidence.get("source_width") == source_width and evidence.get("source_height") == source_height
+            and max(640, source_width // 2) <= decoded_width <= source_width
+            and max(360, source_height // 2) <= decoded_height <= source_height
+            and abs(decoded_width * source_height - decoded_height * source_width) <= source_width * source_height // 100)
 
 
 def main():
@@ -44,11 +56,13 @@ def main():
         output = adb("shell", "am", "instrument", "-w", "-r", "-e", "remoteSurfaceAcceptance", "true",
                      "-e", "class", TEST, PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner", timeout=240)
         if b"FAILURES!!!" in output or b"OK (1 test)" not in output:
-            raise RuntimeError("Surface acceptance did not pass; inspect the device test result, not the private fixture")
+            codes = sorted(set(re.findall(rb"RD_ACCEPTANCE_[A-Z0-9_]{1,80}", output)))
+            reason = codes[-1].decode("ascii") if codes else "RD_ACCEPTANCE_INSTRUMENTATION_FAILED"
+            raise RuntimeError(f"Surface acceptance did not pass: {reason}")
         evidence = json.loads(adb("exec-out", "run-as", PACKAGE, "cat", "files/remote-surface-evidence.json"))
         if not (evidence.get("passed") is True and evidence.get("frames_observed", 0) >= 40
                 and evidence.get("varied_frames", 0) >= 30 and evidence.get("distinct_sample_hashes", 0) >= 2
-                and evidence.get("width") == fixture.get("width") and evidence.get("height") == fixture.get("height")
+                and valid_decoded_size(fixture, evidence)
                 and all(evidence.get(key) is True for key in ("background_stopped", "foreground_resumed", "close_stopped"))):
             raise RuntimeError("Device evidence is incomplete")
         args.output.parent.mkdir(parents=True, exist_ok=True)

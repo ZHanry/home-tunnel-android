@@ -35,6 +35,7 @@ data class AppUiState(
     val devices: List<io.github.zhanry.hometunnel.model.ManagedDevice> = emptyList(),
     val capabilities: ConnectionCapabilities = ConnectionCapabilities(),
     val busy: Boolean = false,
+    val loginMfaRequired: Boolean = false,
     val error: String? = null,
     val lastSyncedAt: String? = null,
     val stale: Boolean = false,
@@ -126,9 +127,19 @@ class HomeTunnelRepository(
                     enterManagement(profile, session)
                 }
             } catch (error: Throwable) {
-                setFailure(error)
+                if (error is ApiException && error.errorCode == "MFA_REQUIRED") {
+                    _uiState.value = _uiState.value.copy(busy = false, loginMfaRequired = true, error = null)
+                } else {
+                    if (error is ApiException && error.errorCode in setOf("MFA_INVALID", "AUTH_INVALID"))
+                        _uiState.value = _uiState.value.copy(loginMfaRequired = error.errorCode == "MFA_INVALID")
+                    setFailure(error)
+                }
             }
         }
+    }
+
+    fun clearLoginMfa() {
+        _uiState.value = _uiState.value.copy(loginMfaRequired = false)
     }
 
     fun changeRequiredPassword(currentPassword: String, newPassword: String, mfaCode: String = "") = scope.launch {

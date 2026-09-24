@@ -136,4 +136,71 @@ class RemoteApiTest {
         }
         assertTrue(RemoteCrypto.thumbprint(signer().publicJwk).isNotBlank())
     }
+    @Test fun `session creation includes the selected host display and request binding`() = runTest {
+        val sessionRequest = UUID.randomUUID().toString()
+        val grant = UUID.randomUUID().toString()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("/api/v1/rd/sessions", request.url.encodedPath)
+            assertEquals(sessionRequest, request.header("Idempotency-Key"))
+            val body = okio.Buffer().also { request.body?.writeTo(it) }.readUtf8()
+            val payload = RemoteJson.parse(body.toByteArray())
+            assertEquals(JsonPrimitive("display-main"), payload["display_id"])
+            assertEquals(JsonPrimitive(grant), payload["grant_id"])
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(202).message("Accepted")
+                .body("{\"id\":\"$sessionRequest\"}".toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val api = RemoteApi("https://home.example/api/v1/", { _, path, _ ->
+            if (path == "rd/token-challenges") challenge() else token()
+        }, client)
+        api.restore(signer(), endpointId, instance)
+        assertEquals(sessionRequest, api.createSession(endpointId, grant, setOf("view"), sessionRequest, "display-main").string("id"))
+        assertFails { api.createSession(endpointId, grant, setOf("view"), sessionRequest, "") }
+    }
+    @Test fun `temporary assistance sends the secret only in redemption and binds pairing to its invitation`() = runTest {
+        val inviteId = UUID.randomUUID().toString()
+        val requestId = UUID.randomUUID().toString()
+        val requests = mutableListOf<Pair<String, JsonObject>>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val body = okio.Buffer().also { request.body?.writeTo(it) }.readUtf8()
+            requests += request.url.encodedPath to RemoteJson.parse(body.toByteArray())
+            val result = if (request.url.encodedPath.endsWith("/redeem")) "{\"invite_id\":\"$inviteId\"}" else "{\"id\":\"$requestId\"}"
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(result.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val api = RemoteApi("https://home.example/api/v1/", { _, path, _ ->
+            if (path == "rd/token-challenges") challenge() else token()
+        }, client)
+        api.restore(signer(), endpointId, instance)
+        assertEquals(inviteId, api.redeemAssist("123456789", "ABcd2345EFgh").string("invite_id"))
+        api.pairing(endpointId, setOf("view"), requestId, RemoteCrypto.base64(ByteArray(32) { 3 }), inviteId)
+        assertEquals("/api/v1/rd/assist-invites/redeem", requests[0].first)
+        assertEquals(JsonPrimitive("ABcd2345EFgh"), requests[0].second["temporary_password"])
+        assertEquals(JsonPrimitive(inviteId), requests[1].second["assist_invite_id"])
+        assertTrue("temporary_password" !in requests[1].second)
+        assertFails { api.redeemAssist("123", "wrong") }
+    }
+    @Test fun `trusted binding requests persistent mode without an invitation`() = runTest {
+        val requestId = UUID.randomUUID().toString()
+        val inviteId = UUID.randomUUID().toString()
+        val requests = mutableListOf<JsonObject>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("/api/v1/rd/pairings", request.url.encodedPath)
+            requests += RemoteJson.parse(okio.Buffer().also { request.body?.writeTo(it) }.readUtf8().toByteArray())
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body("{\"id\":\"$requestId\"}".toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val api = RemoteApi("https://home.example/api/v1/", { _, path, _ ->
+            if (path == "rd/token-challenges") challenge() else token()
+        }, client)
+        api.restore(signer(), endpointId, instance)
+        api.pairing(endpointId, setOf("view"), requestId, RemoteCrypto.base64(ByteArray(32) { 4 }), mode = "persistent")
+        assertEquals(JsonPrimitive("persistent"), requests.single()["mode"])
+        assertTrue("assist_invite_id" !in requests.single())
+        assertFails { api.pairing(endpointId, setOf("view"), requestId, RemoteCrypto.base64(ByteArray(32) { 4 }), inviteId, "persistent") }
+        assertFails { api.pairing(endpointId, setOf("view"), requestId, RemoteCrypto.base64(ByteArray(32) { 4 }), mode = "forever") }
+        assertEquals(1, requests.size)
+    }
 }

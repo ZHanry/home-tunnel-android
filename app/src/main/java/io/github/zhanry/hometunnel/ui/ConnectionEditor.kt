@@ -12,11 +12,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.window.Dialog
@@ -50,25 +45,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreVert
-
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
-
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -111,7 +87,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -179,7 +155,7 @@ internal fun ConnectionEditor(
     Dialog(onDismissRequest = requestClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Scaffold(
             topBar = { TopAppBar(title = { Text(stringResource(if (edit.isNew) R.string.add_connection else R.string.edit_connection)) },
-                navigationIcon = { IconButton(onClick = requestClose, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel)) } }) },
+                navigationIcon = { IconButton(onClick = requestClose, enabled = !busy) { Icon(painterResource(R.drawable.ic_action_back), contentDescription = stringResource(R.string.cancel)) } }) },
             bottomBar = {
                 Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding().imePadding().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = requestClose, enabled = !busy, modifier = Modifier.heightIn(min = 52.dp)) { Text(stringResource(R.string.cancel)) }
@@ -268,7 +244,7 @@ internal fun ConnectionEditor(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("http", "https").forEach { value ->
                             AssistChip(onClick = { scheme = value }, label = { Text(value) }, leadingIcon = {
-                                if (scheme == value) Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+                                if (scheme == value) Icon(painterResource(R.drawable.ic_action_shield), contentDescription = null, modifier = Modifier.size(18.dp))
                             })
                         }
                     }
@@ -297,7 +273,7 @@ internal fun ConnectionEditor(
                 }
                 onDelete?.let {
                     OutlinedButton(onClick = it, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Icon(painterResource(R.drawable.ic_action_delete), contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.delete_connection))
                     }

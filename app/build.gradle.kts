@@ -10,6 +10,30 @@ abstract class PackageNativeNoticesTask : Exec() {
     abstract val assetOutput: DirectoryProperty
 }
 
+abstract class PackageRemoteAcceptanceCaTask : DefaultTask() {
+    @get:InputFile
+    abstract val certificate: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val resourceOutput: DirectoryProperty
+
+    @TaskAction
+    fun packageCertificate() {
+        val output = resourceOutput.get().asFile
+        val raw = output.resolve("raw/remote_acceptance_ca.pem")
+        raw.parentFile.mkdirs()
+        certificate.get().asFile.copyTo(raw, overwrite = true)
+        val xml = output.resolve("xml/remote_acceptance_pinned_security.xml")
+        xml.parentFile.mkdirs()
+        xml.writeText("""<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false"><trust-anchors><certificates src="system" /></trust-anchors></base-config>
+    <domain-config cleartextTrafficPermitted="false"><domain>127.0.0.1</domain><trust-anchors><certificates src="@raw/remote_acceptance_ca" /></trust-anchors></domain-config>
+</network-security-config>
+""")
+    }
+}
+
 val productVersionValue = providers.gradleProperty("HOME_TUNNEL_VERSION_NAME").get()
 val versionNameValue = providers.gradleProperty("HOME_TUNNEL_RELEASE_VERSION").orElse(productVersionValue).get()
 val versionCodeValue = providers.gradleProperty("HOME_TUNNEL_VERSION_CODE").get().toInt()
@@ -19,6 +43,16 @@ require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-rc\\.[1-9][0-9]*)?").matches(productV
 require(versionCodeValue in 1..2_100_000_000) { "Android versionCode is outside the supported range" }
 val remoteNativeRoot = providers.gradleProperty("remoteNativeRoot").orNull
 val remoteControllerArm64 = providers.gradleProperty("remoteControllerArm64").orNull == "true"
+val remoteControllerEmulatorX64 = providers.gradleProperty("remoteControllerEmulatorX64").orNull == "true"
+val remoteAcceptanceCa = providers.gradleProperty("remoteAcceptanceCa").orNull
+val remoteCandidateLocal = providers.gradleProperty("remoteCandidateLocal").orNull == "true"
+val remoteCandidateSource = providers.gradleProperty("remoteCandidateSource").orNull
+require(remoteAcceptanceCa == null || remoteControllerEmulatorX64) { "The test CA is allowed only in the emulator-only build" }
+require(!(remoteControllerArm64 && remoteControllerEmulatorX64)) { "Select only one remote controller ABI" }
+require(!(remoteControllerArm64 || remoteControllerEmulatorX64) || remoteNativeRoot != null) { "A real controller artifact is required" }
+require(!remoteCandidateLocal || (remoteNativeRoot != null && remoteCandidateSource != null && (remoteControllerArm64 || remoteControllerEmulatorX64))) {
+    "Local candidate requires an explicit native SDK, source tree and controller ABI"
+}
 
 fun signingValue(environmentName: String, propertyName: String): String? =
     providers.environmentVariable(environmentName).orNull
@@ -41,13 +75,17 @@ android {
 
     defaultConfig {
         applicationId = "io.github.zhanry.hometunnel"
-        buildConfigField("boolean", "REMOTE_CONTROLLER_BACKEND", remoteControllerArm64.toString())
+        buildConfigField("boolean", "REMOTE_CONTROLLER_BACKEND", (remoteControllerArm64 || remoteControllerEmulatorX64).toString())
         minSdk = 26
-        ndk { abiFilters += setOf("arm64-v8a") }
+        ndk { abiFilters += setOf(if (remoteControllerEmulatorX64) "x86_64" else "arm64-v8a") }
         targetSdk = 35
         versionCode = versionCodeValue
         versionName = versionNameValue
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        if (remoteControllerEmulatorX64) {
+            manifestPlaceholders["remoteAcceptanceSecurity"] = if (remoteAcceptanceCa == null)
+                "@xml/remote_acceptance_security" else "@xml/remote_acceptance_pinned_security"
+        }
         vectorDrawables.useSupportLibrary = true
         resourceConfigurations += listOf("en", "zh-rCN")
         if (remoteNativeRoot != null) {
@@ -78,7 +116,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             // Older x86_64 emulators cannot translate the arm64 UI tooling libraries.
-            ndk { abiFilters += if (remoteControllerArm64) setOf("arm64-v8a") else setOf("arm64-v8a", "x86_64") }
+            ndk { abiFilters += if (remoteControllerArm64 || remoteControllerEmulatorX64) emptySet() else setOf("x86_64") }
         }
         release {
             isMinifyEnabled = true
@@ -104,6 +142,11 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
+    }
+
+    if (remoteControllerEmulatorX64) {
+        sourceSets.getByName("debug").manifest.srcFile("src/emulatorDebug/AndroidManifest.xml")
+        sourceSets.getByName("debug").res.srcDir("src/emulatorDebug/res")
     }
 
     compileOptions {
@@ -136,12 +179,35 @@ android {
     }
 }
 
+if (remoteAcceptanceCa != null) {
+    val packageRemoteAcceptanceCa = tasks.register<PackageRemoteAcceptanceCaTask>("packageRemoteAcceptanceCa") {
+        certificate.set(file(remoteAcceptanceCa))
+        resourceOutput.set(layout.buildDirectory.dir("generated/remoteAcceptanceCa/res"))
+    }
+    androidComponents.onVariants(androidComponents.selector().withBuildType("debug")) { variant ->
+        variant.sources.res?.addGeneratedSourceDirectory(packageRemoteAcceptanceCa) { it.resourceOutput }
+    }
+}
+
+if (remoteControllerEmulatorX64 || remoteCandidateLocal) {
+    androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) { it.enable = false }
+}
+
 if (remoteNativeRoot != null) {
     val verifyRemoteNative = tasks.register<Exec>("verifyRemoteNative") {
         workingDir(rootProject.projectDir)
-        commandLine(listOf(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
-            "scripts/verify-remote-native.py", file(remoteNativeRoot).absolutePath) +
-            if (remoteControllerArm64) listOf("--abis", "arm64-v8a") else emptyList())
+        val python = if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3"
+        if (remoteCandidateLocal) {
+            val ndk = androidComponents.sdkComponents.sdkDirectory.get().dir("ndk/27.2.12479018").asFile
+            commandLine(python, "scripts/verify-local-remote-candidate.py", "--sdk", file(remoteNativeRoot).absolutePath,
+                "--source", file(remoteCandidateSource!!).absolutePath, "--ndk", ndk.absolutePath,
+                "--abi", if (remoteControllerArm64) "arm64-v8a" else "x86_64")
+        } else {
+            commandLine(listOf(python, "scripts/verify-remote-native.py", file(remoteNativeRoot).absolutePath) +
+                if (remoteControllerArm64) listOf("--abis", "arm64-v8a")
+                else if (remoteControllerEmulatorX64) listOf("--abis", "x86_64", "--emulator-test")
+                else emptyList())
+        }
     }
     tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(verifyRemoteNative) }
     if (remoteControllerArm64) {
@@ -152,14 +218,15 @@ if (remoteNativeRoot != null) {
                 dependsOn(verifyRemoteNative)
                 workingDir(rootProject.projectDir)
                 inputs.files(rootProject.file("LICENSE"), rootProject.file("scripts/package-native-notices.py"),
-                    file("$remoteNativeRoot/LICENSE.md"), file("$remoteNativeRoot/android-webrtc-build.json"))
+                    file("$remoteNativeRoot/LICENSE.md"), file("$remoteNativeRoot/${if (remoteCandidateLocal) "local-candidate.json" else "android-webrtc-build.json"}"))
                 inputs.files(noticeNdk.map { it.file("NOTICE") }, noticeNdk.map { it.file("NOTICE.toolchain") },
                     noticeNdk.map { it.file("source.properties") })
                 doFirst {
                     commandLine(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
                         "scripts/package-native-notices.py", "--sdk", file(remoteNativeRoot).absolutePath,
                         "--ndk", noticeNdk.get().asFile.absolutePath,
-                        "--output", assetOutput.get().dir("licenses").asFile.absolutePath)
+                        "--output", assetOutput.get().dir("licenses").asFile.absolutePath,
+                        *(if (remoteCandidateLocal) arrayOf("--local-candidate") else emptyArray()))
                 }
             }
             variant.sources.assets?.addGeneratedSourceDirectory(packageNativeNotices) { it.assetOutput }

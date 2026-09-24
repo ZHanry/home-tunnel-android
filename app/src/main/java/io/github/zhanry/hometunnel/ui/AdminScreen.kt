@@ -21,16 +21,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -86,7 +82,7 @@ internal fun AdminWorkspace(controller: AdminRepository, consoleUrl: String) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (state.page != AdminPage.OVERVIEW) IconButton(onClick = requestBack, enabled = !state.saving) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.admin_back))
+                    Icon(painterResource(R.drawable.ic_action_back), stringResource(R.string.admin_back))
                 }
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(adminTitle(state.page)), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -94,7 +90,7 @@ internal fun AdminWorkspace(controller: AdminRepository, consoleUrl: String) {
                 }
                 IconButton(enabled = !state.loading && !state.saving, onClick = {
                     if (dirty) discardAction = { controller.refresh() } else controller.refresh()
-                }) { Icon(Icons.Default.Refresh, stringResource(R.string.refresh_status)) }
+                }) { Icon(painterResource(R.drawable.ic_action_refresh), stringResource(R.string.refresh_status)) }
             }
         }
         if (state.loading || state.saving) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
@@ -104,12 +100,12 @@ internal fun AdminWorkspace(controller: AdminRepository, consoleUrl: String) {
                 item { Text(stringResource(R.string.admin_scope), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 state.summary?.let { summary -> item { AdminSummaryCard(summary) } }
                 val destinations = listOf(
-                    Triple(AdminPage.USERS, Icons.Default.People, R.string.admin_users_hint),
-                    Triple(AdminPage.DEVICES, Icons.Default.Devices, R.string.admin_devices_hint),
-                    Triple(AdminPage.CONNECTIONS, Icons.Default.Link, R.string.admin_connections_hint),
-                    Triple(AdminPage.SETTINGS, Icons.Default.Tune, R.string.admin_settings_hint),
-                    Triple(AdminPage.HEALTH, Icons.Default.MonitorHeart, R.string.admin_health_hint),
-                    Triple(AdminPage.AUDIT, Icons.Default.History, R.string.admin_audit_hint),
+                    Triple(AdminPage.USERS, R.drawable.ic_action_users, R.string.admin_users_hint),
+                    Triple(AdminPage.DEVICES, R.drawable.ic_nav_devices, R.string.admin_devices_hint),
+                    Triple(AdminPage.CONNECTIONS, R.drawable.ic_nav_tunnels, R.string.admin_connections_hint),
+                    Triple(AdminPage.SETTINGS, R.drawable.ic_action_gear, R.string.admin_settings_hint),
+                    Triple(AdminPage.HEALTH, R.drawable.ic_action_activity, R.string.admin_health_hint),
+                    Triple(AdminPage.AUDIT, R.drawable.ic_action_history, R.string.admin_audit_hint),
                 )
                 items(destinations) { (page, icon, hint) ->
                     AdminDestination(stringResource(adminTitle(page)), stringResource(hint), icon) { controller.open(page) }
@@ -124,12 +120,12 @@ internal fun AdminWorkspace(controller: AdminRepository, consoleUrl: String) {
                     var search by remember(state.search) { mutableStateOf(state.search) }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                            label = { Text(stringResource(R.string.admin_search)) }, leadingIcon = { Icon(Icons.Default.Search, null) })
+                            label = { Text(stringResource(R.string.admin_search)) }, leadingIcon = { Icon(painterResource(R.drawable.ic_action_search), null) })
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { controller.searchUsers(search) }, enabled = !state.loading && !state.saving,
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.admin_search_action)) }
                             Button(onClick = { create = true; controller.clearError() }, enabled = !state.saving,
-                                modifier = Modifier.heightIn(min = 48.dp)) { Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.admin_new_user)) }
+                                modifier = Modifier.heightIn(min = 48.dp)) { Icon(painterResource(R.drawable.ic_action_plus), null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.admin_new_user)) }
                         }
                     }
                 }
@@ -179,7 +175,7 @@ internal fun AdminWorkspace(controller: AdminRepository, consoleUrl: String) {
                         if (connection.endpoint.isNotEmpty()) {
                             Text(connection.endpoint)
                             TextButton(onClick = { copyAdminText(context, connection.endpoint, false) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                                Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.copy_address))
+                                Icon(painterResource(R.drawable.ic_action_copy), null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.copy_address))
                             }
                         }
                     } }
@@ -236,15 +232,15 @@ internal fun AdminWorkspace(controller: AdminRepository, consoleUrl: String) {
 }
 
 @Composable
-private fun AdminDestination(title: String, description: String, icon: ImageVector, onClick: () -> Unit) {
+private fun AdminDestination(title: String, description: String, icon: Int, onClick: () -> Unit) {
     OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+            Icon(painterResource(icon), null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, null)
+            Icon(painterResource(R.drawable.ic_action_arrow), null)
         }
     }
 }
@@ -487,10 +483,10 @@ private fun PasswordIssuedDialog(value: IssuedPassword, onDismiss: () -> Unit) {
             OutlinedTextField(value.value, {}, readOnly = true, modifier = Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text(stringResource(R.string.admin_temporary_password)) },
                 visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(painterResource(if (visible) R.drawable.ic_action_eye_off else R.drawable.ic_action_eye),
                     stringResource(if (visible) R.string.admin_hide_password else R.string.admin_show_password)) } })
             OutlinedButton(onClick = { copyAdminText(context, value.value, true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.admin_copy_password))
+                Icon(painterResource(R.drawable.ic_action_copy), null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.admin_copy_password))
             }
         } },
         confirmButton = { Button(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.admin_password_saved)) } })

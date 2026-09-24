@@ -26,6 +26,7 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
     private var inputSynchronized = false
     private var inputRequestId: String? = null
     private var inputRequestDeadline = 0L
+    val inputPending: Boolean get() = inputRequestId != null && elapsedMillis() < inputRequestDeadline
     private var inputStateSent = false
     private var foreground = false
     private var closed = true

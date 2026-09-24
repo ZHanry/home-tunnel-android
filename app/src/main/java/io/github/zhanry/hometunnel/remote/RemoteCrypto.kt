@@ -74,9 +74,12 @@ object RemoteCrypto {
         require(compact.length <= RemoteJson.MAX_BYTES && compact.count { it == '.' } == 2) { "RD_JWS_FORMAT" }
         val pieces = compact.split('.')
         val header = RemoteJson.parse(decode(pieces[0], 2048), 2048)
-        require(header.keys == (if (expectedKid == null) setOf("alg", "typ") else setOf("alg", "typ", "kid"))) { "RD_JWS_HEADER" }
+        val requiredHeaders = setOf("alg", "typ")
+        require(header.keys == requiredHeaders || ("kid" in header && header.keys == requiredHeaders + "kid")) { "RD_JWS_HEADER" }
         require(header["alg"] == JsonPrimitive("ES256") && header["typ"] == JsonPrimitive(type)) { "RD_JWS_TYPE" }
-        if (expectedKid != null) require(header["kid"] == JsonPrimitive(expectedKid)) { "RD_JWS_KID" }
+        if (expectedKid != null || "kid" in header) {
+            require(header["kid"] == JsonPrimitive(expectedKid ?: thumbprint(trustedJwk))) { "RD_JWS_KID" }
+        }
         val verifier = Signature.getInstance("SHA256withECDSA")
         verifier.initVerify(publicKey(trustedJwk))
         verifier.update("${pieces[0]}.${pieces[1]}".toByteArray(Charsets.US_ASCII))

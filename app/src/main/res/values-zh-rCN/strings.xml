@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Home Tunnel</string>
-    <string name="tagline">使用自己的服务器，让家里的服务随时可达。</string>
+    <string name="tagline">登录后管理设备、远控与内网服务。</string>
     <string name="server_address">服务器地址</string>
     <string name="server_hint">https://console.example.com</string>
     <string name="username">用户名</string>
@@ -73,7 +73,13 @@
     <string name="notification_stop">停止</string>
     <string name="notification_sync">同步</string>
     <string name="loading">正在加载…</string>
-    <string name="version_label">版本 %1$s · Android 正式版</string>
+    <string name="version_label">版本 %1$s</string>
+    <string name="check_update">检查更新</string>
+    <string name="checking_update">正在检查…</string>
+    <string name="update_available">发现正式版 %1$s</string>
+    <string name="update_current">当前已是最新正式版。</string>
+    <string name="update_unavailable">检查更新失败，请稍后重试。</string>
+    <string name="open_release">查看正式发布页</string>
 
     <string name="refresh_status">刷新状态</string>
     <string name="cached_data_warning">连接中断，当前显示缓存。请刷新重试。</string>
@@ -82,9 +88,9 @@
     <string name="show_password">显示密码</string>
     <string name="hide_password">隐藏密码</string>
     <string name="reload_latest">读取最新版本并保留我的输入</string>
-    <string name="nav_overview">总览</string>
+    <string name="nav_overview">远程桌面</string>
     <string name="nav_devices">设备</string>
-    <string name="nav_connections">连接</string>
+    <string name="nav_connections">内网穿透</string>
     <string name="nav_account">账户</string>
     <string name="attention_title">需要关注</string>
     <string name="all_connected">所有连接运行正常</string>
@@ -108,7 +114,7 @@
     <string name="keep_editing">继续编辑</string>
     <string name="preferences">偏好设置</string>
     <string name="about_app">关于 Home Tunnel</string>
-    <string name="login_heading">连接你的家。</string>
+    <string name="login_heading">连接自己的世界</string>
     <string name="status_paused">已暂停</string>
     <string name="management_notice">手机用于管理家庭设备与连接。转发服务持续运行在电脑或 NAS 上。</string>
 

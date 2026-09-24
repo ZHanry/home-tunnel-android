@@ -214,7 +214,8 @@ internal fun DeviceMetadataControls(device: ManagedDevice, repository: HomeTunne
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    Text((if (device.favorite) "★ " else "") + device.tags.joinToString(" · "))
+    if (device.favorite || device.tags.isNotEmpty())
+        Text((if (device.favorite) "★ " else "") + device.tags.joinToString(" · "))
     TextButton(onClick = { editing = true }) { Text(platformText("标签与收藏", "Tags and favorite")) }
     if (editing) AlertDialog(onDismissRequest = { if (!busy) editing = false },
         title = { Text(platformText("设备标签与收藏", "Device tags and favorite")) },

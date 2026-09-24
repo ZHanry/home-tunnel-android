@@ -68,7 +68,8 @@ class ManagementUiTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("家庭 NAS"))
         compose.onNodeWithText("家庭 NAS").assertIsDisplayed()
         capture("devices")
-        compose.onNodeWithText("家庭 NAS").performClick()
+        val viewTunnels = if (context.resources.configuration.locales[0].language == "zh") "查看连接" else "View tunnels"
+        compose.onAllNodesWithText(viewTunnels).onLast().performClick()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("家庭相册"))
         compose.onNodeWithText("家庭相册").assertIsDisplayed()
         compose.onNodeWithText("Home Assistant").assertDoesNotExist()
@@ -85,8 +86,8 @@ class ManagementUiTest {
 
     @Test fun multiDeviceCreationRequiresAnExplicitTargetAndHasAVisibleCancelAction() {
         openHome()
-        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(context.getString(R.string.add_connection)))
-        compose.onNodeWithText(context.getString(R.string.add_connection)).performClick()
+        navigate(R.string.nav_connections)
+        compose.onNodeWithText(context.getString(R.string.add_connection), useUnmergedTree = true).performClick()
         compose.onNodeWithText(context.getString(R.string.choose_device)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.save)).assertIsNotEnabled()
         compose.onNodeWithText("家庭 NAS").performClick()

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Home Tunnel</string>
-    <string name="tagline">Use your own server to keep home services within reach.</string>
+    <string name="tagline">Manage devices, remote sessions and private tunnels.</string>
     <string name="server_address">Server address</string>
     <string name="server_hint">https://console.example.com</string>
     <string name="username">Username</string>
@@ -75,6 +75,12 @@
     <string name="notification_sync">Sync</string>
     <string name="loading">Loading…</string>
     <string name="version_label">Version %1$s</string>
+    <string name="check_update">Check for updates</string>
+    <string name="checking_update">Checking…</string>
+    <string name="update_available">Version %1$s is available</string>
+    <string name="update_current">You have the latest stable version.</string>
+    <string name="update_unavailable">Could not check for updates. Try again later.</string>
+    <string name="open_release">View official release</string>
 
     <string name="refresh_status">Refresh status</string>
     <string name="cached_data_warning">Connection interrupted. Showing cached data. Refresh to retry.</string>
@@ -83,9 +89,9 @@
     <string name="show_password">Show password</string>
     <string name="hide_password">Hide password</string>
     <string name="reload_latest">Load latest version and keep my edits</string>
-    <string name="nav_overview">Overview</string>
+    <string name="nav_overview">Remote</string>
     <string name="nav_devices">Devices</string>
-    <string name="nav_connections">Services</string>
+    <string name="nav_connections">Tunnels</string>
     <string name="nav_account">Account</string>
     <string name="attention_title">Needs attention</string>
     <string name="all_connected">All services are connected</string>
@@ -109,7 +115,7 @@
     <string name="keep_editing">Keep editing</string>
     <string name="preferences">Preferences</string>
     <string name="about_app">About Home Tunnel</string>
-    <string name="login_heading">Connect to home.</string>
+    <string name="login_heading">Connect your world</string>
     <string name="status_paused">Paused</string>
     <string name="management_notice">Manage your devices and connections here. Tunnels keep running on your computer or NAS.</string>
 

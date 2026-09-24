@@ -53,6 +53,13 @@ class RemoteAuthorizationTest {
         val corrupted = JsonObject(snapshot() + ("grant_jws" to JsonPrimitive(signed("ticket"))))
         assertFails { RemoteAuthorization(binding, keys).nativeContext(corrupted, now) }
     }
+    @Test fun `native context includes empty rotation chain after persisted trust pinning`() {
+        val pinned = RemoteKeyset.advance(null, keys, now).anchor
+        val context = RemoteJson.parse(RemoteAuthorization(binding, pinned).nativeContext(snapshot(), now))
+        val nativeKeys = JsonObject(pinned + ("rotation_proofs" to JsonArray(emptyList())))
+        assertEquals(nativeKeys, context.getValue("initial_trust_pin"))
+        assertEquals(nativeKeys, context.getValue("server_keyset"))
+    }
     @Test fun `validly signed shared negative vectors cannot cross authorization boundaries`() {
         val verifier = RemoteAuthorization(binding, keys)
         val cases = vectors.getValue("rejected") as JsonArray

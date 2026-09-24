@@ -2,6 +2,8 @@
 
 package io.github.zhanry.hometunnel.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.material3.NavigationBar
@@ -9,11 +11,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.window.Dialog
@@ -21,6 +18,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -47,28 +47,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreVert
-
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
-
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -77,6 +59,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -108,9 +91,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -130,8 +113,11 @@ import androidx.lifecycle.Lifecycle
 import io.github.zhanry.hometunnel.BuildConfig
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.AgentState
+import io.github.zhanry.hometunnel.model.ManagedDevice
 import io.github.zhanry.hometunnel.model.ProxyKind
 import io.github.zhanry.hometunnel.model.TunnelConnection
+import io.github.zhanry.hometunnel.network.AvailableUpdate
+import io.github.zhanry.hometunnel.network.ReleaseUpdates
 import io.github.zhanry.hometunnel.repository.AppScreen
 import io.github.zhanry.hometunnel.repository.AppUiState
 import io.github.zhanry.hometunnel.repository.HomeTunnelRepository
@@ -195,60 +181,69 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
     var passwordVisible by remember { mutableStateOf(false) }
     var mfa by remember { mutableStateOf("") }
     AuthFrame {
-        BrandMark()
-        Spacer(Modifier.height(20.dp))
+        Box(Modifier.fillMaxWidth().height(166.dp).clip(RoundedCornerShape(24.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFFF1F0FF), Color(0xFFE9E8FF))))) {
+            Box(Modifier.align(Alignment.TopEnd).offset(x = 35.dp, y = (-55).dp).size(195.dp)
+                .border(1.dp, Color.White.copy(alpha = .65f), CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFFC9C8FF), Color(0xFFE9E8FF))), CircleShape))
+            Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                BrandMark()
+                Text("hometunnel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF252841))
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("WELCOME BACK", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(
             stringResource(R.string.login_heading),
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.semantics { heading() },
         )
         Text(
             stringResource(R.string.tagline),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+        Text(stringResource(R.string.server_address), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = server,
-            onValueChange = { server = it },
+            onValueChange = { server = it; mfa = ""; repository.clearLoginMfa() },
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.busy,
-            label = { Text(stringResource(R.string.server_address)) },
             placeholder = { Text(stringResource(R.string.server_hint)) },
             singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Security, contentDescription = null) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
         )
+        Text(stringResource(R.string.username), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = username,
-            onValueChange = { username = it },
+            onValueChange = { username = it; mfa = ""; repository.clearLoginMfa() },
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.busy,
-            label = { Text(stringResource(R.string.username)) },
+            placeholder = { Text(stringResource(R.string.username)) },
             singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         )
+        Text(stringResource(R.string.password), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it },
+            onValueChange = { password = it; mfa = ""; repository.clearLoginMfa() },
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.busy,
-            label = { Text(stringResource(R.string.password)) },
+            placeholder = { Text(stringResource(R.string.password)) },
             singleLine = true,
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                Icon(if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = stringResource(if (passwordVisible) R.string.hide_password else R.string.show_password))
+                Icon(painterResource(if (passwordVisible) R.drawable.ic_action_eye_off else R.drawable.ic_action_eye),
+                    contentDescription = stringResource(if (passwordVisible) R.string.hide_password else R.string.show_password))
             } },
-            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
         )
-        MfaField(mfa) { mfa = it }
+        if (state.loginMfaRequired) MfaField(mfa) { mfa = it }
         Button(
             onClick = { repository.login(server, username, password, mfa) },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
             enabled = !state.busy && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
         ) {
             if (state.busy) {
@@ -257,16 +252,6 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
                 Text(stringResource(R.string.signing_in))
             } else {
                 Text(stringResource(R.string.sign_in))
-            }
-        }
-        OutlinedCard(colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))) {
-            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(
-                    stringResource(R.string.secure_discovery_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
         if (state.persisted.savedAccounts.isNotEmpty()) SavedServers(state, repository)
@@ -282,7 +267,7 @@ private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelReposi
     var mfa by remember { mutableStateOf("") }
     AuthFrame {
         Icon(
-            Icons.Default.Lock,
+            painterResource(R.drawable.ic_action_lock),
             contentDescription = null,
             modifier = Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.primary,
@@ -338,7 +323,7 @@ private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelReposi
             else Text(stringResource(R.string.save_password))
         }
         TextButton(onClick = repository::cancelPasswordChange, enabled = !state.busy) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+            Icon(painterResource(R.drawable.ic_action_back), contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.cancel))
         }
@@ -347,11 +332,11 @@ private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelReposi
 
 @Composable
 private fun AuthFrame(content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Column(
-            modifier = Modifier.align(Alignment.Center).widthIn(max = 540.dp).fillMaxWidth()
-                .verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.align(Alignment.TopCenter).widthIn(max = 540.dp).fillMaxWidth()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(11.dp),
             content = content,
         )
     }
@@ -365,22 +350,29 @@ internal fun HomeScreen(
 ) {
     var editor by remember { mutableStateOf<ConnectionEdit?>(null) }
     var remoteOpen by rememberSaveable { mutableStateOf(false) }
+    var updatesOpen by rememberSaveable { mutableStateOf(false) }
     if (remoteOpen) {
         io.github.zhanry.hometunnel.remote.RemoteScreen(repository.remote) { remoteOpen = false }
+        return
+    }
+    if (updatesOpen) {
+        UpdatesScreen { updatesOpen = false }
         return
     }
     var deleteTarget by remember { mutableStateOf<TunnelConnection?>(null) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var selectedDevice by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
+    var deviceSearch by rememberSaveable { mutableStateOf("") }
+    var tunnelFilter by rememberSaveable { mutableStateOf("all") }
     var confirmLogout by remember { mutableStateOf(false) }
     var selectedConnections by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tabLabels = listOf(R.string.nav_overview, R.string.nav_devices, R.string.nav_connections, R.string.nav_account, R.string.nav_management)
-    val tabIcons = listOf(Icons.Default.Home, Icons.Default.Devices, Icons.Default.Link, Icons.Default.Person, Icons.Default.Security)
-    val visibleTabs = listOf(0, 1, 2) + (if (state.isAdmin) listOf(4) else emptyList()) + 3
-    val scrollState = pageScrollState(tab, if (tab == 2) selectedDevice to search else Unit)
+    val tabIcons = listOf(R.drawable.ic_nav_remote, R.drawable.ic_nav_devices, R.drawable.ic_nav_tunnels, R.drawable.ic_nav_account)
+    val visibleTabs = listOf(0, 1, 2, 3)
+    val scrollState = pageScrollState(tab, when (tab) { 1 -> deviceSearch; 2 -> Triple(selectedDevice, search, tunnelFilter); else -> Unit })
     LaunchedEffect(state.isAdmin) { if (!state.isAdmin && tab == 4) tab = 0 }
     val createConnection = {
         val available = state.devices.filter { it.status == "active" }
@@ -403,26 +395,26 @@ internal fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = { Column {
-                    Text("HOME TUNNEL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(listOf("REMOTE DESKTOP", "MY DEVICES", "PRIVATE SERVICES", "ACCOUNT", "CONTROL CENTER")[tab], style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold)
                 } },
                 actions = { if (tab != 4) IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy) {
-                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh_status))
+                    Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = stringResource(R.string.refresh_status))
                 } },
             )
         },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 visibleTabs.forEach { index ->
-                    NavigationBarItem(selected = tab == index, onClick = { tab = index },
-                        icon = { Icon(tabIcons[index], contentDescription = null) },
+                    NavigationBarItem(selected = tab == index || tab == 4 && index == 3, onClick = { tab = index },
+                        icon = { Icon(painterResource(tabIcons[index]), contentDescription = null) },
                         label = { Text(stringResource(tabLabels[index])) })
                 }
             }
         },
         floatingActionButton = {
             if (tab == 2) ExtendedFloatingActionButton(onClick = createConnection,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                icon = { Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null) },
                 text = { Text(stringResource(R.string.add_connection)) })
         },
     ) { padding ->
@@ -439,62 +431,59 @@ internal fun HomeScreen(
                 if (state.stale) item { WarningCard(stringResource(R.string.cached_data_warning)) }
                 when (tab) {
                     0 -> {
-                        item { ManagementStatusCard(state) }
-                        item { OutlinedButton(onClick = { remoteOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(platformText("远程桌面", "Remote desktop"))
+                        item { RemoteHomeHero { remoteOpen = true } }
+                        item { SectionLabel(platformText("我的远控设备", "My remote devices")) }
+                        if (state.devices.isEmpty()) item { OutlinedCard(Modifier.fillMaxWidth()) {
+                            Text(platformText("还没有登记设备。请先在电脑上安装桌面客户端。", "No devices yet. Install the desktop client on your computer first."), Modifier.padding(22.dp))
                         } }
-                        item { Button(onClick = createConnection, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.add_connection))
-                        } }
-                        item { SectionLabel(stringResource(R.string.attention_title)) }
-                        val attention = state.connections.filter { it.enabled && it.state.lowercase() != "online" }
-                        if (attention.isEmpty()) item {
-                            OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(22.dp)) {
-                                Text(stringResource(if (state.connections.isEmpty()) R.string.no_connections else R.string.all_connected), fontWeight = FontWeight.SemiBold)
-                                Text(stringResource(if (state.connections.isEmpty()) R.string.no_connections_detail else R.string.all_connected_detail), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-                            } }
+                        items(state.devices.sortedWith(compareByDescending<ManagedDevice> { it.online }.thenBy { it.name }), key = { it.id }) { device ->
+                            RemoteHomeDevice(device.name, device.online && device.status == "active") { remoteOpen = true }
                         }
-                        items(attention.take(4), key = { it.id }) { connection ->
-                            ConnectionCard(connection, { editor = ConnectionEdit(connection, false) }, copyAddress)
-                        }
-                        item { OutlinedButton(onClick = { tab = 1 }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.view_devices)); Spacer(Modifier.width(8.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                        item { OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text(platformText("无人值守", "Unattended access"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(platformText("被控电脑由管理员开启并绑定后，可在远控页面快捷连接；不支持时仍需单次授权。", "Once an administrator enables and binds the host, connect quickly from Remote Desktop. Otherwise one-session approval is required."), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                            }
                         } }
                     }
                     1 -> {
-                        item { OutlinedButton(onClick = { remoteOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(platformText("远程桌面", "Remote desktop"))
+                        item { OutlinedTextField(deviceSearch, { deviceSearch = it }, modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(platformText("搜索设备名称或 ID", "Search name or ID")) }, singleLine = true,
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_action_search), contentDescription = null) }) }
+                        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            SectionLabel(platformText("全部设备", "All devices"))
+                            Text(platformText("${state.devices.size} 台设备", "${state.devices.size} devices"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         } }
-                        item { Text(stringResource(R.string.device_scope_hint), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        if (state.devices.isEmpty()) item { EmptyConnectionsCard() }
-                        items(state.devices.sortedByDescending { it.favorite }, key = { it.id }) { device ->
-                            OutlinedCard(onClick = { selectedDevice = device.id; search = ""; tab = 2 }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Icon(Icons.Default.Devices, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                        Text(stringResource(if (device.online && device.status == "active") R.string.status_online else R.string.status_offline), style = MaterialTheme.typography.labelMedium)
-                                    }
-                                    Text(device.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                    HorizontalDivider()
-                                    Text(stringResource(R.string.device_service_count, state.connections.count { it.deviceId == device.id }), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    DeviceMetadataControls(device, repository)
-                                }
-                            }
+                        val visibleDevices = state.devices.filter { it.name.contains(deviceSearch, true) || it.id.contains(deviceSearch, true) }
+                            .sortedWith(compareByDescending<ManagedDevice> { it.favorite }.thenByDescending { it.online })
+                        if (visibleDevices.isEmpty()) item { EmptyDevicesCard(hasDevices = state.devices.isNotEmpty()) }
+                        items(visibleDevices, key = { it.id }) { device ->
+                            DeviceListCard(device, repository, state.connections.count { it.deviceId == device.id },
+                                onConnections = { selectedDevice = device.id; search = ""; tab = 2 }, onRemote = { remoteOpen = true })
                         }
                     }
                     2 -> {
+                        item { TunnelsHero() }
+                        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            SectionLabel(platformText("我的连接", "My connections"))
+                            Text(platformText("${state.connections.size} 条", "${state.connections.size} tunnels"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        } }
+                        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("all" to platformText("全部", "All"), "online" to platformText("运行中", "Running"), "paused" to platformText("已暂停", "Paused")).forEach { (key, label) ->
+                                FilterChip(selected = tunnelFilter == key, onClick = { tunnelFilter = key }, label = { Text(label) })
+                            }
+                        } }
                         item { OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.search_connections)) }, singleLine = true,
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }) }
+                            placeholder = { Text(stringResource(R.string.search_connections)) }, singleLine = true,
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_action_search), contentDescription = null) }) }
                         if (selectedDevice.isNotEmpty()) item {
                             OutlinedButton(onClick = { selectedDevice = "" }, modifier = Modifier.fillMaxWidth()) {
                                 Text(stringResource(R.string.device_filter, state.devices.find { it.id == selectedDevice }?.name.orEmpty()))
                             }
                         }
                         val filtered = state.connections.filter { (selectedDevice.isEmpty() || it.deviceId == selectedDevice) &&
-                            (search.isBlank() || it.name.contains(search, true) || it.publicDisplayEndpoint.contains(search, true)) }
+                            (search.isBlank() || it.name.contains(search, true) || it.publicDisplayEndpoint.contains(search, true)) &&
+                            (tunnelFilter == "all" || tunnelFilter == "online" && it.enabled && it.state.equals("online", true) || tunnelFilter == "paused" && !it.enabled) }
                         if (filtered.isEmpty()) item {
                             if (state.connections.isEmpty()) EmptyConnectionsCard()
                             else Text(stringResource(R.string.no_search_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -513,7 +502,8 @@ internal fun HomeScreen(
                         }
                     }
                     3 -> {
-                        item { AccountContent(state, repository) { confirmLogout = true } }
+                        item { AccountContent(state, repository, onManagement = { tab = 4 },
+                            onUpdates = { updatesOpen = true }) { confirmLogout = true } }
                     }
                 }
             }
@@ -567,6 +557,109 @@ internal fun HomeScreen(
 }
 
 @Composable
+private fun RemoteHomeHero(onOpen: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(
+            Brush.linearGradient(listOf(Color(0xFF5554C7), Color(0xFF7270E1))),
+        ).padding(23.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("CONNECT FROM ANYWHERE", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(platformText("你的电脑，\n就在身边。", "Your computer,\nwithin reach."), color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(platformText("选择设备，进入远程桌面。", "Choose a device to open remote desktop."), color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall)
+        Button(onClick = onOpen, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF4B4CC8))) {
+            Text(platformText("查看远控设备 →", "View remote devices →"))
+        }
+    }
+}
+
+@Composable
+private fun TunnelsHero() {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF303A70), Color(0xFF5966B6))))
+            .padding(23.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("YOUR SERVICES", color = Color.White.copy(alpha = .8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(platformText("家里的服务，\n随时能访问。", "Your services,\nwithin reach."), color = Color.White,
+            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(platformText("远程桌面与内网穿透分开管理。", "Remote desktop and tunnels have separate workspaces."),
+            color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun EmptyDevicesCard(hasDevices: Boolean) {
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(painterResource(R.drawable.ic_nav_devices), contentDescription = null,
+                modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(if (hasDevices) platformText("没有匹配的设备", "No matching devices")
+                else platformText("还没有登记设备", "No registered devices"), fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun DeviceListCard(device: ManagedDevice, repository: HomeTunnelRepository, connectionCount: Int,
+    onConnections: () -> Unit, onRemote: () -> Unit) {
+    val online = device.online && device.status == "active"
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(43.dp).clip(RoundedCornerShape(11.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_nav_devices), contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(device.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(R.string.device_service_count, connectionCount),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(stringResource(if (online) R.string.status_online else R.string.status_offline),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (online) Color(0xFF148263) else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider()
+            Text(device.id, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onConnections) { Text(platformText("查看连接", "View tunnels")) }
+                OutlinedButton(onClick = onRemote, enabled = online) { Text(platformText("远控入口", "Remote access")) }
+            }
+            DeviceMetadataControls(device, repository)
+        }
+    }
+}
+
+@Composable
+private fun RemoteHomeDevice(name: String, online: Boolean, onOpen: () -> Unit) {
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(43.dp).clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_nav_devices), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(if (online) platformText("在线", "Online") else platformText("离线", "Offline"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(onClick = onOpen, enabled = online) { Text(platformText("打开远控", "Open remote")) }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ManagementStatusCard(state: AppUiState) {
     val online = state.devices.count { it.online && it.status == "active" }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
@@ -598,7 +691,7 @@ private fun EmptyConnectionsCard() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Default.CloudOff, contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(painterResource(R.drawable.ic_action_cloud_off), contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
             Text(stringResource(R.string.no_connections), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(stringResource(R.string.no_connections_detail), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -608,26 +701,35 @@ private fun EmptyConnectionsCard() {
 @Composable
 private fun ConnectionCard(connection: TunnelConnection, onEdit: () -> Unit, onCopy: (String) -> Unit) {
     val status = localizedConnectionState(connection)
-    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(connection.proxyType.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text(connection.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
-                Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(connection.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(connection.proxyType.uppercase(), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
             }
             Text(connection.publicDisplayEndpoint.ifBlank { "${connection.localHost}:${connection.localPort}" },
-                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
-            HorizontalDivider()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.edit_connection))
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant).padding(11.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${connection.localHost}:${connection.localPort}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(status, style = MaterialTheme.typography.labelSmall,
+                    color = if (connection.enabled && connection.state.equals("online", true)) Color(0xFF148263)
+                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                IconButton(onClick = { onCopy(connection.publicDisplayEndpoint.ifBlank { connection.subdomain }) }) {
+                    Icon(painterResource(R.drawable.ic_action_copy), contentDescription = stringResource(R.string.copy_address),
+                        modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
                 }
-                TextButton(onClick = { onCopy(connection.publicDisplayEndpoint.ifBlank { connection.subdomain }) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.copy_address))
+                IconButton(onClick = onEdit) {
+                    Icon(painterResource(R.drawable.ic_action_edit), contentDescription = stringResource(R.string.edit_connection),
+                        modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -660,17 +762,33 @@ internal fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository, onLogout: () -> Unit) {
+private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository,
+    onManagement: () -> Unit, onUpdates: () -> Unit, onLogout: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-                Text(state.currentUser?.displayName ?: state.persisted.userDisplayName ?: state.persisted.username.orEmpty(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                state.currentUser?.let { Text(stringResource(if (state.isAdmin) R.string.admin_role_admin else R.string.admin_role_user)) }
-                Text(state.persisted.profile?.publicBaseUrl.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.padding(22.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                    Text((state.currentUser?.displayName ?: state.persisted.userDisplayName
+                        ?: state.persisted.username.orEmpty()).take(1).uppercase(),
+                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(state.currentUser?.displayName ?: state.persisted.userDisplayName ?: state.persisted.username.orEmpty(),
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("${stringResource(if (state.isAdmin) R.string.admin_role_admin else R.string.admin_role_user)} · ${state.persisted.profile?.publicBaseUrl.orEmpty()}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         PlatformAccountControls(state, repository)
+        if (state.isAdmin) OutlinedButton(onClick = onManagement, modifier = Modifier.fillMaxWidth()) {
+            Icon(painterResource(R.drawable.ic_action_shield), contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.nav_management))
+        }
         SectionLabel(stringResource(R.string.preferences))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.language)); LanguageMenu(compact = false)
@@ -678,11 +796,95 @@ private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository, 
         Text(stringResource(R.string.theme_system), color = MaterialTheme.colorScheme.onSurfaceVariant)
         HorizontalDivider()
         SectionLabel(stringResource(R.string.about_app))
-        Text(stringResource(R.string.management_notice), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onUpdates, modifier = Modifier.fillMaxWidth()) {
+            Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.check_update))
+        }
         Text(stringResource(R.string.version_label, BuildConfig.VERSION_NAME), style = MaterialTheme.typography.labelMedium)
         OutlinedButton(onClick = onLogout, enabled = !state.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
             Text(stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error)
         }
+    }
+}
+
+@Composable
+private fun UpdatesScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val latestMessage = stringResource(R.string.update_current)
+    val unavailableMessage = stringResource(R.string.update_unavailable)
+    var checking by remember { mutableStateOf(false) }
+    var release by remember { mutableStateOf<AvailableUpdate?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        .statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.align(Alignment.TopCenter).widthIn(max = 540.dp).fillMaxWidth()
+            .verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(painterResource(R.drawable.ic_action_back), contentDescription = stringResource(R.string.cancel))
+                }
+                Text(stringResource(R.string.check_update), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(58.dp).clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Text(release?.let { stringResource(R.string.update_available, it.version) }
+                        ?: platformText("检查正式版本", "Check official releases"),
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(message ?: platformText("仅检查 GitHub 正式 Release", "Only official GitHub Releases are checked"),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = {
+                        checking = true
+                        scope.launch {
+                            try {
+                                release = ReleaseUpdates.check()
+                                message = if (release == null) latestMessage else null
+                            } catch (_: Exception) {
+                                release = null
+                                message = unavailableMessage
+                            } finally { checking = false }
+                        }
+                    }, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
+                        Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(if (checking) R.string.checking_update else R.string.check_update))
+                    }
+                    release?.let { available ->
+                        OutlinedButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(available.url))) },
+                            modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.open_release)) }
+                    }
+                }
+            }
+            SectionLabel(platformText("更新设置", "Update settings"))
+            OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+                    UpdateDetailRow(platformText("当前版本", "Current version"), BuildConfig.VERSION_NAME)
+                    HorizontalDivider()
+                    UpdateDetailRow(platformText("检查方式", "Check method"), platformText("手动 · 正式版", "Manual · stable"))
+                    HorizontalDivider()
+                    UpdateDetailRow(platformText("自动下载安装", "Automatic install"), platformText("未启用", "Disabled"))
+                }
+            }
+            Text(platformText("私有候选包不会显示为公开更新。安装前请核对发布来源与完整性。",
+                "Private release candidates are not shown as public updates. Verify the source and integrity before installing."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun UpdateDetailRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -692,13 +894,13 @@ private fun LanguageMenu(compact: Boolean) {
     Box {
         if (compact) {
             TextButton(onClick = { expanded = true }) {
-                Icon(Icons.Default.Language, contentDescription = null)
+                Icon(painterResource(R.drawable.ic_action_language), contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.language))
             }
         } else {
             IconButton(onClick = { expanded = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.language))
+                Icon(painterResource(R.drawable.ic_action_more), contentDescription = stringResource(R.string.language))
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -724,17 +926,7 @@ private fun LanguageMenu(compact: Boolean) {
 
 @Composable
 private fun BrandMark() {
-    Box(
-        Modifier.size(70.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Default.Home,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(36.dp),
-        )
-    }
+    Image(painterResource(R.drawable.ic_home_tunnel), contentDescription = null, Modifier.size(56.dp))
 }
 
 private fun newHttpConnection(state: AppUiState, deviceId: String): TunnelConnection = TunnelConnection(

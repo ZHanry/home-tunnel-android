@@ -60,6 +60,20 @@ class RemoteProtocolTest {
         assertFails { RemoteCrypto.publicKey(JsonObject(signer.publicJwk + ("d" to JsonPrimitive("secret")))) }
         assertFails { RemoteCrypto.publicKey(buildJsonObject { put("kty", "EC"); put("crv", "P-256"); put("x", RemoteCrypto.base64(ByteArray(32))); put("y", RemoteCrypto.base64(ByteArray(32))) }) }
     }
+    @Test fun `JWS accepts a host key id only when it matches the trusted key`() {
+        val signer = identity()
+        val payload = buildJsonObject { put("purpose", "grant") }
+        fun signed(kid: String): String {
+            val header = buildJsonObject { put("alg", "ES256"); put("typ", "ht-rd-grant+jwt"); put("kid", kid) }
+            val input = "${RemoteCrypto.base64(RemoteJson.canonical(header).toByteArray())}.${RemoteCrypto.base64(RemoteJson.canonical(payload).toByteArray())}"
+            return "$input.${RemoteCrypto.base64(RemoteCrypto.derToRaw(signer.sign(input.toByteArray(Charsets.US_ASCII))))}"
+        }
+        val thumbprint = RemoteCrypto.thumbprint(signer.publicJwk)
+        assertEquals(payload, RemoteCrypto.verifyJws(signed(thumbprint), "ht-rd-grant+jwt", signer.publicJwk))
+        assertFails { RemoteCrypto.verifyJws(signed(RemoteCrypto.thumbprint(identity().publicJwk)), "ht-rd-grant+jwt", signer.publicJwk) }
+        assertFails { RemoteCrypto.verifyJws(RemoteCrypto.signJws(signer, "ht-rd-grant+jwt", payload), "ht-rd-grant+jwt", signer.publicJwk, thumbprint) }
+        assertEquals(payload, RemoteCrypto.verifyJws(signed(thumbprint), "ht-rd-grant+jwt", signer.publicJwk, thumbprint))
+    }
     @Test fun `DPoP binds token method origin path and a fresh proof identifier`() {
         val signer = identity()
         val first = RemoteCrypto.dpop(signer, "POST", "https://home.example/api/v1/rd/sessions?x=1", "a-token", "a-nonce", Instant.ofEpochSecond(1234))
@@ -87,6 +101,9 @@ class RemoteProtocolTest {
         assertContentEquals(hex(vectors.getValue("key_down_a").jsonObject.string("wire_hex")), RemoteWire.frame(P.KEY, 3, 7, 1, RemoteWire.keyPayload(4, true)))
     }
     @Test fun `text and coordinate encoding reject truncation letterboxes and sequence wrap`() {
+        assertEquals(0L, RemoteJson.parse("{\"slot\":0}".toByteArray()).nonNegativeNumber("slot", 15))
+        assertFails { RemoteJson.parse("{\"slot\":-1}".toByteArray()).nonNegativeNumber("slot", 15) }
+        assertFails { RemoteJson.parse("{\"slot\":16}".toByteArray()).nonNegativeNumber("slot", 15) }
         assertEquals(20 + "中文😀".toByteArray().size, RemoteWire.textPayload("中文😀").size)
         assertFails { RemoteWire.textPayload("\uD800") }
         assertFails { RemoteWire.textPayload("x".repeat(4097)) }
@@ -111,12 +128,14 @@ class RemoteProtocolTest {
         assertFalse(gate.canUse("input.keyboard"))
         gate.presentedFrame(1, gate.surface(true), 1); gate.displayLayout(1, 1)
         val first = gate.requestInput().string("request_id")
+        assertTrue(gate.inputPending)
         assertEquals(first, requireNotNull(gate.controlGranted(1, first, 1)).string("request_id"))
         assertTrue(gate.acknowledgeInput(1, first, 1, 1))
         assertTrue(gate.canUse("input.keyboard"))
         assertFalse(gate.canUse("files.send"))
         gate.feature("audio.microphone", true)
         gate.foreground(false)
+        assertFalse(gate.inputPending)
         assertFalse(gate.featureEnabled("audio.microphone")); assertFalse(gate.canUse("input.keyboard"))
         gate.foreground(true)
         assertFalse(gate.canUse("input.keyboard")); assertFalse(gate.featureEnabled("audio.microphone"))
@@ -158,6 +177,7 @@ class RemoteProtocolTest {
         assertTrue(gate.canUse("view"))
         val third = gate.requestInput().string("request_id")
         gate.controlGranted(3, third, 3); now += 5000
+        assertFalse(gate.inputPending)
         assertFalse(gate.acknowledgeInput(3, third, 3, 7))
         val fourth = gate.requestInput().string("request_id")
         gate.controlGranted(3, fourth, 4)
