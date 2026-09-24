@@ -83,8 +83,11 @@ class RemoteController(
     private val parentRequest: suspend (String, String, JsonObject?) -> JsonObject,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val trust = RemoteTrustStore(context)
-    private val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    private val applicationContext = context.applicationContext
+    private val trust = RemoteTrustStore(applicationContext)
+    private val clipboard by lazy(LazyThreadSafetyMode.NONE) {
+        applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { syncLocalClipboard() }
     private val _state = MutableStateFlow(RemoteViewState())
     val state = _state.asStateFlow()
