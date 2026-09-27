@@ -27,10 +27,13 @@ internal fun platformText(zh: String, en: String): String =
     if (LocalConfiguration.current.locales[0].language == "zh") zh else en
 
 @Composable
-internal fun MfaField(value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(value, onChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
+internal fun MfaField(value: String, required: Boolean = false, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+    OutlinedTextField(value, onChange, modifier = modifier.fillMaxWidth(), singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
-        label = { Text(platformText("动态码或恢复码（启用后必填）", "Authenticator or recovery code (if enabled)")) })
+        label = { Text(if (required) platformText("动态码或恢复码", "Authenticator or recovery code")
+            else platformText("动态码或恢复码（启用后必填）", "Authenticator or recovery code (if enabled)")) },
+        supportingText = if (required) { { Text(platformText("服务器要求双重验证，请输入验证器中的动态码或一次性恢复码。",
+            "Your server requires verification. Enter an authenticator or one-time recovery code.")) } } else null)
 }
 
 @Composable

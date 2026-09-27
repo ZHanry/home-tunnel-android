@@ -16,6 +16,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -66,7 +67,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 
 import androidx.compose.material3.FloatingActionButton
@@ -80,6 +80,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
@@ -101,6 +102,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -204,6 +208,10 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var mfa by remember { mutableStateOf("") }
+    val mfaFocus = remember { FocusRequester() }
+    LaunchedEffect(state.loginMfaRequired) {
+        if (state.loginMfaRequired) mfaFocus.requestFocus()
+    }
     AuthFrame {
         Box(Modifier.fillMaxWidth().heightIn(min = 148.dp).clip(RoundedCornerShape(24.dp))
             .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer)))) {
@@ -261,11 +269,12 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
             } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
         )
-        if (state.loginMfaRequired) MfaField(mfa) { mfa = it }
+        if (state.loginMfaRequired) MfaField(mfa, required = true, modifier = Modifier.focusRequester(mfaFocus)) { mfa = it }
         Button(
             onClick = { repository.login(server, username, password, mfa) },
             modifier = Modifier.fillMaxWidth().height(48.dp),
-            enabled = !state.busy && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
+            enabled = !state.busy && server.isNotBlank() && username.isNotBlank() && password.isNotEmpty()
+                && (!state.loginMfaRequired || mfa.isNotBlank()),
         ) {
             if (state.busy) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -437,8 +446,18 @@ internal fun HomeScreen(
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val wide = maxWidth >= 720.dp
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     Row(Modifier.fillMaxSize()) {
     if (wide) {
+        if (largeText) Surface(color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.width(216.dp).fillMaxHeight().statusBarsPadding().navigationBarsPadding()
+                .padding(8.dp).selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                visibleTabs.forEach { index ->
+                    LargeNavigationItem(stringResource(tabLabels[index]), tabIcons[index], tab == index || tab == 4 && index == 3,
+                        { tab = index }, Modifier.fillMaxWidth())
+                }
+            }
+        } else {
         NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
             visibleTabs.forEach { index ->
                 NavigationRailItem(
@@ -449,6 +468,7 @@ internal fun HomeScreen(
                 )
             }
         }
+        }
     }
     Scaffold(
         modifier = Modifier.weight(1f),
@@ -457,7 +477,8 @@ internal fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = { Column {
-                    Text(stringResource(tabKickers[tab]), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    if (stringResource(tabKickers[tab]) != stringResource(tabLabels[tab]))
+                        Text(stringResource(tabKickers[tab]), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                 } },
                 actions = { if (tab != 4) IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy, modifier = Modifier.size(48.dp)) {
@@ -466,18 +487,37 @@ internal fun HomeScreen(
             )
         },
         bottomBar = {
-            if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            Column {
+            if (tab == 2) Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Button(onClick = createConnection, modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp).heightIn(min = 48.dp)) {
+                        Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.add_connection))
+                    }
+                }
+            }
+            if (!wide && largeText) Surface(color = MaterialTheme.colorScheme.surface) {
+                Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(8.dp).selectableGroup(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    visibleTabs.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            row.forEach { index ->
+                                LargeNavigationItem(stringResource(tabLabels[index]), tabIcons[index], tab == index || tab == 4 && index == 3,
+                                    { tab = index }, Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            } else if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 visibleTabs.forEach { index ->
                     NavigationBarItem(selected = tab == index || tab == 4 && index == 3, onClick = { tab = index },
                         icon = { Icon(painterResource(tabIcons[index]), contentDescription = null) },
-                        label = { Text(stringResource(tabLabels[index])) })
+                        label = { Text(stringResource(tabLabels[index]), minLines = 2, maxLines = 2) })
                 }
             }
-        },
-        floatingActionButton = {
-            if (tab == 2) ExtendedFloatingActionButton(onClick = createConnection,
-                icon = { Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null) },
-                text = { Text(stringResource(R.string.add_connection)) })
+            }
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
@@ -486,7 +526,7 @@ internal fun HomeScreen(
             } else LazyColumn(
                 state = scrollState,
                 modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth(),
-                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = if (tab == 2) 100.dp else 32.dp),
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 if (state.busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
@@ -656,6 +696,19 @@ internal fun HomeScreen(
         )
     }
 
+}
+
+@Composable
+private fun LargeNavigationItem(label: String, icon: Int, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Row(modifier.clip(RoundedCornerShape(12.dp))
+        .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+        .selectable(selected = selected, onClick = onClick, role = Role.Tab).heightIn(min = 64.dp).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp),
+            tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

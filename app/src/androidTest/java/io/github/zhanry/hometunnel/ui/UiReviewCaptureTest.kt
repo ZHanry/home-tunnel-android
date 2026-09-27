@@ -19,10 +19,12 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.platform.app.InstrumentationRegistry
@@ -130,7 +132,8 @@ class UiReviewCaptureTest {
         require(interaction in setOf("view", "keyboard"))
         if (interaction == "keyboard") {
             require(screen in setOf("login", "login-mfa", "password-change"))
-            compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
+            if (screen == "login-mfa") compose.onAllNodes(hasSetTextAction()).onLast().performClick()
+            else compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
             compose.runOnUiThread {
                 compose.activity.getSystemService(InputMethodManager::class.java)
                     .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
@@ -144,6 +147,10 @@ class UiReviewCaptureTest {
         for (index in 0 until 24) {
             compose.waitForIdle()
             instrumentation.waitForIdleSync()
+            // PixelCopy waits for the Compose frame to reach the display before
+            // the full-device capture, which also includes system bars/IME.
+            compose.onRoot().captureToImage()
+            instrumentation.uiAutomation.waitForIdle(100, 5_000)
             val nodes = compose.onAllNodes(matcher).fetchSemanticsNodes()
             val scroll = nodes.firstOrNull()
             val range = scroll?.config?.get(SemanticsProperties.VerticalScrollAxisRange)
