@@ -28,7 +28,7 @@ internal fun platformText(zh: String, en: String): String =
 
 @Composable
 internal fun MfaField(value: String, modifier: Modifier = Modifier, required: Boolean = false, onChange: (String) -> Unit) {
-    OutlinedTextField(value, onChange, modifier = modifier.fillMaxWidth(), singleLine = true,
+    OutlinedTextField(value, onChange, modifier = modifier.fillMaxWidth().keepFocusedFieldVisible(), singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         label = { Text(if (required) platformText("动态码或恢复码", "Authenticator or recovery code")
             else platformText("动态码或恢复码（启用后必填）", "Authenticator or recovery code (if enabled)")) },

@@ -242,7 +242,7 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         OutlinedTextField(
             value = server,
             onValueChange = { server = it; mfa = ""; repository.clearLoginMfa() },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             enabled = !state.busy,
             placeholder = { Text(stringResource(R.string.server_hint)) },
             singleLine = true,
@@ -252,7 +252,7 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         OutlinedTextField(
             value = username,
             onValueChange = { username = it; mfa = ""; repository.clearLoginMfa() },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             enabled = !state.busy,
             placeholder = { Text(stringResource(R.string.username)) },
             singleLine = true,
@@ -262,7 +262,7 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         OutlinedTextField(
             value = password,
             onValueChange = { password = it; mfa = ""; repository.clearLoginMfa() },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             enabled = !state.busy,
             placeholder = { Text(stringResource(R.string.password)) },
             singleLine = true,
@@ -320,7 +320,7 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
         OutlinedTextField(
             value = current,
             onValueChange = { current = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             label = { Text(stringResource(R.string.current_password)) },
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
@@ -328,7 +328,7 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
         OutlinedTextField(
             value = next,
             onValueChange = { next = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             label = { Text(stringResource(R.string.new_password)) },
             supportingText = { Text(stringResource(R.string.password_minimum)) },
             isError = next.isNotEmpty() && next.length < 12,
@@ -338,7 +338,7 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
         OutlinedTextField(
             value = confirm,
             onValueChange = { confirm = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             label = { Text(stringResource(R.string.confirm_password)) },
             supportingText = {
                 if (confirm.isNotEmpty() && confirm != next) Text(stringResource(R.string.passwords_do_not_match))
