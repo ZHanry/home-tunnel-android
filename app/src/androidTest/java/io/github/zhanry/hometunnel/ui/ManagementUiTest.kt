@@ -20,6 +20,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.printToString
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.ManagedDevice
@@ -58,8 +59,16 @@ class ManagementUiTest {
 
     private fun capture(name: String) {
         compose.waitForIdle()
-        val destination = File(context.getExternalFilesDir(null), "ui-6.0-$name.png")
-        destination.outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val run = InstrumentationRegistry.getArguments().getString("evidenceRunId") ?: "manual"
+        require(run.matches(Regex("[a-z0-9-]{1,48}")))
+        val directory = File(context.getExternalFilesDir(null), "instrumentation-$run").apply { mkdirs() }
+        // Wait for a submitted Compose frame, then retain the complete display,
+        // including the keyboard, even when the next assertion fails.
+        compose.onRoot().captureToImage()
+        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        File(directory, "$name-semantics.txt").writeText(compose.onRoot().printToString())
     }
 
     @Test fun navigationFiltersByDeviceAndSearchesServices() {
@@ -78,6 +87,7 @@ class ManagementUiTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
         compose.onNodeWithText(context.getString(R.string.search_connections)).performTextInput("no-match")
         compose.onNodeWithText("家庭相册").assertDoesNotExist()
+        capture("search-empty")
         compose.onNodeWithText(context.getString(R.string.no_search_results)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.search_connections)).assertIsDisplayed().performImeAction()
         navigate(R.string.nav_account)

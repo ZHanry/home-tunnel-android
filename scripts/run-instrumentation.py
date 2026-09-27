@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -29,13 +30,20 @@ for apk in ("app/build/outputs/apk/debug/app-debug.apk",
         packages[apk] = {"sha256": hashlib.file_digest(stream, "sha256").hexdigest(), "bytes": (ROOT / apk).stat().st_size}
     subprocess.run([*adb, "install", "-r", "-t", str(ROOT / apk)], check=True, timeout=120)
 selected = ["-e", "class", "io.github.zhanry.hometunnel.remote." + args.test_class] if args.test_class else []
+evidence_run = uuid.uuid4().hex
 result = subprocess.run(
-    [*adb, "shell", "am", "instrument", "-w", "-r", *selected,
+    [*adb, "shell", "am", "instrument", "-w", "-r", "-e", "evidenceRunId", evidence_run, *selected,
      "io.github.zhanry.hometunnel.debug.test/androidx.test.runner.AndroidJUnitRunner"],
     text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT, timeout=300,
 )
 (args.output / "instrumentation.log").write_text(result.stdout, encoding="utf-8")
+screenshots = args.output / "screenshots"
+pull = subprocess.run([*adb, "pull", f"/sdcard/Android/data/io.github.zhanry.hometunnel.debug/files/instrumentation-{evidence_run}", str(screenshots)],
+                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+(args.output / "screenshot-pull.log").write_bytes(pull.stdout)
+screen_hashes = {path.relative_to(screenshots).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in screenshots.rglob("*") if path.is_file()} if screenshots.exists() else {}
 for filename, command in (("logcat.txt", ["logcat", "-d", "-t", "2500"]),
                           ("audio-flinger.txt", ["dumpsys", "media.audio_flinger"]),
                           ("audio-policy.txt", ["dumpsys", "media.audio_policy"])):
@@ -62,6 +70,7 @@ report = {"status": "passed" if passed else "failed", "api_level": int(api_level
           "packages": packages, "serial": args.serial, "system_fingerprint": fingerprint,
           "test_classes": expected, "full_app_acceptance": False,
           "remote_media_acceptance": "not_run", "variant": "debug"}
+report.update(evidence_run_id=evidence_run, screenshot_sha256=screen_hashes)
 (args.output / "instrumentation.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 if not passed:
     raise SystemExit("Android instrumentation did not pass every selected check")
