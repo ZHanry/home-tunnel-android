@@ -162,8 +162,9 @@ fun HomeTunnelApp(
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { repository.refreshConnections(silent = true) }
     }
 
-    LaunchedEffect(state.error) {
-        state.error?.let {
+    val notice = state.error?.let { stringResource(userNoticeResource(it)) }
+    LaunchedEffect(state.error, notice) {
+        notice?.let {
             snackbar.showSnackbar(it)
             repository.clearError()
         }

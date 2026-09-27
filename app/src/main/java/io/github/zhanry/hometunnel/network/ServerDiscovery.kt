@@ -39,7 +39,7 @@ object ServerDiscovery {
             .build()
         client.newCall(request).execute().use { response ->
             if (response.code in 300..399) {
-                throw DiscoveryException("Server configuration redirected; enter the final HTTPS origin")
+                throw DiscoveryException("Server configuration redirected; enter the final HTTPS origin", errorCode = "DISCOVERY_REDIRECT")
             }
             if (!response.isSuccessful) {
                 throw DiscoveryException("Server discovery returned HTTP ${response.code}")
@@ -61,7 +61,7 @@ object ServerDiscovery {
         var input = value.trim()
         if (!input.contains("://")) input = "https://$input"
         val parsed = runCatching { URI(input) }.getOrNull()
-            ?: throw DiscoveryException("Server address must be an HTTPS root origin")
+            ?: throw DiscoveryException("Server address must be an HTTPS root origin", errorCode = "DISCOVERY_INVALID_ORIGIN")
         if (
             !parsed.scheme.equals("https", ignoreCase = true) ||
             parsed.host.isNullOrBlank() ||
@@ -70,7 +70,7 @@ object ServerDiscovery {
             parsed.rawFragment != null ||
             (parsed.rawPath.orEmpty() !in setOf("", "/"))
         ) {
-            throw DiscoveryException("Server address must be an HTTPS root origin")
+            throw DiscoveryException("Server address must be an HTTPS root origin", errorCode = "DISCOVERY_INVALID_ORIGIN")
         }
         val port = parsed.port
         return URI("https", null, parsed.host.lowercase(Locale.ROOT), port, "/", null, null)
@@ -79,7 +79,7 @@ object ServerDiscovery {
     internal fun validateProfile(requested: URI, wire: DiscoveryResponse): ServerProfile {
         val canonical = normalizeRoot(wire.publicBaseUrl)
         if (!sameOrigin(requested, canonical)) {
-            throw DiscoveryException("Server returned a different control-center origin")
+            throw DiscoveryException("Server returned a different control-center origin", errorCode = "DISCOVERY_ORIGIN_MISMATCH")
         }
         val domain = wire.tunnelDomain.trim().trim('.').lowercase(Locale.ROOT)
         if (domain.length > 253 || !domain.contains('.') ||
@@ -138,4 +138,4 @@ object ServerDiscovery {
     }
 }
 
-class DiscoveryException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class DiscoveryException(message: String, cause: Throwable? = null, val errorCode: String = "DISCOVERY_CONFIG_INVALID") : IOException(message, cause)

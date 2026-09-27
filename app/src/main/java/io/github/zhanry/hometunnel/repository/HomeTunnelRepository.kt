@@ -86,7 +86,7 @@ class HomeTunnelRepository(
             var state = try {
                 store.load()
             } catch (error: StateUnavailableException) {
-                _uiState.value = AppUiState(screen = AppScreen.LOGIN, error = error.message)
+                _uiState.value = AppUiState(screen = AppScreen.LOGIN, error = failureCode(error))
                 return@launch
             }
             if (state.enrolled) {
@@ -152,7 +152,7 @@ class HomeTunnelRepository(
                 pendingLogin = null
                 api = null
                 _uiState.value = _uiState.value.copy(screen = AppScreen.LOGIN, busy = false,
-                    error = "Password changed. Sign in with the new password and a new authenticator code.")
+                    error = "PASSWORD_CHANGED")
             } catch (error: Throwable) {
                 setFailure(error)
             }
@@ -406,11 +406,7 @@ class HomeTunnelRepository(
             api = null
             clearLocalState()
         }
-        val message = when (error) {
-            is ApiException -> "${error.errorCode}: ${error.message}"
-            else -> error.message ?: error.javaClass.simpleName
-        }
-        _uiState.value = _uiState.value.copy(busy = false, error = message)
+        _uiState.value = _uiState.value.copy(busy = false, error = failureCode(error))
     }
 
     private data class PendingLogin(
