@@ -10,6 +10,9 @@
 python scripts/import-sdk-candidate.py --candidate-format client --run-id RUN_ID --revision CLIENT_COMMIT --import-source
 ```
 
+如果已下载完整客户端候选 ZIP，可增加 `--artifact-archive /path/to/candidate.zip`。
+导入器仍在线核对固定构建和产物身份，并对复制后的 ZIP 重新验证 GitHub 摘要与大小；原始索引签名、SDK 签名和同源检查全部保留。
+
 导入器验证原始 `client-candidate.json`、全部附件摘要、两个 ABI 各自的签名和构建证明。调用工作流必须是 `release.yml`，签名工作流必须是 `client-candidate.yml`，并且匹配同一源码、分支、run 和 attempt。它仅在内存中整理 ABI 信息；不会生成冒充原始签名记录的 SDK 清单。锁文件保存完整候选的产物 ID、摘要和原始清单摘要。
 
 独立的 SDK 构建仍可使用 `android-webrtc.yml` 的 `candidate=true`；其签名工作流为 `android-sdk-candidate.yml`，导入方式保留：

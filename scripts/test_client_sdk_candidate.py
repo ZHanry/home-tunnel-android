@@ -1,5 +1,6 @@
 """SDK import rejects mixed source, modified bytes and wrong build identities."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -56,6 +57,32 @@ def fixture(directory):
 
 
 class ClientSdkTests(unittest.TestCase):
+    def test_existing_artifact_reuse_keeps_original_bytes_and_never_downloads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            payload = b"pinned complete artifact fixture"
+            existing = directory / "download.zip"
+            existing.write_bytes(payload)
+            artifact = {"id": 17, "digest": "sha256:" + hashlib.sha256(payload).hexdigest(), "size_in_bytes": len(payload)}
+            with patch.object(SDK.subprocess, "run") as download:
+                SDK.stage_artifact(artifact, directory / "copy.zip", existing)
+                download.assert_not_called()
+            self.assertEqual((directory / "copy.zip").read_bytes(), payload)
+            self.assertEqual(existing.read_bytes(), payload)
+
+    def test_existing_artifact_reuse_rejects_same_size_tampering_and_incomplete_downloads(self):
+        payload = b"pinned complete artifact fixture"
+        for actual in (b"X" + payload[1:], payload[:-1]):
+            with self.subTest(actual=actual), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                existing = directory / "download.zip"
+                existing.write_bytes(actual)
+                artifact = {"id": 17, "digest": "sha256:" + hashlib.sha256(payload).hexdigest(), "size_in_bytes": len(payload)}
+                with patch.object(SDK.subprocess, "run") as download, self.assertRaises(SystemExit):
+                    SDK.stage_artifact(artifact, directory / "copy.zip", existing)
+                download.assert_not_called()
+                self.assertEqual(existing.read_bytes(), actual)
+
     def test_original_index_and_both_abis_are_verified_without_rewriting_index(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

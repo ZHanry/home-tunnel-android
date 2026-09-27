@@ -244,11 +244,36 @@ def api(path):
     return json.loads(subprocess.check_output(["gh", "api", path]))
 
 
+def stage_artifact(artifact, archive, existing=None):
+    """Reuse transport bytes only after rechecking the immutable API identity.
+
+    Copy first, then hash the copy that extraction will consume. An existing
+    client download saves bandwidth without skipping any signature or source
+    checks performed by the importer.
+    """
+    expected = str(artifact.get("digest", "")).removeprefix("sha256:")
+    size = artifact.get("size_in_bytes")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected) or type(size) is not int or not 0 < size <= 6 * 1024**3:
+        raise SystemExit("SDK artifact size or digest is invalid")
+    if existing is not None:
+        if existing.is_symlink() or not existing.is_file() or existing.stat().st_size != size:
+            raise SystemExit("Existing SDK artifact is missing, linked or has a different size")
+        with existing.open("rb") as source, archive.open("xb") as target:
+            shutil.copyfileobj(source, target, 1024 * 1024)
+    else:
+        with archive.open("xb") as stream:
+            subprocess.run(["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip", "--allow-escape-sequences"],
+                           stdout=stream, check=True, timeout=1800)
+    if archive.stat().st_size != size or digest(archive) != expected:
+        raise SystemExit("Downloaded SDK artifact differs from the GitHub artifact digest or size")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id")
     parser.add_argument("--revision")
     parser.add_argument("--candidate-format", choices=tuple(PROFILES), help="Use client for SDKs sealed inside the complete client candidate")
+    parser.add_argument("--artifact-archive", type=Path, help="Reuse a downloaded ZIP after rechecking its exact GitHub artifact digest and size")
     parser.add_argument("--cache", type=Path, default=ROOT / ".cache/sdk-candidate-download")
     parser.add_argument("--output", type=Path, default=ROOT / ".cache/remote-controller")
     parser.add_argument("--lock", type=Path, default=ROOT / "native/controller-sdk-candidate.lock.json")
@@ -292,10 +317,7 @@ def main():
         raise SystemExit("Pinned SDK candidate artifact or build attempt has changed")
     args.cache.mkdir(parents=True)
     archive = args.cache / "artifact.zip"
-    with archive.open("xb") as stream:
-        subprocess.run(["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip", "--allow-escape-sequences"], stdout=stream, check=True, timeout=1800)
-    if digest(archive) != artifact_sha:
-        raise SystemExit("Downloaded SDK artifact differs from the GitHub artifact digest")
+    stage_artifact(artifact, archive, args.artifact_archive)
     directory = args.cache / "subjects"
     extract_artifact(archive, directory, candidate_format)
     evidence = args.cache / "verification"
