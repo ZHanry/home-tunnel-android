@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -249,12 +250,12 @@ private fun AdminDestination(title: String, description: String, icon: Int, onCl
 private fun AdminSummaryCard(value: AdminSummary) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.admin_user_count, value.users), style = MaterialTheme.typography.titleLarge)
-            Text(stringResource(R.string.admin_online_devices, value.onlineDevices))
-            Text(stringResource(R.string.admin_connection_count, value.connections))
-            Text(stringResource(R.string.admin_online_connections, value.onlineConnections))
+            Text(pluralStringResource(R.plurals.admin_user_count, value.users, value.users), style = MaterialTheme.typography.titleLarge)
+            Text(pluralStringResource(R.plurals.admin_online_devices, value.onlineDevices, value.onlineDevices))
+            Text(pluralStringResource(R.plurals.admin_connection_count, value.connections, value.connections))
+            Text(pluralStringResource(R.plurals.admin_online_connections, value.onlineConnections, value.onlineConnections))
             Text(stringResource(R.string.admin_transfer, bytesText(value.upload24h), bytesText(value.download24h)))
-            if (value.errors > 0) Text(stringResource(R.string.admin_errors, value.errors), color = MaterialTheme.colorScheme.error)
+            if (value.errors > 0) Text(pluralStringResource(R.plurals.admin_errors, value.errors, value.errors), color = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -269,7 +270,7 @@ private fun AdminUserCard(user: AdminUser, onClick: (() -> Unit)? = null) {
                 Text(stringResource(if (user.isAdministrator) R.string.admin_role_admin else R.string.admin_role_user), color = MaterialTheme.colorScheme.primary)
                 Text(stringResource(if (user.status == "active") R.string.admin_active else R.string.admin_disabled))
             }
-            Text("${stringResource(R.string.admin_device_count, user.deviceCount)} · ${stringResource(R.string.admin_connection_count, user.connectionCount)}")
+            Text("${pluralStringResource(R.plurals.admin_device_count, user.deviceCount, user.deviceCount)} · ${pluralStringResource(R.plurals.admin_connection_count, user.connectionCount, user.connectionCount)}")
             Text(stringResource(R.string.admin_usage, bytesText(user.monthToDateBytes), user.monthlyQuotaBytes?.let { bytesText(it) } ?: stringResource(R.string.admin_unlimited)))
             if (user.quotaSuspended) Text(stringResource(R.string.admin_quota_suspended), color = MaterialTheme.colorScheme.error)
             if (user.passwordState == "must_change") Text(stringResource(R.string.admin_must_change), color = MaterialTheme.colorScheme.onSurfaceVariant)

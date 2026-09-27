@@ -36,12 +36,12 @@
     <string name="admin_protected">The sole administrator cannot be disabled or deleted. Use the web console to change your own password.</string>
     <string name="admin_view_devices">View user devices</string>
     <string name="admin_view_connections">View user connections</string>
-    <string name="admin_device_count">%1$d devices</string>
-    <string name="admin_connection_count">%1$d connections</string>
-    <string name="admin_online_devices">%1$d devices online</string>
-    <string name="admin_user_count">%1$d enabled accounts</string>
-    <string name="admin_online_connections">%1$d connections online</string>
-    <string name="admin_errors">%1$d connections need attention</string>
+    <plurals name="admin_device_count"><item quantity="one">%1$d device</item><item quantity="other">%1$d devices</item></plurals>
+    <plurals name="admin_connection_count"><item quantity="one">%1$d connection</item><item quantity="other">%1$d connections</item></plurals>
+    <plurals name="admin_online_devices"><item quantity="one">%1$d device online</item><item quantity="other">%1$d devices online</item></plurals>
+    <plurals name="admin_user_count"><item quantity="one">%1$d enabled account</item><item quantity="other">%1$d enabled accounts</item></plurals>
+    <plurals name="admin_online_connections"><item quantity="one">%1$d connection online</item><item quantity="other">%1$d connections online</item></plurals>
+    <plurals name="admin_errors"><item quantity="one">%1$d connection needs attention</item><item quantity="other">%1$d connections need attention</item></plurals>
     <string name="admin_usage">Monthly usage: %1$s / %2$s</string>
     <string name="admin_transfer">Last 24 hours: ↑ %1$s · ↓ %2$s</string>
     <string name="admin_unlimited">Unlimited</string>

@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,6 +49,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -138,8 +143,10 @@ internal fun ConnectionEditor(
             else if (edit.changed()) confirmDiscard = true else onDismiss()
         }
     }
-    Dialog(onDismissRequest = requestClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = requestClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         Scaffold(
+            modifier = Modifier.fillMaxSize().imePadding(),
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(if (edit.isNew) R.string.add_connection else R.string.edit_connection)) },
@@ -151,8 +158,11 @@ internal fun ConnectionEditor(
                 )
             },
             bottomBar = {
+                // Leave the short landscape viewport available to the focused field.
+                // The system Back/IME action restores the navigation controls.
+                if (!keyboardVisible) {
                 Column(
-                    Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (edit.step > 0) {
@@ -199,10 +209,11 @@ internal fun ConnectionEditor(
                         ) { Text(stringResource(R.string.save)) }
                     }
                 }
+                }
             },
         ) { padding ->
             Column(
-                Modifier.fillMaxSize().padding(padding).widthIn(max = 640.dp).fillMaxWidth()
+                Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).widthIn(max = 640.dp).fillMaxWidth()
                     .verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -391,7 +402,10 @@ private fun ResultStep(
     onCopy: (String) -> Unit,
 ) {
     when {
-        waiting -> Text(stringResource(R.string.wizard_result_waiting), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        waiting -> {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(stringResource(R.string.wizard_result_waiting), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
         reported == null -> Text(stringResource(if (unconfirmed) R.string.wizard_result_unconfirmed else R.string.wizard_result_waiting))
         else -> {
             val address = reported.publicDisplayEndpoint

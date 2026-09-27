@@ -36,12 +36,12 @@
     <string name="admin_protected">唯一管理员不能停用或删除。修改自己的密码请使用网页控制台。</string>
     <string name="admin_view_devices">查看该用户的设备</string>
     <string name="admin_view_connections">查看该用户的连接</string>
-    <string name="admin_device_count">%1$d 台设备</string>
-    <string name="admin_connection_count">%1$d 个连接</string>
-    <string name="admin_online_devices">%1$d 台设备在线</string>
-    <string name="admin_user_count">%1$d 个已启用账号</string>
-    <string name="admin_online_connections">%1$d 个连接在线</string>
-    <string name="admin_errors">%1$d 个连接需要处理</string>
+    <plurals name="admin_device_count"><item quantity="other">%1$d 台设备</item></plurals>
+    <plurals name="admin_connection_count"><item quantity="other">%1$d 个连接</item></plurals>
+    <plurals name="admin_online_devices"><item quantity="other">%1$d 台设备在线</item></plurals>
+    <plurals name="admin_user_count"><item quantity="other">%1$d 个已启用账号</item></plurals>
+    <plurals name="admin_online_connections"><item quantity="other">%1$d 个连接在线</item></plurals>
+    <plurals name="admin_errors"><item quantity="other">%1$d 个连接需要处理</item></plurals>
     <string name="admin_usage">本月流量：%1$s / %2$s</string>
     <string name="admin_transfer">近 24 小时：↑ %1$s · ↓ %2$s</string>
     <string name="admin_unlimited">不限</string>

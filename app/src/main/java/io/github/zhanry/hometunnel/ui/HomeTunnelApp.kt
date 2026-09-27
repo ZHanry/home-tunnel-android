@@ -380,6 +380,7 @@ internal fun HomeScreen(
     state: AppUiState,
     repository: HomeTunnelRepository,
     snackbar: SnackbarHostState,
+    administration: io.github.zhanry.hometunnel.repository.AdminRepository = repository.administration,
 ) {
     val accountKey = tunnelAccountKey(state.persisted.activeAccountId, state.persisted.profile?.apiBaseUrl, state.persisted.username)
     var editor by rememberSaveable(stateSaver = ConnectionEditSaver) { mutableStateOf<ConnectionEdit?>(null) }
@@ -531,7 +532,7 @@ internal fun HomeScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             if (tab == 4 && state.isAdmin) {
-                AdminWorkspace(repository.administration, state.persisted.profile?.publicBaseUrl.orEmpty())
+                AdminWorkspace(administration, state.persisted.profile?.publicBaseUrl.orEmpty())
             } else LazyColumn(
                 state = scrollState,
                 modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth(),

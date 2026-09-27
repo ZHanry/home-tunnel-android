@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.hasSetTextAction
@@ -140,7 +141,7 @@ class UiReviewCaptureTest {
                             "login", "login-mfa" -> LoginScreen(state, repository)
                             "password-change" -> PasswordChangeScreen(state, repository)
                             else -> when {
-                                admin != null -> AdminWorkspace(admin, profile.publicBaseUrl)
+                                admin != null -> HomeScreen(state, repository, remember { SnackbarHostState() }, administration = admin)
                                 wizardStep >= 0 -> UiReviewWizard(wizardStep.coerceAtMost(3), screen == "tunnel-result", template, stateName, state.devices)
                                 else -> HomeScreen(state, repository, remember { SnackbarHostState() })
                             }
@@ -150,6 +151,10 @@ class UiReviewCaptureTest {
         }
         compose.waitForIdle()
         if (admin != null && adminPage != null) {
+            compose.onAllNodesWithText(localized.getString(R.string.nav_account)).onLast().performClick()
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(localized.getString(R.string.nav_management)))
+            compose.onNodeWithText(localized.getString(R.string.nav_management)).performClick()
+            compose.waitForIdle()
             compose.runOnUiThread { if (adminPage == AdminPage.USER) admin.openUser("member-1") else admin.open(adminPage) }
             compose.waitUntil(5_000) { admin.state.value.loading == (stateName == "loading") }
             if (stateName in setOf("error", "offline", "no-permission"))
@@ -193,6 +198,7 @@ class UiReviewCaptureTest {
                     .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
             }
             compose.waitUntil(10_000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
+            compose.onAllNodes(hasSetTextAction() and isFocused()).onFirst().assertIsDisplayed()
             if (interaction == "search-empty")
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
