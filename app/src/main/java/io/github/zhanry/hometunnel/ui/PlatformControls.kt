@@ -27,7 +27,7 @@ internal fun platformText(zh: String, en: String): String =
     if (LocalConfiguration.current.locales[0].language == "zh") zh else en
 
 @Composable
-internal fun MfaField(value: String, required: Boolean = false, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+internal fun MfaField(value: String, modifier: Modifier = Modifier, required: Boolean = false, onChange: (String) -> Unit) {
     OutlinedTextField(value, onChange, modifier = modifier.fillMaxWidth(), singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         label = { Text(if (required) platformText("动态码或恢复码", "Authenticator or recovery code")
