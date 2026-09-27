@@ -451,6 +451,7 @@ internal fun HomeScreen(
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("url", url))
         scope.launch { snackbar.showSnackbar(context.getString(R.string.copied_address)) }
     }
+    if (editor == null) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val wide = maxWidth >= 720.dp
     val largeText = LocalDensity.current.fontScale >= 1.5f
@@ -653,6 +654,7 @@ internal fun HomeScreen(
         text = { Text(stringResource(R.string.sign_out_confirmation)) },
         confirmButton = { Button(onClick = { confirmLogout = false; repository.logout { } }, enabled = !state.busy) { Text(stringResource(R.string.sign_out)) } },
         dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.cancel)) } })
+    }
 
     editor?.let { edit ->
         val watch = reportWatch

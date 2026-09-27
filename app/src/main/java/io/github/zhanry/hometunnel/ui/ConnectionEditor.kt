@@ -2,7 +2,9 @@
 
 package io.github.zhanry.hometunnel.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
@@ -12,8 +14,9 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -60,8 +63,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.ConnectionCapabilities
 import io.github.zhanry.hometunnel.model.ManagedDevice
@@ -143,10 +144,12 @@ internal fun ConnectionEditor(
             else if (edit.changed()) confirmDiscard = true else onDismiss()
         }
     }
-    Dialog(onDismissRequest = requestClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    BackHandler(onBack = requestClose)
+    Box(Modifier.fillMaxSize()) {
         val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         Scaffold(
-            modifier = Modifier.fillMaxSize().imePadding(),
+            modifier = Modifier.fillMaxSize(),
+            contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
             topBar = {
                 TopAppBar(
                     title = { Text(stringResource(if (edit.isNew) R.string.add_connection else R.string.edit_connection)) },
