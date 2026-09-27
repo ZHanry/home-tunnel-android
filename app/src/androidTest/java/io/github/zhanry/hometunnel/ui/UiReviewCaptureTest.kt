@@ -198,7 +198,18 @@ class UiReviewCaptureTest {
                     .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
             }
             compose.waitUntil(10_000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
-            compose.onAllNodes(hasSetTextAction() and isFocused()).onFirst().assertIsDisplayed()
+            try {
+                compose.waitUntil(5_000) {
+                    runCatching { compose.onAllNodes(hasSetTextAction() and isFocused()).onFirst().assertIsDisplayed() }.isSuccess
+                }
+            } catch (failure: Throwable) {
+                instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+                    File(directory, "focus-failure.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                }
+                File(directory, "focus-failure-semantics.txt").writeText(compose.onAllNodes(isRoot()).onLast().printToString())
+                throw failure
+            }
             if (interaction == "search-empty")
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
