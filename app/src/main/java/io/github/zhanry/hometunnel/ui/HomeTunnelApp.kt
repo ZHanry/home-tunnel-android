@@ -106,6 +106,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
@@ -486,7 +487,7 @@ internal fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = { Column {
-                    if (stringResource(tabKickers[tab]) != stringResource(tabLabels[tab]))
+                    if (!largeText && stringResource(tabKickers[tab]) != stringResource(tabLabels[tab]))
                         Text(stringResource(tabKickers[tab]), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                 } },
@@ -531,7 +532,7 @@ internal fun HomeScreen(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.fillMaxSize().padding(padding).clipToBounds(), contentAlignment = Alignment.TopCenter) {
             if (tab == 4 && state.isAdmin) {
                 AdminWorkspace(administration, state.persisted.profile?.publicBaseUrl.orEmpty())
             } else LazyColumn(
