@@ -55,6 +55,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -102,6 +103,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -394,7 +397,10 @@ internal fun HomeScreen(
     var selectedConnections by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val scrollState = pageScrollState(tab, when (tab) { 1 -> deviceSearch; 2 -> Triple(selectedDevice, search, tunnelFilter); else -> Unit })
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    // Typing must preserve the visible search field below the tunnel header.
+    val scrollState = pageScrollState(tab, when (tab) { 1 -> deviceSearch; 2 -> selectedDevice to tunnelFilter; else -> Unit })
     LaunchedEffect(editor, accountKey) {
         val current = editor ?: return@LaunchedEffect
         if (current.changed()) TunnelDraftStore.shared.save(accountKey, current.value.id, current.exportState())
@@ -447,6 +453,7 @@ internal fun HomeScreen(
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val wide = maxWidth >= 720.dp
     val largeText = LocalDensity.current.fontScale >= 1.5f
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Row(Modifier.fillMaxSize()) {
     if (wide) {
         if (largeText) Surface(color = MaterialTheme.colorScheme.surface) {
@@ -487,7 +494,8 @@ internal fun HomeScreen(
             )
         },
         bottomBar = {
-            Column {
+            Column(Modifier.imePadding()) {
+            if (!keyboardVisible) {
             if (tab == 2) Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Button(onClick = createConnection, modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth()
@@ -516,6 +524,7 @@ internal fun HomeScreen(
                         icon = { Icon(painterResource(tabIcons[index]), contentDescription = null) },
                         label = { Text(stringResource(tabLabels[index]), minLines = 2, maxLines = 2) })
                 }
+            }
             }
             }
         },
@@ -566,6 +575,9 @@ internal fun HomeScreen(
                     }
                     2 -> {
                         item { TunnelsHero() }
+                        val filtered = state.connections.filter { (selectedDevice.isEmpty() || it.deviceId == selectedDevice) &&
+                            (search.isBlank() || it.name.contains(search, true) || it.publicDisplayEndpoint.contains(search, true)) &&
+                            (tunnelFilter == "all" || tunnelFilter == "online" && it.enabled && it.state.equals("online", true) || tunnelFilter == "paused" && !it.enabled) }
                         val pendingDraft = TunnelDraftStore.shared.load(accountKey, "")
                         if (editor == null && pendingDraft != null) item {
                             OutlinedCard(Modifier.fillMaxWidth()) {
@@ -594,16 +606,18 @@ internal fun HomeScreen(
                         } }
                         item { OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(R.string.search_connections)) }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); focusManager.clearFocus() }),
+                            supportingText = if (search.isNotBlank() && filtered.isEmpty()) {
+                                { Text(stringResource(R.string.no_search_results)) }
+                            } else null,
                             leadingIcon = { Icon(painterResource(R.drawable.ic_action_search), contentDescription = null) }) }
                         if (selectedDevice.isNotEmpty()) item {
                             OutlinedButton(onClick = { selectedDevice = "" }, modifier = Modifier.fillMaxWidth()) {
                                 Text(stringResource(R.string.device_filter, state.devices.find { it.id == selectedDevice }?.name.orEmpty()))
                             }
                         }
-                        val filtered = state.connections.filter { (selectedDevice.isEmpty() || it.deviceId == selectedDevice) &&
-                            (search.isBlank() || it.name.contains(search, true) || it.publicDisplayEndpoint.contains(search, true)) &&
-                            (tunnelFilter == "all" || tunnelFilter == "online" && it.enabled && it.state.equals("online", true) || tunnelFilter == "paused" && !it.enabled) }
-                        if (filtered.isEmpty()) item {
+                        if (filtered.isEmpty() && search.isBlank()) item {
                             if (state.connections.isEmpty()) EmptyConnectionsCard()
                             else Text(stringResource(R.string.no_search_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

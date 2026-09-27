@@ -19,13 +19,19 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.ViewCompat
@@ -129,16 +135,26 @@ class UiReviewCaptureTest {
         val tab = when (screen) { "devices" -> R.string.nav_devices; "connections" -> R.string.nav_connections; "account" -> R.string.nav_account; else -> null }
         tab?.let { compose.onAllNodesWithText(localized.getString(it)).onLast().performClick() }
         val interaction = args.getString("reviewInteraction") ?: "view"
-        require(interaction in setOf("view", "keyboard"))
-        if (interaction == "keyboard") {
-            require(screen in setOf("login", "login-mfa", "password-change"))
+        require(interaction in setOf("view", "keyboard", "search-empty"))
+        if (interaction == "search-empty") {
+            require(screen == "connections")
+            val searchLabel = localized.getString(R.string.search_connections)
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(searchLabel))
+            compose.onNodeWithText(searchLabel).performClick().performTextInput("no-match")
+            compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
+        }
+        val usesKeyboard = interaction in setOf("keyboard", "search-empty")
+        if (usesKeyboard) {
+            require(screen in setOf("login", "login-mfa", "password-change", "connections"))
             if (screen == "login-mfa") compose.onAllNodes(hasSetTextAction()).onLast().performClick()
-            else compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
+            else if (interaction == "keyboard") compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
             compose.runOnUiThread {
                 compose.activity.getSystemService(InputMethodManager::class.java)
                     .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
             }
             compose.waitUntil(10_000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
+            if (interaction == "search-empty")
+                compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
         val frames = JSONArray()
         val matcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
@@ -164,7 +180,7 @@ class UiReviewCaptureTest {
                 .put("bytes", file.length()).put("sha256", MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) })
                 .put("scroll_value", offset.toDouble()).put("scroll_maximum", maximum.toDouble()))
             bitmap.recycle()
-            if (scroll == null || offset >= maximum - 0.5f || interaction == "keyboard") { complete = true; break }
+            if (scroll == null || offset >= maximum - 0.5f || usesKeyboard) { complete = true; break }
             previousOffset = offset
             compose.onAllNodes(matcher).onFirst().performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, scroll.boundsInRoot.height * 0.6f) }
         }

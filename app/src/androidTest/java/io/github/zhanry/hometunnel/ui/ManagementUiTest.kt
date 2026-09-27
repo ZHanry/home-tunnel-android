@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollTo
@@ -78,6 +79,7 @@ class ManagementUiTest {
         compose.onNodeWithText(context.getString(R.string.search_connections)).performTextInput("no-match")
         compose.onNodeWithText("家庭相册").assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.no_search_results)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.search_connections)).assertIsDisplayed().performImeAction()
         navigate(R.string.nav_account)
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("林先生"))
         compose.onNodeWithText("林先生").assertIsDisplayed()
