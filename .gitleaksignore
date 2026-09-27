@@ -13,3 +13,8 @@
 # Public API SemVer literals in the contract-ref validator's acceptance test.
 # This exact historical line contains version tags only, not an API credential.
 0ee24000cc741d21a40df31ae010f9209b70e700:scripts/test_release_policy.py:generic-api-key:25
+# Exact SHA-256 values of file_access.cpp/.hpp and descriptor_access_tests.cpp.
+# Verified against their original committed bytes; no paths or rules are excluded.
+ab8be136eb1865dc087b740a280654153eae63ba:native/remote-source.lock.json:generic-api-key:26
+ab8be136eb1865dc087b740a280654153eae63ba:native/remote-source.lock.json:generic-api-key:27
+ab8be136eb1865dc087b740a280654153eae63ba:native/remote-source.lock.json:generic-api-key:66
