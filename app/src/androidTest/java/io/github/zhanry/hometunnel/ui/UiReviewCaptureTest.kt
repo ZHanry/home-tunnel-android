@@ -5,16 +5,13 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
-import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -41,6 +38,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.zhanry.hometunnel.R
+import io.github.zhanry.hometunnel.UiReviewActivity
 import io.github.zhanry.hometunnel.model.ManagedDevice
 import io.github.zhanry.hometunnel.model.PersistedState
 import io.github.zhanry.hometunnel.model.ServerProfile
@@ -56,7 +54,6 @@ import io.github.zhanry.hometunnel.ui.theme.HomeTunnelTheme
 import io.github.zhanry.hometunnel.ui.theme.ThemeChoice
 import java.io.File
 import java.security.MessageDigest
-import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assume.assumeTrue
@@ -69,7 +66,7 @@ import org.junit.After
  * The host runner binds the resulting device PNGs to clean source and both installed APK hashes.
  */
 class UiReviewCaptureTest {
-    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val compose = createAndroidComposeRule<UiReviewActivity>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private var reviewAdmin: AdminRepository? = null
@@ -102,18 +99,18 @@ class UiReviewCaptureTest {
         val interaction = args.getString("reviewInteraction") ?: "view"
         require(interaction in setOf("view", "keyboard", "search-empty", "create-user", "edit-user", "delete-user", "disable-user", "reset-password", "discard", "logout"))
         val template = args.getString("reviewTemplate") ?: "http"
+        compose.runOnUiThread { AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(locale)) }
+        compose.waitUntil(10_000) { compose.activity.resources.configuration.locales[0].toLanguageTag() == locale }
         val expectedOrientation = if (orientation == "landscape") Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
         compose.activityRule.scenario.onActivity { activity ->
             activity.requestedOrientation = if (orientation == "landscape") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
         compose.waitUntil(10_000) { compose.activity.resources.configuration.orientation == expectedOrientation }
         compose.runOnUiThread {
-            compose.activity.enableEdgeToEdge()
             compose.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         val actual = Configuration(compose.activity.resources.configuration)
-        val config = Configuration(actual).apply { setLocale(Locale.forLanguageTag(locale)) }
-        val localized = context.createConfigurationContext(config)
+        val localized = compose.activity
         val choice = when (theme) { "light" -> ThemeChoice.LIGHT; "dark" -> ThemeChoice.DARK; else -> ThemeChoice.SYSTEM }
         val systemDark = actual.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         if (theme.startsWith("system-")) require(systemDark == theme.endsWith("dark")) { "Host must select the declared system theme" }
@@ -136,7 +133,6 @@ class UiReviewCaptureTest {
         )
         val admin = if (adminPage != null) AdminRepository({ UiReviewAdminApi(stateName) }, { state.currentUser }).also { reviewAdmin = it } else null
         compose.setContent {
-            CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config) {
                 HomeTunnelTheme(choice) {
                     Surface(Modifier.fillMaxSize()) {
                         when (screen) {
@@ -151,7 +147,6 @@ class UiReviewCaptureTest {
                         }
                     }
                 }
-            }
         }
         compose.waitForIdle()
         if (admin != null && adminPage != null) {
@@ -245,7 +240,7 @@ class UiReviewCaptureTest {
             .put("density_dpi", actual.densityDpi).put("font_scale", actual.fontScale.toDouble()).put("orientation", actual.orientation)
             .put("ime_visible", ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
             .put("capture_method", "actual-device-scrolled-viewport")
-            .put("locale_method", "Production Composables with explicit localized resource context; persistence not tested")
+            .put("locale_method", "Production application theme and AppCompat application locale verified on Activity resources; cold-start locale persistence not tested")
         File(directory, "capture.json").writeText(record.toString(2) + "\n")
     }
 }

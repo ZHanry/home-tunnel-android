@@ -55,8 +55,8 @@ internal class UiReviewAdminApi(private val scenario: String) : AdministrationAp
 internal fun UiReviewWizard(step: Int, result: Boolean, templateId: String, scenario: String, devices: List<ManagedDevice>) {
     val template = requireNotNull(templateById(templateId))
     val value = TunnelConnection("review-tunnel", "study", "Review service", "review-app", template.transport.wireName,
-        remotePort = if (template.raw) 10001 else null, publicUrl = if (template.raw) null else "https://review-app.example.test",
-        publicEndpoint = if (template.raw) "example.test:10001" else null, localPort = template.defaultPort.takeIf { it > 0 } ?: 8080,
+        remotePort = if (result && template.raw) 10001 else null, publicUrl = if (result && !template.raw) "https://review-app.example.test" else null,
+        publicEndpoint = if (result && template.raw) "example.test:10001" else null, localPort = template.defaultPort.takeIf { it > 0 } ?: 8080,
         localScheme = template.localScheme, version = 1, state = if (scenario == "ready") "Online" else "Pending",
         applicationProtocol = template.applicationProtocol)
     var edit by remember { mutableStateOf(ConnectionEdit(value, true, step = step,
