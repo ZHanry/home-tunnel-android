@@ -1,6 +1,8 @@
 import("//webrtc.gni")
+import("//build/config/android/config.gni")
 
 assert(is_android && (current_cpu == "arm64" || current_cpu == "x64"))
+assert(android_ndk_api_level == 26, "The controller C ABI requires the pinned Android API 26 native target")
 
 group("default") {
   testonly = true
@@ -34,6 +36,11 @@ rtc_source_set("controller_objects") {
     "../webrtc/peer_identity.cpp",
     "controller_identity.cpp",
     "controller_runtime.cpp",
+    "audio_output.cpp",
+    "file_access.cpp",
+    "../webrtc/file_transfer.cpp",
+    "../webrtc/file_names.cpp",
+    "../webrtc/file_transfer_storage.cpp",
     "surface_lifecycle.hpp",
   ]
   defines = [
@@ -56,7 +63,7 @@ rtc_source_set("controller_objects") {
     "//third_party/boringssl",
     "//third_party/jsoncpp",
   ]
-  libs = [ "android" ]
+  libs = [ "android", "aaudio" ]
 }
 
 # Compiled with the exact same headers/toolchain/stdlib as WebRTC. This archive

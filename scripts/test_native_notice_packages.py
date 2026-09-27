@@ -23,7 +23,7 @@ class NativeNotices(unittest.TestCase):
         sdk = root / "sdk"; sdk.mkdir()
         ndk = root / "ndk"; ndk.mkdir()
         (sdk / "LICENSE.md").write_bytes(b"Reviewed linked engine notices")
-        build = {"source_revision": "a" * 40, "files": {
+        build = {"target": "arm64-v8a", "source_revision": "a" * 40, "files": {
             "LICENSE.md": hashlib.sha256((sdk / "LICENSE.md").read_bytes()).hexdigest(),
             "lib/arm64-v8a/libhome_tunnel_remote.so": "b" * 64}}
         (sdk / "android-webrtc-build.json").write_text(json.dumps(build))

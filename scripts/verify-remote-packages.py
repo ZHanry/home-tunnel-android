@@ -29,21 +29,24 @@ def package_notices(path, prefix, native, build):
         return record
 
 
-def package_libraries(path, prefix, core_hash):
+def package_libraries(path, prefix, core_hash, abi="arm64-v8a"):
+    machines = {"arm64-v8a": 183, "x86_64": 62}
+    if abi not in machines or prefix not in (f"lib/{abi}/", f"base/lib/{abi}/"):
+        raise SystemExit("Package ABI and library directory must agree")
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)):
             raise SystemExit(f"Duplicate archive entries: {path}")
         libraries = {name: archive.read(name) for name in names if name.endswith(".so")}
-    if not libraries or any(not name.startswith(prefix) for name in libraries):
-        raise SystemExit(f"Release package must contain arm64-v8a libraries only: {path}")
+    if not libraries or any(not name.startswith(prefix) or "/" in name[len(prefix):] for name in libraries):
+        raise SystemExit(f"Release package must contain {abi} libraries only: {path}")
     required = {"libhome_tunnel_remote.so", "libhome_tunnel_remote_jni.so", "libc++_shared.so"}
     if not required.issubset({Path(name).name for name in libraries}):
         raise SystemExit(f"Missing shared core, JNI bridge or C++ runtime: {path}")
     records = {}
     for name, data in libraries.items():
-        if len(data) < 64 or data[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", data, 18)[0] != 183:
-            raise SystemExit(f"Expected an AArch64 ELF64 library: {name}")
+        if len(data) < 64 or data[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", data, 18)[0] != machines[abi]:
+            raise SystemExit(f"Expected a {abi} ELF64 library: {name}")
         offset = struct.unpack_from("<Q", data, 32)[0]
         entry_size, count = struct.unpack_from("<HH", data, 54)
         if entry_size != 56 or not count or offset + entry_size * count > len(data):
@@ -65,20 +68,23 @@ def main():
     parser.add_argument("aab", type=Path)
     parser.add_argument("native_manifest", type=Path)
     parser.add_argument("--controller-build", type=Path)
+    parser.add_argument("--abi", choices=("arm64-v8a", "x86_64"), default="arm64-v8a")
     args = parser.parse_args()
     manifest = json.loads(args.native_manifest.read_text())
     build_path = args.controller_build or args.native_manifest.parent.parent / "android-webrtc-build.json"
     if hashlib.sha256(build_path.read_bytes()).hexdigest() != manifest.get("controller_manifest_sha256"):
         raise SystemExit("Native notices require the exact reviewed controller build manifest")
     build = json.loads(build_path.read_text())
-    apk = package_libraries(args.apk, "lib/arm64-v8a/", manifest["library_sha256"])
-    aab = package_libraries(args.aab, "base/lib/arm64-v8a/", manifest["library_sha256"])
+    if manifest.get("target") != args.abi or build.get("target") != args.abi:
+        raise SystemExit("Packaged ABI differs from the reviewed native evidence")
+    apk = package_libraries(args.apk, f"lib/{args.abi}/", manifest["library_sha256"], args.abi)
+    aab = package_libraries(args.aab, f"base/lib/{args.abi}/", manifest["library_sha256"], args.abi)
     if apk != aab:
         raise SystemExit("APK and AAB must carry the identical native library set")
     notices = package_notices(args.apk, "assets/licenses/", manifest, build)
     if notices != package_notices(args.aab, "base/assets/licenses/", manifest, build):
         raise SystemExit("APK and AAB must carry identical native notices")
-    print(json.dumps({"status": "passed", "abi": "arm64-v8a", "page_size": 16384, "libraries": apk, "notices": notices}, indent=2))
+    print(json.dumps({"status": "passed", "abi": args.abi, "page_size": 16384, "libraries": apk, "notices": notices}, indent=2))
 
 
 if __name__ == "__main__":

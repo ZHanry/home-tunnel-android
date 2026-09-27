@@ -8,11 +8,19 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.FrameLayout
+import kotlin.math.hypot
 
 /** The native buffer is fitted to the selected display; bars never receive input. */
 @SuppressLint("ViewConstructor") // Compose constructs it with its application-scoped controller; XML cannot supply one.
-class RemoteSurfaceView(context: Context, private val controller: RemoteController) : FrameLayout(context) {
+class RemoteSurfaceView(context: Context, private val controller: RemoteController,
+    private val onZoom: (Float) -> Unit = {}) : FrameLayout(context) {
     private var display: RemoteDisplay? = null
+    private val viewport = RemoteViewport()
+    private var transforming = false
+    private var resumeInput = false
+    private var span = 0f
+    private var focusX = 0f
+    private var focusY = 0f
     private val video = object : SurfaceView(context) {
         private var dragging = false
         override fun performClick(): Boolean { super.performClick(); return true }
@@ -53,12 +61,65 @@ class RemoteSurfaceView(context: Context, private val controller: RemoteControll
         })
     }
     init { setBackgroundColor(Color.BLACK); addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, Gravity.CENTER)) }
-    fun display(value: RemoteDisplay?) { if (display != value) { display = value; fit() } }
+    fun display(value: RemoteDisplay?) {
+        if (display != value) {
+            if (display?.id != value?.id) { viewport.reset(); onZoom(1f) }
+            display = value; fit()
+        }
+    }
+    fun zoom(value: Float) { if (value != viewport.scale) { viewport.zoom(value); transform() } }
+    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) { transforming = false; span = 0f }
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) beginTransform()
+        return transforming
+    }
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        // Block outer scrolling while retaining our ability to cancel a one-finger drag for a pinch.
+        parent?.requestDisallowInterceptTouchEvent(disallowIntercept)
+    }
+    private fun beginTransform() {
+        if (transforming) return
+        resumeInput = controller.state.value.inputEnabled
+        transforming = true
+        runCatching { controller.releaseControl() }
+        parent?.requestDisallowInterceptTouchEvent(true)
+    }
+    @SuppressLint("ClickableViewAccessibility") // The slider and Fit action expose the same zoom operation to accessibility services.
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) beginTransform()
+        if (!transforming) return true
+        when (event.actionMasked) {
+            MotionEvent.ACTION_MOVE -> if (event.pointerCount >= 2) {
+                val x = (event.getX(0) + event.getX(1)) / 2
+                val y = (event.getY(0) + event.getY(1)) / 2
+                val distance = hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1))
+                if (span > 0f && distance > 0f) {
+                    viewport.pan(x - focusX, y - focusY)
+                    viewport.zoom(viewport.scale * distance / span, x, y)
+                    transform(); onZoom(viewport.scale)
+                }
+                focusX = x; focusY = y; span = distance
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP -> span = 0f
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                transforming = false; span = 0f; parent?.requestDisallowInterceptTouchEvent(false)
+                if (resumeInput && event.actionMasked == MotionEvent.ACTION_UP) runCatching { controller.requestControl() }
+                resumeInput = false
+            }
+        }
+        return true
+    }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); fit() }
     private fun fit() {
         val target = display ?: return
         if (width <= 0 || height <= 0) return
-        val scale = minOf(width.toDouble() / target.width, height.toDouble() / target.height)
-        video.layoutParams = LayoutParams(maxOf(1, (target.width * scale).toInt()), maxOf(1, (target.height * scale).toInt()), Gravity.CENTER)
+        viewport.configure(width, height, target.width, target.height)
+        video.layoutParams = LayoutParams(maxOf(1, viewport.contentWidth.toInt()), maxOf(1, viewport.contentHeight.toInt()), Gravity.CENTER)
+        transform()
+    }
+    private fun transform() {
+        // View transforms also map touch coordinates back to the fitted surface before RemoteWire sees them.
+        video.scaleX = viewport.scale; video.scaleY = viewport.scale
+        video.translationX = viewport.offsetX; video.translationY = viewport.offsetY
     }
 }

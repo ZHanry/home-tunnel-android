@@ -1,0 +1,108 @@
+name: Android release candidate
+
+# Called only from the existing ci.yml workflow_dispatch. This file has no
+# workflow_dispatch of its own. A brand-new workflow_dispatch file cannot be
+# started from a development branch until that file exists on the default branch.
+# ci.yml is already on the default branch, so it is the bootstrap entry.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Sign arm64 and x64 once
+    runs-on: ubuntu-latest
+    environment: android-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: Check repository, wrapper and candidate boundaries
+      run: |
+        set -euo pipefail
+        python3 scripts/check-repository.py
+        python3 -m unittest discover -s scripts -p 'test_*.py'
+    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      with:
+        distribution: temurin
+        java-version: '17'
+    - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+    - name: Require a confirmed SDK candidate for this app SHA
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        python3 scripts/require-sdk-candidate.py
+        python3 scripts/import-sdk-candidate.py --restore
+        for abi in arm64-v8a x86_64; do
+          python3 scripts/verify-remote-native.py ".cache/remote-controller/$abi" --abis "$abi" --production
+        done
+    - name: Test and lint the production controller consumer
+      run: |
+        ./gradlew --no-daemon --max-workers=1 -PremoteNativeRoot="$PWD/.cache/remote-controller/x86_64" -PremoteControllerAbi=x86_64 testDebugUnitTest lint
+    - name: Build each production ABI once with the existing release identity
+      shell: bash
+      env:
+        ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      run: |
+        set -euo pipefail
+        for secret_name in ANDROID_RELEASE_KEYSTORE_BASE64 ANDROID_RELEASE_STORE_PASSWORD ANDROID_RELEASE_KEY_ALIAS ANDROID_RELEASE_KEY_PASSWORD; do
+          test -n "${!secret_name:-}" || { echo "Protected Android signing secret is missing: $secret_name" >&2; exit 1; }
+        done
+        keystore="$RUNNER_TEMP/home-tunnel-android-release.p12"
+        umask 077
+        trap 'rm -f -- "$keystore"' EXIT
+        printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+        test -s "$keystore"
+        export ANDROID_RELEASE_STORE_FILE="$keystore"
+        version=$(sed -n 's/^HOME_TUNNEL_VERSION_NAME=//p' gradle.properties)
+        mkdir -p release-android
+        for abi in arm64-v8a x86_64; do
+          ./gradlew --no-daemon --max-workers=1 -PremoteNativeRoot="$PWD/.cache/remote-controller/$abi" -PremoteControllerAbi="$abi" -PHOME_TUNNEL_RELEASE_VERSION="$version" assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "release-android/HomeTunnel-Android-${version}-${abi}.apk"
+        done
+        ./gradlew --no-daemon --max-workers=1 -PremoteNativeRoot="$PWD/.cache/remote-controller/arm64-v8a" -PremoteControllerAbi=arm64-v8a -PHOME_TUNNEL_RELEASE_VERSION="$version" bundleRelease
+        cp app/build/outputs/bundle/release/app-release.aab "release-android/HomeTunnel-Android-${version}.aab"
+    - name: Verify both package identities, native contents and persistent signatures
+      run: |
+        set -euo pipefail
+        bundletool="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+        curl --fail --location --proto '=https' --tlsv1.2 https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar --output "$bundletool"
+        echo 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  '"$bundletool" | sha256sum -c -
+        python3 scripts/verify-android-candidate.py --directory release-android --sdk-root "${ANDROID_SDK_ROOT:-$ANDROID_HOME}" --bundletool "$bundletool"
+    - id: syft
+      uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610
+      with:
+        syft-version: v1.42.3
+    - name: Seal checksums, SPDX SBOMs and immutable candidate evidence
+      env:
+        SYFT: ${{ steps.syft.outputs.cmd }}
+      run: |
+        set -euo pipefail
+        for package in release-android/*.apk release-android/*.aab; do
+          "$SYFT" scan "file:$package" -o spdx-json > "$package.spdx.json"
+          test -s "$package.spdx.json"
+        done
+        version=$(sed -n 's/^HOME_TUNNEL_VERSION_NAME=//p' gradle.properties)
+        python3 scripts/seal-android-release-candidate.py --version "$version" --output release-android
+        for subject in release-android/*; do
+          cosign sign-blob --yes --bundle "$subject.sigstore.json" "$subject"
+        done
+    - name: Attest the candidate, packages and supporting evidence
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+      with:
+        subject-path: release-android/*
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: android-release-candidate
+        path: release-android/*
+        if-no-files-found: error
+        retention-days: 90

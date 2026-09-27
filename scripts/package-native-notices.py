@@ -19,15 +19,19 @@ def notice(path):
     return data
 
 
-def package(sdk, ndk, output, local_candidate=False):
+def package(sdk, ndk, output, local_candidate=False, abi="arm64-v8a"):
+    if abi not in ("arm64-v8a", "x86_64"):
+        raise SystemExit("Native notices require an explicit supported ABI")
     build = json.loads((sdk / ("local-candidate.json" if local_candidate else "android-webrtc-build.json")).read_text())
     if local_candidate:
         if build.get("status") != "local-test-only" or build.get("release_eligible") is not False:
             raise SystemExit("Local candidate cannot provide release notices")
-        build = {"source_revision": "local-test-only", "files": {
+        build = {"target": abi, "source_revision": "local-test-only", "files": {
             "LICENSE.md": build["notice_sha256"],
-            "lib/arm64-v8a/libhome_tunnel_remote.so": build["abis"]["arm64-v8a"]["library_sha256"],
+            f"lib/{abi}/libhome_tunnel_remote.so": build["abis"][abi]["library_sha256"],
         }}
+    if build.get("target") != abi:
+        raise SystemExit("Native notice ABI differs from the linked SDK")
     properties = (ndk / "source.properties").read_text()
     if not re.search(r"^Pkg\.Revision\s*=\s*" + re.escape(NDK_VERSION) + r"\s*$", properties, re.MULTILINE):
         raise SystemExit("Native runtime notices must come from the pinned NDK")
@@ -46,7 +50,7 @@ def package(sdk, ndk, output, local_candidate=False):
             raise SystemExit("Native notice output cannot be a symlink")
         destination.write_bytes(data)
     record = {"schema_version": 1, "ndk_version": NDK_VERSION, "source_revision": build["source_revision"],
-              "library_sha256": build["files"]["lib/arm64-v8a/libhome_tunnel_remote.so"], "files": files}
+              "library_sha256": build["files"][f"lib/{abi}/libhome_tunnel_remote.so"], "files": files}
     (output / "native-notices.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -56,5 +60,6 @@ if __name__ == "__main__":
     parser.add_argument("--ndk", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--local-candidate", action="store_true")
+    parser.add_argument("--abi", choices=("arm64-v8a", "x86_64"), default="arm64-v8a")
     args = parser.parse_args()
-    package(args.sdk, args.ndk, args.output, args.local_candidate)
+    package(args.sdk, args.ndk, args.output, args.local_candidate, args.abi)

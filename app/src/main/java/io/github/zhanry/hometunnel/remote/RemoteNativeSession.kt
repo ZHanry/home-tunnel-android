@@ -50,6 +50,25 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
         checkAvailable(); require(message.size in 24..8192)
         checkResult(RemoteNativeBridge.input(handle, message))
     }
+    @Synchronized fun systemAudio(enabled: Boolean) {
+        checkAvailable(); checkResult(RemoteNativeBridge.systemAudio(handle, enabled))
+    }
+    @Synchronized fun filesEnabled(direction: Int, enabled: Boolean) {
+        checkAvailable(); require(direction in 1..2)
+        checkResult(RemoteNativeBridge.filesEnabled(handle, direction, enabled))
+    }
+    @Synchronized fun offerFiles(descriptors: IntArray, names: List<String>) {
+        checkAvailable(); require(descriptors.size in 1..64 && descriptors.size == names.size)
+        checkResult(RemoteNativeBridge.filesOffer(handle, descriptors, names.map { RemoteFiles.safeName(it).toByteArray(Charsets.UTF_8) }.toTypedArray()))
+    }
+    @Synchronized fun acceptFile(id: String, descriptor: Int) {
+        checkAvailable(); require(descriptor >= 0 && java.util.UUID.fromString(id).toString() == id)
+        checkResult(RemoteNativeBridge.filesAccept(handle, id.toByteArray(Charsets.US_ASCII), descriptor))
+    }
+    @Synchronized fun cancelFile(id: String) {
+        checkAvailable(); require(java.util.UUID.fromString(id).toString() == id)
+        checkResult(RemoteNativeBridge.filesCancel(handle, id.toByteArray(Charsets.US_ASCII)))
+    }
     @Synchronized fun surface(surface: Surface?, surfaceGeneration: Long) {
         if (closed || !capability.available) return
         require(surfaceGeneration > generation)
@@ -80,11 +99,17 @@ class RemoteNativeSession(private val event: (Int, Int, Long, ByteArray) -> Unit
 internal object RemoteNativeBridge {
     val loaded = try { System.loadLibrary("home_tunnel_remote_jni"); true } catch (_: LinkageError) { false }
     external fun abi(): Int
+    external fun nonBlocking(descriptor: Int): Int
     external fun create(owner: RemoteNativeSession): Long
     external fun capabilities(handle: Long): LongArray
     external fun start(handle: Long, ticket: ByteArray): Int
     external fun signal(handle: Long, message: ByteArray): Int
     external fun input(handle: Long, message: ByteArray): Int
+    external fun systemAudio(handle: Long, enabled: Boolean): Int
+    external fun filesEnabled(handle: Long, direction: Int, enabled: Boolean): Int
+    external fun filesOffer(handle: Long, descriptors: IntArray, names: Array<ByteArray>): Int
+    external fun filesAccept(handle: Long, id: ByteArray, descriptor: Int): Int
+    external fun filesCancel(handle: Long, id: ByteArray): Int
     external fun surface(handle: Long, surface: Surface?, generation: Long): Int
     external fun pause(handle: Long, reason: Int): Int
     external fun close(handle: Long, reason: Int): Int

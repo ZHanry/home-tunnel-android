@@ -53,6 +53,35 @@ class RemoteApiTest {
             put("server_instance_id", instance); put("endpoint_id", endpointId); put("issued_at", Instant.now().toString())
         })
     }
+    @Test fun `reconnect binds epoch reason display and idempotency under endpoint proof`() = runTest {
+        val identity = signer()
+        val session = UUID.randomUUID().toString()
+        val requestId = UUID.randomUUID().toString()
+        var count = 0
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("POST", request.method)
+            assertEquals("/api/v1/rd/sessions/$session/reconnect", request.url.encodedPath)
+            assertEquals(requestId, request.header("Idempotency-Key"))
+            assertEquals("DPoP fixture-rd-token-for-unit-tests", request.header("Authorization"))
+            val proof = RemoteJson.parse(RemoteCrypto.decode(requireNotNull(request.header("DPoP")).split('.')[1]))
+            assertEquals(JsonPrimitive(request.url.toString()), proof["htu"])
+            val bytes = okio.Buffer().also { requireNotNull(request.body).writeTo(it) }.readByteArray()
+            assertEquals(buildJsonObject { put("expected_epoch", 3); put("reason", "display_changed"); put("display_id", "monitor-65535") }, RemoteJson.parse(bytes))
+            count++
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body("{}".toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val api = RemoteApi("https://home.example/api/v1/", { _, path, _ ->
+            when (path) { "rd/token-challenges" -> challenge(); "rd/tokens" -> token(); else -> error("Unexpected route") }
+        }, client)
+        api.restore(identity, endpointId, instance)
+        api.reconnectSession(session, 3, "display_changed", "monitor-65535", requestId)
+        assertFails { api.reconnectSession(session, 3, "ice_failed", "monitor-65535", requestId) }
+        assertFails { api.reconnectSession(session, 3, "display_changed", requestId = requestId) }
+        assertFails { api.reconnectSession(session, 0xffffffffL, "ice_failed", requestId = requestId) }
+        assertEquals(1, count)
+    }
     @Test fun `clearing the remote account cancels active calls and rejects delayed responses`() = runTest {
         val started = CompletableDeferred<Unit>()
         val resume = CountDownLatch(1)

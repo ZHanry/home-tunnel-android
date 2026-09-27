@@ -133,7 +133,7 @@ class RemoteProtocolTest {
         assertTrue(gate.acknowledgeInput(1, first, 1, 1))
         assertTrue(gate.canUse("input.keyboard"))
         assertFalse(gate.canUse("files.send"))
-        gate.feature("audio.microphone", true)
+        assertFails { gate.feature("audio.microphone", true) }
         gate.foreground(false)
         assertFalse(gate.inputPending)
         assertFalse(gate.featureEnabled("audio.microphone")); assertFalse(gate.canUse("input.keyboard"))
@@ -146,6 +146,38 @@ class RemoteProtocolTest {
         now = 900_100
         assertFalse(gate.live()); assertFalse(gate.canUse("view"))
         assertFails { gate.renew(1, 2, 900_000) }
+    }
+    @Test fun `file and audio stay closed unless the local mask and host backend both allow them`() {
+        val gate = RemoteSessionGate { 100L }
+        gate.foreground(true)
+        gate.authorized(1, setOf("view", "input.keyboard", "clipboard.read", "files.send", "audio.system", "audio.microphone"), 900_000, 1)
+        gate.authenticatedDirectPath(1, "udp", "host", "host")
+        assertTrue(gate.canUse("clipboard.read"))
+        assertFalse(gate.canUse("files.send"))
+        assertFalse(gate.canUse("audio.system"))
+        assertFalse(gate.canUse("audio.microphone"))
+        gate.bindLocalCapabilities(gate.localPermissions + setOf("files.send", "audio.system", "audio.microphone"))
+        assertFalse(gate.canUse("files.send"))
+        gate.bindHostDiscovery(mapOf("files" to "available", "system_audio" to "permission_required"))
+        assertFalse(gate.canUse("files.send"))
+        val surface = gate.surface(true)
+        assertTrue(gate.presentedFrame(1, surface, 1))
+        assertTrue(gate.canUse("files.send"))
+        assertFalse(gate.canUse("audio.system"))
+        assertFalse(gate.canUse("audio.microphone"))
+        gate.bindHostDiscovery(null)
+        assertFalse(gate.canUse("files.send"))
+        assertTrue(gate.canUse("clipboard.read"))
+        gate.bindLocalCapabilities(emptySet())
+        assertFalse(gate.canUse("clipboard.read"))
+        assertFalse(gate.canUse("input.keyboard"))
+        val other = RemoteSessionGate { 100L }
+        other.foreground(true)
+        other.authorized(1, setOf("view", "clipboard.read"), 900_000, 1)
+        other.authenticatedDirectPath(1, "udp", "host", "host")
+        assertTrue(other.canUse("clipboard.read"))
+        gate.close()
+        assertFalse(gate.canUse("view"))
     }
     @Test fun `clock rollback stale renewal and old connection epochs cannot extend control`() {
         var now = 1000L

@@ -17,6 +17,8 @@ import io.github.zhanry.hometunnel.ui.remote.nineDigitCode
 import io.github.zhanry.hometunnel.ui.remote.recentPreferenceKey
 import io.github.zhanry.hometunnel.ui.remote.rememberRecent
 import io.github.zhanry.hometunnel.ui.remote.remoteStage
+import io.github.zhanry.hometunnel.ui.remote.displayCaption
+import io.github.zhanry.hometunnel.ui.remote.failureActionKey
 import io.github.zhanry.hometunnel.ui.remote.visibleSessionControls
 import io.github.zhanry.hometunnel.ui.theme.ThemeChoice
 import io.github.zhanry.hometunnel.ui.tunnel.TunnelDraftStore
@@ -151,6 +153,15 @@ class AndroidUxModelTest {
         assertEquals(setOf(SessionControl.DISPLAY, SessionControl.UNICODE, SessionControl.CLIPBOARD, SessionControl.SYSTEM_AUDIO, SessionControl.FILES), granted)
         assertFalse(SessionControl.MICROPHONE in granted)
         assertFalse(SessionControl.POINTER in granted)
+        val offered = connectModes(true, true, setOf("local_approval"))
+        assertTrue(offered.first { it.mode == ConnectMode.APPROVAL }.enabled)
+        assertFalse(offered.first { it.mode == ConnectMode.UNATTENDED }.enabled)
+        assertFalse(offered.first { it.mode == ConnectMode.FIXED }.enabled)
+        val display = io.github.zhanry.hometunnel.remote.RemoteDisplay(1, 1920, 1080, dpiX = 144, dpiY = 144, scalePercent = 150, originX = 0, originY = -1080)
+        assertTrue(displayCaption(display).contains("144×144 DPI"))
+        assertEquals("1920 × 1080", displayCaption(io.github.zhanry.hometunnel.remote.RemoteDisplay(0, 1920, 1080)))
+        assertEquals("check_udp_path", failureActionKey("check_udp_path"))
+        assertEquals("unknown", failureActionKey("future_action"))
     }
 
     @Test

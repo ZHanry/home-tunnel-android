@@ -35,48 +35,82 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertEqual((root / "release-signing-cert.sha256").read_text().strip(), "d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702")
         self.assertIn('applicationId = "io.github.zhanry.hometunnel"', (root / "app/build.gradle.kts").read_text())
 
-    def test_seal_requires_the_same_controller_library_as_the_reviewed_sdk(self):
+    def test_seal_requires_both_controller_abis_and_their_original_notices(self):
+        import shutil
+        import test_native_package_abis as package_fixture
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); native = root / "native"; native.mkdir()
+            root = Path(temporary); native_dir = root / "native"; native_dir.mkdir()
             output = root / "release"; output.mkdir()
+            (root / "scripts").mkdir()
+            shutil.copyfile(script.parent / "verify-remote-packages.py", root / "scripts/verify-remote-packages.py")
+            license_bytes = (script.parent.parent / "LICENSE").read_bytes()
+            (root / "LICENSE").write_bytes(license_bytes)
+            certificate = "d" * 64
+            (root / "release-signing-cert.sha256").write_text(certificate)
+            (root / "gradle.properties").write_text("HOME_TUNNEL_VERSION_CODE=10000000\n")
             source = {"source_revision": "a" * 40, "source_tree_sha256": "b" * 64, "source_files": {"fixture": "c" * 64}}
-            build = dict(source, source_modified=False, controller_backend_linked=True, device_media_accepted=False,
-                         files={"lib/arm64-v8a/libhome_tunnel_remote.so": "d" * 64})
-            provenance = {"source_revision": source["source_revision"], "tag": "v8.0.0-rc.1", "archive": "SDK.zip", "archive_sha256": "e" * 64}
-            build_bytes = json.dumps(build).encode(); provenance_bytes = json.dumps(provenance).encode()
-            lock = {"tag": provenance["tag"], "asset": provenance["archive"], "sha256": provenance["archive_sha256"],
-                    "controller_manifest_sha256": hashlib.sha256(build_bytes).hexdigest(), "provenance_sha256": hashlib.sha256(provenance_bytes).hexdigest()}
-            for name, data in (("controller-sdk.lock.json", lock), ("remote-source.lock.json", source)):
-                (native / name).write_text(json.dumps(data))
-            (output / "android-controller-sdk.lock.json").write_bytes((native / "controller-sdk.lock.json").read_bytes())
-            (output / "android-native-source.lock.json").write_bytes((native / "remote-source.lock.json").read_bytes())
-            (output / "android-controller-build.json").write_bytes(build_bytes)
-            (output / "android-controller-sdk-provenance.json").write_bytes(provenance_bytes)
-            evidence = {"status": "webrtc-controller-linked-device-acceptance-required", "available": True, "device_media_accepted": False,
-                        "source_revision": source["source_revision"], "controller_manifest_sha256": lock["controller_manifest_sha256"], "library_sha256": "d" * 64}
-            (output / "android-native-evidence.json").write_text(json.dumps(evidence))
-            with zipfile.ZipFile(output / "HomeTunnel-Android-8.0.0-rc.1-arm64-v8a.apk", "w") as package:
-                for name in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json"):
-                    package.writestr("assets/licenses/" + name, b"fixture notice")
-                    (output / ("android-native-" + name)).write_bytes(b"fixture notice")
-            with patch.object(module, "ROOT", root), patch.object(module, "run") as verify_packages:
-                module.verify_controller_evidence(output, "8.0.0-rc.1")
-                verify_packages.assert_called_once()  # Real APK/AAB ELF/hash checks run separately; no media acceptance is claimed here.
-                (output / "android-native-NDK-NOTICE").write_bytes(b"changed fixture")
+            lock = {"abis": {}}
+            facts = {"signing_certificate_sha256": certificate, "version_code": 10000000, "packages": {}}
+            def write(path, record):
+                path.write_text(json.dumps(record), encoding="utf-8")
+            for abi, machine in (("arm64-v8a", 183), ("x86_64", 62)):
+                library = package_fixture.elf(machine)
+                library_sha = hashlib.sha256(library).hexdigest()
+                contents = {"PROJECT-LICENSE": license_bytes, "WEBRTC-LICENSE.md": b"linked engine notice",
+                            "NDK-NOTICE": b"source notice", "NDK-NOTICE.toolchain": b"runtime notice"}
+                build = dict(source, target=abi, source_modified=False, controller_backend_linked=True, device_media_accepted=False,
+                    files={"LICENSE.md": hashlib.sha256(contents["WEBRTC-LICENSE.md"]).hexdigest(), f"lib/{abi}/libhome_tunnel_remote.so": library_sha})
+                provenance = {"source_revision": source["source_revision"], "target": abi, "archive_sha256": "e" * 64}
+                build_path, provenance_path = output / f"android-controller-build-{abi}.json", output / f"android-controller-sdk-provenance-{abi}.json"
+                write(build_path, build); write(provenance_path, provenance)
+                pinned = {"controller_manifest_sha256": hashlib.sha256(build_path.read_bytes()).hexdigest(),
+                    "provenance_sha256": hashlib.sha256(provenance_path.read_bytes()).hexdigest(), "archive_sha256": "e" * 64, "library_sha256": library_sha}
+                lock["abis"][abi] = pinned
+                native = dict(source, target=abi, available=True, device_media_accepted=False,
+                              controller_manifest_sha256=pinned["controller_manifest_sha256"], library_sha256=library_sha)
+                write(output / f"android-native-evidence-{abi}.json", native)
+                notice = {"schema_version": 1, "ndk_version": "27.2.12479018", "source_revision": source["source_revision"],
+                          "library_sha256": library_sha, "files": {k: hashlib.sha256(v).hexdigest() for k, v in contents.items()}}
+                contents["native-notices.json"] = json.dumps(notice).encode()
+                for key, value in contents.items():
+                    (output / f"android-native-{abi}-{key}").write_bytes(value)
+                packages = [(abi, f"HomeTunnel-Android-10.0.0-{abi}.apk", "")]
+                if abi == "arm64-v8a": packages.append(("aab", "HomeTunnel-Android-10.0.0.aab", "base/"))
+                for key, name, prefix in packages:
+                    package_path = output / name
+                    with zipfile.ZipFile(package_path, "w") as package:
+                        for lib in ("libhome_tunnel_remote.so", "libhome_tunnel_remote_jni.so", "libc++_shared.so"):
+                            package.writestr(f"{prefix}lib/{abi}/{lib}", library)
+                        for notice_name, data in contents.items():
+                            package.writestr(prefix + "assets/licenses/" + notice_name, data)
+                    facts["packages"][key] = {"libraries": package_fixture.packages.package_libraries(package_path, f"{prefix}lib/{abi}/", library_sha, abi),
+                        "notices": notice, "certificate_sha256": certificate, "application_id": "io.github.zhanry.hometunnel",
+                        "version_code": 10000000, "version_name": "10.0.0", "debuggable": False}
+            for name, data in (("controller-sdk-candidate.lock.json", lock), ("remote-source.lock.json", source)):
+                write(native_dir / name, data)
+            shutil.copyfile(native_dir / "controller-sdk-candidate.lock.json", output / "android-controller-sdk-candidate.lock.json")
+            shutil.copyfile(native_dir / "remote-source.lock.json", output / "android-native-source.lock.json")
+            write(output / "android-release-evidence.json", facts)
+            with patch.object(module, "ROOT", root):
+                module.verify_controller_evidence(output, "10.0.0")
+                changed = output / "android-native-x86_64-NDK-NOTICE"
+                original = changed.read_bytes(); changed.write_bytes(b"changed")
                 with self.assertRaisesRegex(SystemExit, "notices differ"):
-                    module.verify_controller_evidence(output, "8.0.0-rc.1")
-                evidence["library_sha256"] = "f" * 64
-                (output / "android-native-evidence.json").write_text(json.dumps(evidence))
+                    module.verify_controller_evidence(output, "10.0.0")
+                changed.write_bytes(original)
+                evidence = output / "android-native-evidence-x86_64.json"
+                native = json.loads(evidence.read_text()); native["library_sha256"] = "f" * 64
+                write(evidence, native)
                 with self.assertRaisesRegex(SystemExit, "library/source identity"):
-                    module.verify_controller_evidence(output, "8.0.0-rc.1")
+                    module.verify_controller_evidence(output, "10.0.0")
 
     def test_contract_ref_accepts_only_exact_ascii_stable_or_rc_versions(self):
         for value in ("api-v0.0.0", "api-v1.2.0", "api-v1.2.0-rc.1", "api-v12.30.4-rc.123"):
             with self.subTest(value=value):
                 self.assertTrue(repository_policy.valid_contract_ref(value))
         for value in ("main", "api-v1.2", "api-v01.2.0", "api-v1.02.0", "api-v1.2.00",
-                      "api-v1.2.0-rc.0", "api-v1.2.0-rc.01", "api-v1.2.0-rc.١",
-                      "api-v١.2.0", "api-v1.2.0+build", "api-v1.2.0-rc.1+build",
+                      "api-v1.2.0-rc.0", "api-v1.2.0-rc.01", "api-v1.2.0-rc.佟",
+                      "api-v佟.2.0", "api-v1.2.0+build", "api-v1.2.0-rc.1+build",
                       "api-v1.2.0/bad", "api-v1.2.0\n", "api-v1.2.0-rc.1\n", None):
             with self.subTest(value=value):
                 self.assertFalse(repository_policy.valid_contract_ref(value))
@@ -116,7 +150,7 @@ class ReleasePolicyTests(unittest.TestCase):
             module.validate_release_tag("v1.0.0", "1.0.0", "publc-release")
 
     def test_public_asset_list_keeps_only_installable_deliverables(self):
-        self.assertEqual(module.public_asset_names("android", "6.0.0"), ["HomeTunnel-Android-6.0.0-arm64-v8a.apk"])
+        self.assertEqual(module.public_asset_names("android", "6.0.0"), ["HomeTunnel-Android-6.0.0-arm64-v8a.apk", "HomeTunnel-Android-6.0.0-x86_64.apk"])
         client = module.public_asset_names("client", "6.0.0")
         self.assertEqual(len(client), 6)
         self.assertTrue(all(name.endswith((".exe", ".zip", ".tar.gz")) for name in client))

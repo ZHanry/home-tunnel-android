@@ -31,6 +31,16 @@ if component == "server":
 else:
     lock = json.loads((root / "contracts/lock.json").read_text())
     assert lock['ref'] == compat['contract_ref']
+    status = lock.get("contract_status", "frozen")
+    assert status in ("frozen", "proposed")
+    assert compat.get("contract_status", status) == status
+    if status == "proposed":
+        assert lock.get("published_contract_ref") is None and lock.get("frozen_tag") is None
+        assert re.fullmatch(r"[0-9a-f]{40}", lock.get("source_revision", ""))
+        assert lock.get("previous_immutable_tag") == "api-v1.3.0"
+        assert compat.get("frozen_tag") is None
+    else:
+        assert lock.get("published_contract_ref") == lock["ref"]
     required = {'contracts/home-tunnel.v1.json','contracts/openapi.v1.json','contracts/api.schema.json'}
     assert len(lock['files']) == len(required) and {item['path'] for item in lock['files']} == required
     for item in lock['files']:
@@ -62,6 +72,10 @@ else:
         assert hashlib.sha256(wrapper.read_bytes()).hexdigest() == "498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17"
         rd_lock = json.loads((root / "contracts/remote.lock.json").read_text())
         assert rd_lock["repository"] == "ZHanry/home-tunnel-server"
+        assert rd_lock.get("contract_status", status) == status
+        if status == "proposed":
+            assert rd_lock.get("published_contract_ref") is None and rd_lock.get("frozen_tag") is None
+            assert rd_lock.get("source_revision") == lock["source_revision"]
         for item in rd_lock["files"]:
             assert hashlib.sha256((root / item["path"]).read_bytes()).hexdigest() == item["sha256"], f"RD contract drift: {item['path']}"
         assert (root / "app/src/test/resources/remote-test-vectors.json").read_bytes() == (root / "contracts/remote-test-vectors.json").read_bytes()

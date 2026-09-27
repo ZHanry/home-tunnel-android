@@ -60,6 +60,8 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.ConnectionCapabilities
 import io.github.zhanry.hometunnel.model.ManagedDevice
+import io.github.zhanry.hometunnel.model.TunnelDiagnostic
+import io.github.zhanry.hometunnel.model.diagnosticFailureKey
 import io.github.zhanry.hometunnel.model.ProxyKind
 import io.github.zhanry.hometunnel.model.TunnelConnection
 import io.github.zhanry.hometunnel.ui.tunnel.TUNNEL_TEMPLATES
@@ -367,6 +369,20 @@ private fun AccessStep(
 }
 
 @Composable
+private fun diagnosticText(diagnostic: TunnelDiagnostic?): String = when (diagnosticFailureKey(diagnostic)) {
+    null -> stringResource(R.string.wizard_result_diagnostic)
+    "none" -> stringResource(R.string.wizard_diagnostic_none)
+    "dns" -> stringResource(R.string.wizard_diagnostic_dns)
+    "tls" -> stringResource(R.string.wizard_diagnostic_tls)
+    "target_unreachable" -> stringResource(R.string.wizard_diagnostic_target_unreachable)
+    "permission" -> stringResource(R.string.wizard_diagnostic_permission)
+    "sync" -> stringResource(R.string.wizard_diagnostic_sync)
+    "port_unavailable" -> stringResource(R.string.wizard_diagnostic_port_unavailable)
+    "udp_unreachable" -> stringResource(R.string.wizard_diagnostic_udp_unreachable)
+    else -> stringResource(R.string.wizard_diagnostic_unknown)
+}
+
+@Composable
 private fun ResultStep(
     reported: TunnelConnection?,
     waiting: Boolean,
@@ -396,7 +412,7 @@ private fun ResultStep(
             val device = devices.find { it.id == reported.deviceId }
             if (device != null && (!device.online || device.status != "active")) WarningCard(stringResource(R.string.wizard_device_offline))
             Text(stringResource(R.string.wizard_result_not_health))
-            Text(stringResource(R.string.wizard_result_diagnostic), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(diagnosticText(reported.diagnostic), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

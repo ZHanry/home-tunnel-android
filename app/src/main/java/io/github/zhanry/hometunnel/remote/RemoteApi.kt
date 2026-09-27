@@ -157,6 +157,13 @@ class RemoteApi(
         put("protocol", buildJsonObject { put("major", 1); put("minor", 0) }); put("quality", "balanced")
     }, idempotency = uuid(requestId))
     suspend fun session(id: String): JsonObject = request("GET", "rd/sessions/${uuid(id)}")
+    suspend fun reconnectSession(id: String, epoch: Long, reason: String, displayId: String? = null,
+        requestId: String = UUID.randomUUID().toString()): JsonObject = request("POST", "rd/sessions/${uuid(id)}/reconnect", buildJsonObject {
+        require(epoch in 1 until 0xffffffffL && reason in setOf("network_changed", "ice_failed", "media_failed", "display_changed"))
+        require((reason == "display_changed") == (displayId != null))
+        put("expected_epoch", epoch); put("reason", reason)
+        if (displayId != null) put("display_id", displayId.also { require(it.isNotBlank() && it.length <= 128) })
+    }, idempotency = uuid(requestId))
     suspend fun closeSession(id: String): JsonObject = request("POST", "rd/sessions/${uuid(id)}/close", buildJsonObject { put("reason", "user_closed") })
     suspend fun reportReady(id: String, epoch: Long, version: Long): JsonObject = request("POST", "rd/sessions/${uuid(id)}/report", buildJsonObject {
         put("phase", "ready"); put("connection_epoch", epoch); put("expected_version", version); put("path_verified", true)

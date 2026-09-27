@@ -86,6 +86,7 @@ tests/frpc-https.toml
 
 /release-android/
 /release/
+/candidate-import/
 
 # Release workflow staging
 release/

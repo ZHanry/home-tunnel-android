@@ -1,9 +1,9 @@
 package io.github.zhanry.hometunnel.remote
 
 import android.content.Context
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.SystemClock
+import android.net.Uri
 import android.view.Surface
 import io.github.zhanry.hometunnel.model.ServerProfile
 import io.github.zhanry.hometunnel.model.UserInfo
@@ -36,9 +36,16 @@ import kotlinx.serialization.json.put
 
 data class RemoteAccount(val profile: ServerProfile, val user: UserInfo)
 data class RemoteEndpoint(val id: String, val name: String, val fingerprint: String, val displayId: String?, val available: Boolean,
-    val ownerUserId: String? = null, val assistInviteId: String? = null, val unattendedEnabled: Boolean = false)
+    val ownerUserId: String? = null, val assistInviteId: String? = null, val unattendedEnabled: Boolean = false,
+    val offeredAccessModes: Set<String>? = null, val nativeBackends: Map<String, String>? = null)
+internal fun hostOffersUnattended(host: RemoteEndpoint): Boolean =
+    host.offeredAccessModes?.contains("unattended") ?: host.unattendedEnabled
+internal fun hostOffersMode(host: RemoteEndpoint, mode: String): Boolean {
+    val offered = host.offeredAccessModes ?: return mode != "unattended" || host.unattendedEnabled
+    return mode in offered
+}
 internal fun eligibleForTrustedBinding(host: RemoteEndpoint, ownerUserId: String?, permissions: Set<String>): Boolean =
-    host.available && host.unattendedEnabled && host.assistInviteId == null && host.ownerUserId == ownerUserId &&
+    host.available && hostOffersUnattended(host) && host.assistInviteId == null && host.ownerUserId == ownerUserId &&
         ownerUserId != null && "view" in permissions && P.permissions.containsAll(permissions)
 internal fun matchingPersistentGrant(grants: JsonObject, host: RemoteEndpoint, ownerUserId: String,
     controllerEndpointId: String, permissions: Set<String>, now: Instant): String? {
@@ -54,7 +61,21 @@ internal fun matchingPersistentGrant(grants: JsonObject, host: RemoteEndpoint, o
     }
 }
 data class RemotePairing(val id: String, val host: RemoteEndpoint, val requestId: String, val transcript: JsonObject, val code: String? = null)
-data class RemoteDisplay(val slot: Int, val width: Int, val height: Int)
+data class RemoteDisplay(
+    val slot: Int,
+    val width: Int,
+    val height: Int,
+    val dpiX: Int? = null,
+    val dpiY: Int? = null,
+    val scalePercent: Int? = null,
+    val originX: Int? = null,
+    val originY: Int? = null,
+    val id: String? = null,
+    val name: String? = null,
+) {
+    val hasMetrics: Boolean
+        get() = dpiX != null && dpiY != null && scalePercent != null && originX != null && originY != null
+}
 data class RemoteViewState(
     val loading: Boolean = false,
     val enabled: Boolean = false,
@@ -72,8 +93,18 @@ data class RemoteViewState(
     val fingerprint: String? = null,
     val inputEnabled: Boolean = false,
     val display: RemoteDisplay? = null,
+    val displays: List<RemoteDisplay> = emptyList(),
     val textStatus: String? = null,
     val clipboardEnabled: Boolean = false,
+    val connectionPhase: String? = null,
+    val failureCode: String? = null,
+    val failureAction: String? = null,
+    val accessMode: String? = null,
+    val audioEnabled: Boolean = false,
+    val filesReceiveEnabled: Boolean = false,
+    val pendingFeatures: Set<String> = emptySet(),
+    val fileTransfers: List<RemoteFileItem> = emptyList(),
+    val filePreparing: Boolean = false,
 )
 
 /** Application-scoped owner; Activity recreation never owns credentials or native lifetime. */
@@ -100,6 +131,11 @@ class RemoteController(
     private var stunUrls: List<String> = emptyList()
     private var authorization: RemoteAuthorization? = null
     private var verifiedAuthorization: RemoteVerifiedAuthorization? = null
+    private var continuation: RemoteSessionContinuation? = null
+    private var sessionHost: RemoteEndpoint? = null
+    private var snapshotVersion = 0L
+    private var reconnectJob: Job? = null
+    private var attachedSurface: Surface? = null
     private var accountKey: String? = null
     private var native: RemoteNativeSession? = null
     private var nativeLifetime = 0L
@@ -125,6 +161,9 @@ class RemoteController(
     private var clipboardSequence = 0L
     private var clipboardTransfer: RemoteClipboardTransfer? = null
     private var clipboardListening = false
+    private var fileTransfers: RemoteNativeFiles? = null
+    private val featureRequests = mutableMapOf<String, Long>()
+    private var featureRequestSequence = 0L
 
     fun refresh() = perform {
         val selected = requireNotNull(account()) { "RD_ACCOUNT_REQUIRED" }
@@ -201,12 +240,12 @@ class RemoteController(
     fun assist(deviceId: String, temporaryPassword: String, permissions: Set<String>) = perform {
         check(_state.value.authenticated && _state.value.native.available) { "RD_AUTH_REQUIRED" }
         val target = requireNotNull(api).redeemAssist(deviceId, temporaryPassword)
-        connectAssistedTarget(target, permissions)
+        connectAssistedTarget(target, permissions, "one_time_password")
     }
     fun fixedPassword(deviceId: String, password: String, permissions: Set<String>) = perform {
         check(_state.value.authenticated && _state.value.native.available) { "RD_AUTH_REQUIRED" }
         val target = requireNotNull(api).redeemFixed(deviceId, password)
-        connectAssistedTarget(target, permissions)
+        connectAssistedTarget(target, permissions, "fixed_password")
     }
     fun requestAccess(deviceId: String, permissions: Set<String>) = perform {
         check(_state.value.authenticated && _state.value.native.available) { "RD_AUTH_REQUIRED" }
@@ -228,9 +267,9 @@ class RemoteController(
             }
         }
         if (expectedConnection != connectionGeneration) return@perform
-        connectAssistedTarget(target ?: error("RD_ACCESS_EXPIRED"), permissions)
+        connectAssistedTarget(target ?: error("RD_ACCESS_EXPIRED"), permissions, "local_approval")
     }
-    private suspend fun connectAssistedTarget(target: JsonObject, permissions: Set<String>) {
+    private suspend fun connectAssistedTarget(target: JsonObject, permissions: Set<String>, mode: String) {
         val hostId = UUID.fromString(target.string("host_endpoint_id")).toString()
         val ownerId = UUID.fromString(target.string("host_owner_user_id")).toString()
         val inviteId = UUID.fromString(target.string("invite_id")).toString()
@@ -240,11 +279,14 @@ class RemoteController(
         val capabilities = target.getValue("capabilities").jsonObject
         val displayId = (capabilities["displays"] as? JsonArray)?.firstOrNull()?.jsonObject?.string("id")
         require(capabilities["status"] == JsonPrimitive("ready") && displayId != null && ownerId != account()?.user?.id) { "RD_HOST_UNAVAILABLE" }
-        val host = RemoteEndpoint(hostId, target.string("host_name"), fingerprint, displayId, true, ownerId, inviteId)
+        val host = RemoteEndpoint(hostId, target.string("host_name"), fingerprint, displayId, true, ownerId, inviteId,
+            offeredAccessModes = offeredAccessModes(target), nativeBackends = nativeBackends(capabilities))
+        check(hostOffersMode(host, mode)) { "RD_ACCESS_MODE_UNAVAILABLE" }
         _state.value = _state.value.copy(assistTarget = host)
         beginPair(host, permissions)
     }
     fun pair(host: RemoteEndpoint, permissions: Set<String>) = perform {
+        check(hostOffersMode(host, "local_approval")) { "RD_ACCESS_MODE_UNAVAILABLE" }
         require("view" in permissions && P.permissions.containsAll(permissions))
         val expectedConnection = connectionGeneration
         if (_state.value.authenticated && _state.value.native.available && host.available) {
@@ -361,24 +403,8 @@ class RemoteController(
         check(_state.value.native.available) { "RD_MEDIA_BACKEND_UNAVAILABLE" }
         stopLocal()
         try {
-            clipboardTransfer = RemoteClipboardTransfer(send = { type, payload ->
-                val permission = if (type == P.CLIPBOARD_OFFER || type == P.CLIPBOARD_CHUNK) "clipboard.write" else "clipboard.read"
-                check(gate.featureEnabled(permission)) { "RD_CLIPBOARD_DISABLED" }
-                val next = clipboardSequence + 1
-                requireNotNull(native).submit(RemoteWire.frame(type, gate.epoch, 0, next, payload))
-                clipboardSequence = next
-            }, receiveText = { text ->
-                check(gate.featureEnabled("clipboard.read")) { "RD_CLIPBOARD_DISABLED" }
-                clipboard.setPrimaryClip(ClipData.newPlainText("Home Tunnel", text))
-            })
-            val nativeGeneration = ++nativeLifetime
-            native = RemoteNativeSession { type, _, _, payload ->
-                scope.launch {
-                    if (nativeLifetime == nativeGeneration) try { nativeEvent(type, payload) }
-                    catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_NATIVE_PROTOCOL_FAILED") }
-                }
-            }
-            check(requireNotNull(native).capability.available) { "RD_MEDIA_BACKEND_UNAVAILABLE" }
+            initializeNative(host)
+            val nativeGeneration = nativeLifetime
             val activeApi = requireNotNull(api)
             val created = activeApi.createSession(host.id, grantId, permissions, requestId, requireNotNull(host.displayId))
             val session = created["session_id"]?.jsonPrimitive?.content ?: created.string("id")
@@ -392,12 +418,15 @@ class RemoteController(
             require(created["owner_user_id"] == JsonPrimitive(host.ownerUserId) &&
                 created["controller_owner_user_id"] == JsonPrimitive(selected.user.id)) { "RD_AUTHORIZATION_CONTEXT" }
             val keys = requireNotNull(trustedKeys)
-            authorization = RemoteAuthorization(RemoteAuthorizationBinding(
+            val binding = RemoteAuthorizationBinding(
                 selected.profile.publicBaseUrl.trimEnd('/'), keys.string("server_instance_id"), keys.number("restore_epoch"),
                 session, requestId, created.number("connection_epoch", 0xffffffffL), requireNotNull(host.ownerUserId),
                 requireNotNull(activeApi.endpointId), host.id, requireNotNull(_state.value.fingerprint), host.fingerprint,
                 permissions, grantId, grantMode,
-            ), keys)
+            )
+            continuation = RemoteSessionContinuation(binding, requireNotNull(host.displayId))
+            sessionHost = host
+            authorization = RemoteAuthorization(binding, keys)
             _state.value = _state.value.copy(sessionId = session, hostName = host.name, phase = "pending_approval")
             // Re-read after binding to recover an authorization event that raced the HTTP response.
             val latest = activeApi.session(session)
@@ -405,24 +434,107 @@ class RemoteController(
                 if (nativeLifetime == nativeGeneration) stopLocal()
                 return
             }
-            if (latest["state"] == JsonPrimitive("authorized")) authorizeSession(latest)
-            val expectedGeneration = generation
+            applySessionSnapshot(latest)
+            connectionDeadline(60_000, "RD_CONNECT_TIMEOUT")
+        } catch (error: Exception) { stopLocal(); throw error }
+    }
+    private fun initializeNative(host: RemoteEndpoint) {
+        clipboardTransfer = RemoteClipboardTransfer(send = { type, payload ->
+            val permission = if (type == P.CLIPBOARD_OFFER || type == P.CLIPBOARD_CHUNK) "clipboard.write" else "clipboard.read"
+            check(gate.featureEnabled(permission)) { "RD_CLIPBOARD_DISABLED" }
+            val next = clipboardSequence + 1
+            requireNotNull(native).submit(RemoteWire.frame(type, gate.epoch, 0, next, payload))
+            clipboardSequence = next
+        }, receiveText = { text ->
+            check(foreground && gate.featureEnabled("clipboard.read")) { "RD_CLIPBOARD_DISABLED" }
+            RemoteClipboard(applicationContext) { gate.featureEnabled(it) }.writeText(text, foreground)
+        })
+        val lifetime = ++nativeLifetime
+        native = RemoteNativeSession { type, _, _, payload ->
             scope.launch {
-                delay(60_000)
-                if (generation == expectedGeneration && _state.value.sessionId == session && !gate.connectionEstablished) {
-                    closeSession(); _state.value = _state.value.copy(error = "RD_CONNECT_TIMEOUT")
+                if (nativeLifetime == lifetime) try { nativeEvent(type, payload) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { if (nativeLifetime == lifetime) failSession("RD_NATIVE_PROTOCOL_FAILED") }
+            }
+        }
+        val sessionNative = requireNotNull(native)
+        check(sessionNative.capability.available) { "RD_MEDIA_BACKEND_UNAVAILABLE" }
+        fileTransfers = RemoteNativeFiles(applicationContext, scope, { native },
+            { nativeLifetime == lifetime && foreground && gate.live() }, gate::featureEnabled,
+            { items, preparing -> if (nativeLifetime == lifetime) _state.value = _state.value.copy(fileTransfers = items, filePreparing = preparing) },
+            { error -> if (nativeLifetime == lifetime) _state.value = _state.value.copy(error = error) })
+        gate.bindLocalCapabilities(sessionNative.capability.permissions)
+        gate.bindHostDiscovery(host.nativeBackends)
+    }
+    fun selectDisplay(id: String) {
+        check(foreground && gate.live() && gate.connectionEstablished && _state.value.phase == "active") { "RD_CONTROL_NOT_READY" }
+        require(_state.value.displays.any { it.id == id }) { "RD_DISPLAY" }
+        if (_state.value.display?.id == id) return
+        reconnectSession("display_changed", id)
+    }
+    fun retryConnection() = reconnectSession("network_changed")
+    private fun reconnectSession(reason: String, displayId: String? = null) {
+        check(!accountTransitioning && _state.value.authenticated && foreground && gate.live() && reconnectJob?.isActive != true) { "RD_RECONNECT_UNAVAILABLE" }
+        val previous = requireNotNull(continuation) { "RD_SESSION_CONTEXT" }
+        val next = previous.next(reason, displayId)
+        val host = requireNotNull(sessionHost)
+        val activeApi = requireNotNull(api)
+        val displays = _state.value.displays
+        val expectedConnection = connectionGeneration
+        runCatching { releaseControl() }
+        // Dispose input, file handles, audio and clipboard before the HTTP call. No old authority survives.
+        stopLocal()
+        continuation = next; sessionHost = host
+        try {
+            initializeNative(host)
+            authorization = RemoteAuthorization(next.binding, requireNotNull(trustedKeys))
+            _state.value = _state.value.copy(sessionId = next.binding.sessionId, hostName = host.name, displays = displays,
+                phase = if (displayId == null) "reconnecting" else "switching_display", connectionPhase = "recovering", error = null)
+            val lifetime = nativeLifetime
+            connectionDeadline(28_000, "RD_RECONNECT_TIMEOUT")
+            reconnectJob = scope.launch {
+                try {
+                    val snapshot = activeApi.reconnectSession(next.binding.sessionId, previous.binding.connectionEpoch, reason, displayId)
+                    if (lifetime != nativeLifetime || expectedConnection != connectionGeneration) return@launch
+                    applySessionSnapshot(snapshot)
+                    if (lifetime != nativeLifetime) return@launch
+                    val latest = activeApi.session(next.binding.sessionId)
+                    if (lifetime == nativeLifetime && expectedConnection == connectionGeneration) applySessionSnapshot(latest)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    if (lifetime == nativeLifetime) failSession((error as? RemoteApiException)?.code ?: "RD_RECONNECT_FAILED")
                 }
             }
-        } catch (error: Exception) { stopLocal(); throw error }
+        } catch (error: Exception) { failSession("RD_RECONNECT_FAILED"); throw error }
+    }
+    private fun connectionDeadline(timeout: Long, code: String) {
+        val lifetime = nativeLifetime
+        scope.launch {
+            delay(timeout)
+            if (lifetime == nativeLifetime && _state.value.sessionId != null && !gate.connectionEstablished) failSession(code)
+        }
+    }
+    private fun failSession(code: String) {
+        closeSession()
+        _state.value = _state.value.copy(error = code, failureCode = code, failureAction = "retry_session")
     }
     fun cancelPairing() = closeSession()
     private suspend fun nativeEvent(type: Int, bytes: ByteArray) {
         if (type == 1 || type == 3) {
             val reason = runCatching { RemoteJson.parse(bytes).string("error_code") }.getOrNull()
-            stopLocal(); _state.value = _state.value.copy(error = reason?.takeIf { Regex("RD_[A-Z0-9_]{1,72}").matches(it) })
+            if (reason in setOf("RD_NO_DIRECT_PATH", "RD_MEDIA_FAILED") && foreground && gate.live() &&
+                continuation?.networkReconnects?.let { it < 3 } == true && reconnectJob?.isActive != true) {
+                reconnectSession(if (reason == "RD_NO_DIRECT_PATH") "ice_failed" else "media_failed")
+            } else failSession(reason?.takeIf { Regex("RD_[A-Z0-9_]{1,72}").matches(it) } ?: "RD_SESSION_CLOSED")
             return
         }
         if (type == 2) { gate.pause(); _state.value = _state.value.copy(phase = "paused", inputEnabled = false); return }
+        // Clipboard event 9 contains a binary protocol frame, not JSON.
+        if (type == 9) {
+            clipboardTransfer?.receive(bytes)
+            if (bytes.size >= 4 && (bytes[3].toInt() and 0xff) == P.CLIPBOARD_ACK) syncLocalClipboard()
+            return
+        }
         val payload = RemoteJson.parse(bytes)
         val activeNative = requireNotNull(native)
         when (type) {
@@ -453,10 +565,12 @@ class RemoteController(
                 val body = payload.getValue("payload").jsonObject
                 when (payload.number("type").toInt()) {
                     P.DISPLAY_LAYOUT -> {
+                        val (displays, display) = parseDisplayLayout(body)
+                        require(display.id == continuation?.displayId) { "RD_DISPLAY" }
                         gate.displayLayout(epoch, body.number("layout_epoch"))
-                        val display = (body.getValue("displays") as JsonArray).map { it.jsonObject }.single { it["id"] == body["active_display"] }
-                        _state.value = _state.value.copy(inputEnabled = false, display = RemoteDisplay(
-                            display.nonNegativeNumber("slot", 15).toInt(), display.number("width_px", 32768).toInt(), display.number("height_px", 32768).toInt()))
+                        autoInputRequested = false
+                        _state.value = _state.value.copy(inputEnabled = false, display = display, displays = displays)
+                        if (foreground && gate.firstFramePresented) runCatching { requestControl() }.onSuccess { autoInputRequested = true }
                     }
                     P.CONTROL_GRANTED -> {
                         val inputState = gate.controlGranted(epoch, body.string("request_id"), body.number("new_input_epoch"))
@@ -479,11 +593,15 @@ class RemoteController(
                     P.FEATURE_STATE -> {
                         require(epoch == gate.epoch)
                         val permission = body.string("permission")
-                        require(permission == "clipboard.read" || permission == "clipboard.write") { "RD_SCOPE_DENIED" }
+                        require(permission in setOf("clipboard.read", "clipboard.write", "audio.system", "files.send", "files.receive")) { "RD_SCOPE_DENIED" }
                         val enabled = body.getValue("enabled").jsonPrimitive.booleanOrNull == true && gate.canUse(permission)
                         gate.feature(permission, enabled)
-                        clipboardTransfer?.feature(permission, enabled)
-                        _state.value = _state.value.copy(clipboardEnabled = gate.featureEnabled("clipboard.read") && gate.featureEnabled("clipboard.write"))
+                        featureRequests.remove(permission)
+                        if (permission.startsWith("clipboard.")) clipboardTransfer?.feature(permission, enabled)
+                        _state.value = _state.value.copy(clipboardEnabled = gate.featureEnabled("clipboard.read") && gate.featureEnabled("clipboard.write"),
+                            audioEnabled = gate.featureEnabled("audio.system"), filesReceiveEnabled = gate.featureEnabled("files.receive"),
+                            pendingFeatures = _state.value.pendingFeatures - permission,
+                            error = body["error_code"]?.jsonPrimitive?.contentOrNull)
                         if (permission == "clipboard.write") {
                             if (enabled) startClipboardSync() else stopClipboardSync()
                         }
@@ -515,10 +633,7 @@ class RemoteController(
                     }
                 }
             }
-            9 -> {
-                clipboardTransfer?.receive(bytes)
-                if (bytes.size >= 4 && (bytes[3].toInt() and 0xff) == P.CLIPBOARD_ACK) syncLocalClipboard()
-            }
+            10 -> fileTransfers?.event(payload)
             else -> error("RD_NATIVE_EVENT_INVALID")
         }
     }
@@ -527,30 +642,43 @@ class RemoteController(
         if (type != "auth.expired" && event["session_id"] != JsonPrimitive(_state.value.sessionId)) return
         when (type) {
             "session.revoked", "auth.expired" -> { stopLocal(); _state.value = _state.value.copy(error = "RD_AUTH_REVOKED") }
-            "session.authorized" -> {
-                try { authorizeSession(event.getValue("payload").jsonObject) }
-                catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_PROTOCOL_MISMATCH") }
-            }
-            "session.state", "session.lease_updated" -> {
-                try {
-                    val payload = event.getValue("payload").jsonObject
-                    if (payload["state"] in setOf(JsonPrimitive("closing"), JsonPrimitive("closed"), JsonPrimitive("failed"), JsonPrimitive("expired"))) {
-                        val reason = payload["close_reason"]?.jsonPrimitive?.contentOrNull
-                            ?.takeIf { Regex("RD_[A-Z0-9_]{1,72}").matches(it) } ?: "RD_SESSION_CLOSED"
-                        stopLocal(); _state.value = _state.value.copy(error = reason)
-                    }
-                    else if (verifiedAuthorization != null) renewLease(payload.string("lease_jws"))
-                } catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_PROTOCOL_MISMATCH") }
+            "session.authorized", "session.state", "session.lease_updated", "session.reconnect_requested" -> {
+                try { applySessionSnapshot(event.getValue("payload").jsonObject) }
+                catch (_: Exception) { failSession("RD_PROTOCOL_MISMATCH") }
             }
             "peer.offer", "peer.answer", "peer.candidates", "peer.candidates_done" -> {
                 // The shared native engine owns all ticket, peer identity and path proof checks.
                 try {
+                    val expectedEpoch = continuation?.binding?.connectionEpoch ?: return
+                    val eventEpoch = event.number("connection_epoch", 0xffffffffL)
+                    if (eventEpoch < expectedEpoch) return
+                    require(eventEpoch == expectedEpoch) { "RD_SESSION_EPOCH_MISMATCH" }
                     native?.signal(event.toString().toByteArray())
                     if (type == "peer.answer") answerJws = event.string("payload_jws")
                 }
                 catch (_: Exception) { stopLocal(); _state.value = _state.value.copy(error = "RD_PROTOCOL_MISMATCH") }
             }
         }
+    }
+    private fun applySessionSnapshot(snapshot: JsonObject) {
+        val current = requireNotNull(continuation) { "RD_SESSION_CONTEXT" }
+        if (!current.currentSnapshot(snapshot)) return
+        require(snapshot["controller_owner_user_id"] == JsonPrimitive(account()?.user?.id)) { "RD_AUTHORIZATION_CONTEXT" }
+        val version = snapshot.number("state_version")
+        if (version <= snapshotVersion) return
+        rememberSessionSurface(snapshot)
+        when (snapshot.string("state")) {
+            "closing", "closed", "failed", "expired" -> {
+                val reason = snapshot["close_reason"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { Regex("RD_[A-Z0-9_]{1,72}").matches(it) } ?: "RD_SESSION_CLOSED"
+                stopLocal(); _state.value = _state.value.copy(error = reason)
+                return
+            }
+            "authorized", "connecting", "active" -> authorizeSession(snapshot)
+            "pending_approval", "reconnecting" -> check(verifiedAuthorization == null) { "RD_STATE_CONFLICT" }
+            else -> error("RD_STATE_CONFLICT")
+        }
+        snapshotVersion = version
     }
     private fun authorizeSession(snapshot: JsonObject) {
         val verifier = requireNotNull(authorization) { "RD_SESSION_AUTH_MISSING" }
@@ -565,8 +693,10 @@ class RemoteController(
         gate.foreground(foreground)
         verifiedAuthorization = verified; verifiedTicket = snapshot["ticket_jws"] as JsonPrimitive
         requireNotNull(native).start(verifier.nativeContext(snapshot, stunUrls = stunUrls))
+        // The SurfaceView can survive an epoch change or Activity recomposition.
+        setSurface(attachedSurface?.takeIf { it.isValid })
         if (foreground) native?.resume() else native?.pause()
-        _state.value = _state.value.copy(phase = "connecting")
+        _state.value = _state.value.copy(phase = "connecting").withSessionSurface(readSessionSurface(snapshot))
         enforceLeaseDeadline(verified.remainingLeaseMs)
     }
     private var verifiedTicket: JsonPrimitive? = null
@@ -592,9 +722,10 @@ class RemoteController(
     private fun enforceLeaseDeadline(remaining: Long) {
         val session = _state.value.sessionId
         val expected = generation
+        val lifetime = nativeLifetime
         scope.launch {
             delay(remaining + 1)
-            if (generation == expected && _state.value.sessionId == session && !gate.live()) {
+            if (generation == expected && nativeLifetime == lifetime && _state.value.sessionId == session && !gate.live()) {
                 stopLocal(); _state.value = _state.value.copy(error = "RD_LEASE_EXPIRED")
             }
         }
@@ -607,12 +738,15 @@ class RemoteController(
             RemoteEndpoint(it.string("id"), it.string("name"), it.string("jkt"), displayId,
                 it["status"] == JsonPrimitive("active") && it["online"]?.jsonPrimitive?.booleanOrNull == true &&
                     it["local_enabled"]?.jsonPrimitive?.booleanOrNull == true && capabilities?.get("status") == JsonPrimitive("ready") && displayId != null,
-                it.string("owner_user_id"), unattendedEnabled = capabilities?.get("unattended_enabled")?.jsonPrimitive?.booleanOrNull == true)
+                it.string("owner_user_id"), unattendedEnabled = capabilities?.get("unattended_enabled")?.jsonPrimitive?.booleanOrNull == true,
+                offeredAccessModes = offeredAccessModes(it), nativeBackends = nativeBackends(capabilities))
         })
     }
     fun setSurface(surface: Surface?) {
+        attachedSurface = surface
         val surfaceGeneration = gate.surface(surface != null)
         autoInputRequested = false
+        if (surface == null) { gate.feature("audio.system", false); _state.value = _state.value.copy(audioEnabled = false) }
         _state.value = _state.value.copy(inputEnabled = false,
             phase = if (_state.value.phase == "active") "connecting" else _state.value.phase)
         try { native?.surface(surface, surfaceGeneration) }
@@ -627,8 +761,10 @@ class RemoteController(
     fun onBackground() {
         foreground = false; autoInputRequested = false; autoClipboardRequested = false
         gate.foreground(false); clipboardTransfer?.reset(); stopClipboardSync()
-        _state.value = _state.value.copy(clipboardEnabled = false)
+        _state.value = _state.value.copy(clipboardEnabled = false, audioEnabled = false, filesReceiveEnabled = false, pendingFeatures = emptySet())
         native?.pause()
+        featureRequests.clear()
+        fileTransfers?.pause()
     }
     suspend fun onAccountChanged() {
         accountTransitioning = true
@@ -674,13 +810,19 @@ class RemoteController(
         }
     }
     private fun stopLocal() {
+        reconnectJob?.cancel(); reconnectJob = null
         nativeLifetime++; gate.close(); native?.close(); native = null; sequence = 0; controlSequence = 0; motionChannelSequence = 0; motionSequence = 0
+        fileTransfers?.close(); fileTransfers = null
+        featureRequests.clear()
         autoInputRequested = false; autoClipboardRequested = false; clipboardSequence = 0
         stopClipboardSync(); clipboardTransfer?.reset(); clipboardTransfer = null
         peerSequence = 0; offerJws = null; answerJws = null; pendingText = null
         gate = RemoteSessionGate(SystemClock::elapsedRealtime)
         authorization = null; verifiedAuthorization = null; verifiedTicket = null
-        _state.value = _state.value.copy(sessionId = null, hostName = null, phase = "idle", inputEnabled = false, display = null, textStatus = null, clipboardEnabled = false)
+        continuation = null; sessionHost = null; snapshotVersion = 0
+        _state.value = _state.value.copy(sessionId = null, hostName = null, phase = "idle", inputEnabled = false, display = null, displays = emptyList(), textStatus = null, clipboardEnabled = false,
+            connectionPhase = null, failureCode = null, failureAction = null, accessMode = null,
+            audioEnabled = false, filesReceiveEnabled = false, pendingFeatures = emptySet(), fileTransfers = emptyList(), filePreparing = false)
     }
     private fun clearAuthentication() {
         pairingPoll?.cancel(); pairingPoll = null
@@ -724,8 +866,58 @@ class RemoteController(
             RemoteWire.buttonPayload(gate.layoutEpoch, display.slot, point.first, point.second, 1, buttonDown, ++motionSequence))
         return true
     }
+    fun filesTransportReady(): Boolean = native?.capability?.let { it.available && it.permissions.any { permission -> permission.startsWith("files.") } } == true
+    fun audioTransportReady(): Boolean = native?.capability?.let { it.available && "audio.system" in it.permissions } == true
+    fun beginFileSend(files: List<RemoteSelectedFile>) {
+        check(files.isNotEmpty() && canUse("files.send") && filesTransportReady()) { "RD_FILE_TRANSPORT_UNAVAILABLE" }
+        val lifetime = nativeLifetime
+        val transfers = requireNotNull(fileTransfers)
+        scope.launch {
+            try {
+                if (!gate.featureEnabled("files.send")) {
+                    requestFeature("files.send", true)
+                    check(withTimeoutOrNull(5000) {
+                        while (nativeLifetime == lifetime && foreground && gate.live() && !gate.featureEnabled("files.send")) delay(50)
+                        nativeLifetime == lifetime && gate.featureEnabled("files.send")
+                    } == true) { "RD_FILE_TRANSPORT_UNAVAILABLE" }
+                }
+                check(nativeLifetime == lifetime) { "RD_FILE_CANCELLED" }
+                transfers.send(files)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { if (nativeLifetime == lifetime) _state.value = _state.value.copy(error = error.message?.takeIf { it.startsWith("RD_") } ?: "RD_FILE_READ_FAILED") }
+        }
+    }
+    fun acceptFile(id: String) { requireNotNull(fileTransfers).accept(id) }
+    fun cancelFile(id: String) { fileTransfers?.cancel(id) }
+    fun saveFile(session: String, id: String, destination: Uri) {
+        check(_state.value.sessionId == session) { "RD_FILE_SESSION_CHANGED" }
+        requireNotNull(fileTransfers).export(id, destination)
+    }
     fun requestFeature(permission: String, enabled: Boolean) {
-        check(canUse(permission)) { "RD_CONTROL_NOT_READY" }
+        check(permission in setOf("clipboard.read", "clipboard.write", "audio.system", "files.send", "files.receive")) { "RD_FEATURE_UNSUPPORTED" }
+        if (enabled) check(canUse(permission)) { "RD_CONTROL_NOT_READY" }
+        if (permission == "audio.system" || permission.startsWith("files.")) {
+            val request = ++featureRequestSequence
+            featureRequests[permission] = request
+            if (permission == "audio.system") requireNotNull(native).systemAudio(enabled)
+            else requireNotNull(native).filesEnabled(if (permission == "files.send") 1 else 2, enabled)
+            if (!enabled) gate.feature(permission, false)
+            _state.value = _state.value.copy(audioEnabled = gate.featureEnabled("audio.system"),
+                filesReceiveEnabled = gate.featureEnabled("files.receive"), pendingFeatures = _state.value.pendingFeatures + permission, error = null)
+            val lifetime = nativeLifetime
+            scope.launch {
+                delay(5000)
+                if (nativeLifetime == lifetime && featureRequests[permission] == request && permission in _state.value.pendingFeatures) {
+                    featureRequests.remove(permission)
+                    if (permission == "audio.system") runCatching { native?.systemAudio(false) }
+                    else runCatching { native?.filesEnabled(if (permission == "files.send") 1 else 2, false) }
+                    gate.feature(permission, false)
+                    _state.value = _state.value.copy(pendingFeatures = _state.value.pendingFeatures - permission,
+                        audioEnabled = gate.featureEnabled("audio.system"), filesReceiveEnabled = gate.featureEnabled("files.receive"), error = "RD_FEATURE_TIMEOUT")
+                }
+            }
+            return
+        }
         val body = buildJsonObject {
             put("permission", JsonPrimitive(permission))
             put("enabled", JsonPrimitive(enabled))
@@ -752,8 +944,11 @@ class RemoteController(
     }
     private fun syncLocalClipboard() {
         if (!foreground || !gate.featureEnabled("clipboard.write")) return
-        val text = runCatching { clipboard.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
+        val text = runCatching { RemoteClipboard(applicationContext) { gate.featureEnabled(it) }.readText(foreground) }.getOrNull()
         if (text != null) runCatching { clipboardTransfer?.offer(text) }
+    }
+    private fun rememberSessionSurface(snapshot: JsonObject) {
+        _state.value = _state.value.withSessionSurface(readSessionSurface(snapshot))
     }
     private fun send(permission: String, type: Int, payload: ByteArray) {
         check(canUse(permission)) { "RD_CONTROL_NOT_READY" }

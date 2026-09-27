@@ -10,6 +10,15 @@ import kotlinx.serialization.json.put
 
 /** Local fail-closed gate. Native independently verifies tickets, proofs and the UDP path. */
 class RemoteSessionGate(private val elapsedMillis: () -> Long) {
+    /** Real controller mask from ht_rd_get_capabilities. Tests use this baseline until a session binds JNI. */
+    var localPermissions: Set<String> = CONTROLLER_BASELINE
+        private set
+    /** Null means the host did not report capabilities.native. File and audio then stay closed. */
+    var hostBackends: Map<String, String>? = null
+        private set
+
+    fun bindLocalCapabilities(mask: Set<String>) { localPermissions = mask }
+    fun bindHostDiscovery(backends: Map<String, String>?) { hostBackends = backends }
     var epoch: Long = 0; private set
     var inputEpoch: Long = 0; private set
     var layoutEpoch: Long = 0; private set
@@ -107,8 +116,16 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
         if (enabled) { check(canUse(permission)); enabledFeatures += permission } else enabledFeatures -= permission
     }
     fun featureEnabled(permission: String): Boolean = canUse(permission) && permission in enabledFeatures
-    fun canUse(permission: String): Boolean = live() && foreground && peerReady && permission in permissions &&
-        (!permission.startsWith("input.") || surfaceReady && inputSynchronized)
+    fun canUse(permission: String): Boolean {
+        if (permission == "audio.microphone") return false
+        if (permission !in localPermissions) return false
+        val backend = HOST_BACKEND[permission]
+        if (backend != null && hostBackends?.get(backend) != "available") return false
+        if (permission == "audio.system" && (!surfaceAttached || !surfaceReady)) return false
+        if (permission.startsWith("files.") && !connectionEstablished) return false
+        return live() && foreground && peerReady && permission in permissions &&
+            (!permission.startsWith("input.") || surfaceReady && inputSynchronized)
+    }
     fun live(): Boolean {
         val now = elapsedMillis()
         if (now < lastClock || now >= leaseDeadline) close()
@@ -117,4 +134,16 @@ class RemoteSessionGate(private val elapsedMillis: () -> Long) {
     }
     fun pause() { peerReady = false; releaseInput(); enabledFeatures.clear() }
     fun close() { closed = true; peerReady = false; releaseInput(); enabledFeatures.clear(); permissions = emptySet() }
+
+    companion object {
+        val CONTROLLER_BASELINE = setOf(
+            "view", "input.keyboard", "input.pointer", "input.text", "clipboard.read", "clipboard.write",
+        )
+        private val HOST_BACKEND = mapOf(
+            "audio.system" to "system_audio",
+            "audio.microphone" to "microphone",
+            "files.send" to "files",
+            "files.receive" to "files",
+        )
+    }
 }

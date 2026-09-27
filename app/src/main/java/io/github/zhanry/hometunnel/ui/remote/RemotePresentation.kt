@@ -2,26 +2,53 @@ package io.github.zhanry.hometunnel.ui.remote
 
 import java.security.MessageDigest
 
-enum class ConnectMode { APPROVAL, ONE_TIME, FIXED, UNATTENDED }
+enum class ConnectMode(val wire: String) {
+    APPROVAL("local_approval"),
+    ONE_TIME("one_time_password"),
+    FIXED("fixed_password"),
+    UNATTENDED("unattended"),
+}
 
 data class ModeSurface(val mode: ConnectMode, val enabled: Boolean, val blockedReason: String)
 
-fun connectModes(nativeAvailable: Boolean, unattendedAdvertised: Boolean): List<ModeSurface> {
+fun connectModes(
+    nativeAvailable: Boolean,
+    unattendedAdvertised: Boolean,
+    offeredAccessModes: Set<String>? = null,
+): List<ModeSurface> {
     val engine = if (nativeAvailable) "" else "native"
-    return listOf(
-        ModeSurface(ConnectMode.APPROVAL, nativeAvailable, engine),
-        ModeSurface(ConnectMode.ONE_TIME, nativeAvailable, engine),
-        ModeSurface(ConnectMode.FIXED, nativeAvailable, engine),
+    fun offered(mode: ConnectMode): Boolean = when {
+        offeredAccessModes != null -> mode.wire in offeredAccessModes
+        mode == ConnectMode.UNATTENDED -> unattendedAdvertised
+        else -> true
+    }
+    return ConnectMode.entries.map { mode ->
+        val allowed = nativeAvailable && offered(mode)
         ModeSurface(
-            ConnectMode.UNATTENDED,
-            nativeAvailable && unattendedAdvertised,
+            mode,
+            allowed,
             when {
-                !nativeAvailable -> "native"
-                !unattendedAdvertised -> "unattended"
+                !nativeAvailable -> engine
+                !offered(mode) && mode == ConnectMode.UNATTENDED -> "unattended"
+                !offered(mode) -> "offered"
                 else -> ""
             },
-        ),
-    )
+        )
+    }
+}
+
+fun displayCaption(display: io.github.zhanry.hometunnel.remote.RemoteDisplay): String {
+    val size = "${display.width} × ${display.height}"
+    if (!display.hasMetrics) return size
+    return "$size · ${display.dpiX}×${display.dpiY} DPI · ${display.scalePercent}% · ${display.originX},${display.originY}"
+}
+
+fun failureActionKey(action: String?): String = when (action) {
+    null, "none" -> "none"
+    "check_udp_path", "retry_session", "request_permission", "reauthenticate", "enable_host",
+    "request_grant", "wait_for_host", "wait_for_approval", "enable_unattended", "reduce_permissions",
+    "new_session", "reenroll", "switch_display" -> action
+    else -> "unknown"
 }
 
 enum class RemoteStage {
@@ -48,7 +75,7 @@ fun remoteStage(
     pairing || phase == "pending_approval" -> RemoteStage.APPROVAL
     inSession && phase == "active" -> RemoteStage.CONNECTED
     inSession && phase == "paused" -> RemoteStage.PAUSED
-    inSession && phase == "connecting" -> RemoteStage.DIRECT_UDP
+    inSession && phase in setOf("connecting", "reconnecting", "switching_display") -> RemoteStage.DIRECT_UDP
     inSession && error != null -> RemoteStage.FAILED
     loading && !inSession -> RemoteStage.LOADING
     !enabled && !loading -> RemoteStage.UNAVAILABLE

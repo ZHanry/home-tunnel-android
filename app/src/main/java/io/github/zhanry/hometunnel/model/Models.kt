@@ -121,6 +121,7 @@ data class TunnelConnection(
     val proxyName: String? = null,
     val applicationProtocol: String? = null,
     val accessUrl: String? = null,
+    val diagnostic: TunnelDiagnostic? = null,
 ) {
     val kind: ProxyKind get() = ProxyKind.fromWire(proxyType)
 
@@ -172,6 +173,7 @@ object TunnelConnectionSerializer : KSerializer<TunnelConnection> {
             proxyName = value.optionalString("proxy_name"),
             applicationProtocol = value.optionalString("application_protocol"),
             accessUrl = value.optionalString("access_url"),
+            diagnostic = value.tunnelDiagnostic(),
         )
     }
 
@@ -199,6 +201,16 @@ object TunnelConnectionSerializer : KSerializer<TunnelConnection> {
             put("applied_version", value.appliedVersion)
             value.lastErrorCode?.let { put("last_error_code", it) } ?: put("last_error_code", JsonNull)
             value.proxyName?.let { put("proxy_name", it) } ?: put("proxy_name", JsonNull)
+            value.diagnostic?.let { diagnostic ->
+                put("diagnostic", buildJsonObject {
+                    put("source", diagnostic.source)
+                    put("target", diagnostic.target)
+                    put("transport", diagnostic.transport)
+                    put("failure", diagnostic.failure)
+                    put("retryable", diagnostic.retryable)
+                    put("action", diagnostic.action)
+                })
+            }
         })
     }
 }
@@ -213,6 +225,44 @@ private fun JsonObject.optionalString(name: String): String? =
 
 private fun JsonObject.intOrNull(name: String): Int? =
     get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.intOrNull
+
+@Serializable
+data class TunnelDiagnostic(
+    val source: String,
+    val target: String,
+    val transport: String,
+    val failure: String,
+    val retryable: Boolean,
+    val action: String,
+)
+
+/** Absent diagnostics stay unknown. A present object must name the agent check. */
+private fun JsonObject.tunnelDiagnostic(): TunnelDiagnostic? {
+    val element = get("diagnostic") ?: return null
+    if (element is JsonNull) return null
+    val value = element.jsonObject
+    val diagnostic = TunnelDiagnostic(
+        source = value.requiredString("source"),
+        target = value.requiredString("target"),
+        transport = value.requiredString("transport"),
+        failure = value.requiredString("failure"),
+        retryable = value["retryable"]?.jsonPrimitive?.booleanOrNull
+            ?: throw SerializationException("Missing diagnostic.retryable"),
+        action = value.requiredString("action"),
+    )
+    if (diagnostic.source != "agent" || diagnostic.target != "device_local") {
+        throw SerializationException("Unexpected diagnostic endpoint")
+    }
+    return diagnostic
+}
+
+/** Stable UI key. Null means the server did not report a check. */
+fun diagnosticFailureKey(diagnostic: TunnelDiagnostic?): String? = when (diagnostic?.failure) {
+    null -> null
+    "none" -> "none"
+    "dns", "tls", "target_unreachable", "permission", "sync", "port_unavailable", "udp_unreachable" -> diagnostic.failure
+    else -> "unknown"
+}
 
 @Serializable
 data class ConnectionListResponse(val items: List<TunnelConnection>, val capabilities: ConnectionCapabilities = ConnectionCapabilities(), @SerialName("total_pages") val totalPages: Int = 1)

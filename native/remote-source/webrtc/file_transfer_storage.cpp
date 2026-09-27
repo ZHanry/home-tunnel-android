@@ -8,6 +8,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "../src/platform/windows_user.hpp"
 // Windows types must precede BCrypt declarations.
 #include <bcrypt.h>
 #else
@@ -140,6 +141,7 @@ struct Directory {
 };
 class Source final : public FileSource {
  public:
+  UserIdentity identity;
   Directory directory;
   Handle file;
   uint64_t length = 0;
@@ -147,12 +149,15 @@ class Source final : public FileSource {
   uint64_t size() const override { return length; }
   std::string name() const override { return filename; }
   bool unchanged() const override {
+    UserContext user(&identity);
+    if (!user) return false;
     LARGE_INTEGER n{};
     return GetFileSizeEx(file.value, &n) && n.QuadPart >= 0 &&
            static_cast<uint64_t>(n.QuadPart) == length;
   }
   bool read(uint64_t offset, std::span<uint8_t> output) override {
-    if (offset > length || output.size() > length - offset || !unchanged())
+    UserContext user(&identity);
+    if (!user || offset > length || output.size() > length - offset || !unchanged())
       return false;
     LARGE_INTEGER position{};
     position.QuadPart = static_cast<LONGLONG>(offset);
@@ -165,6 +170,7 @@ class Source final : public FileSource {
 };
 class Destination final : public FileDestination {
  public:
+  UserIdentity identity;
   Directory directory;
   Handle file;
   std::string filename;
@@ -172,7 +178,8 @@ class Destination final : public FileDestination {
   bool committed = false;
   ~Destination() override { abort(); }
   bool write(uint64_t at, std::span<const uint8_t> bytes) override {
-    if (committed || !file || at != offset || bytes.size() > total - offset)
+    UserContext user(&identity);
+    if (!user || committed || !file || at != offset || bytes.size() > total - offset)
       return false;
     DWORD count = 0;
     if (!WriteFile(file.value, bytes.data(), static_cast<DWORD>(bytes.size()),
@@ -183,7 +190,8 @@ class Destination final : public FileDestination {
     return true;
   }
   bool commit(std::filesystem::path& actual) override {
-    if (committed || !file || offset != total || !FlushFileBuffers(file.value))
+    UserContext user(&identity);
+    if (!user || committed || !file || offset != total || !FlushFileBuffers(file.value))
       return false;
     FILE_BASIC_INFO basic{};
     basic.FileAttributes = FILE_ATTRIBUTE_NORMAL;
@@ -236,11 +244,9 @@ class Destination final : public FileDestination {
     return false;
   }
   void abort() noexcept override {
-    if (file && !committed) {
-      FILE_DISPOSITION_INFO remove{TRUE};
-      SetFileInformationByHandle(file.value, FileDispositionInfo, &remove,
-                                 sizeof(remove));
-    }
+    // DELETE_ON_CLOSE was armed under the creating user's token. Closing the
+    // already-authorized handle cleans up even after that logon is revoked,
+    // without issuing a new file operation under SYSTEM.
     file = Handle{};
   }
 };
@@ -391,9 +397,16 @@ class SystemAccess final : public FileAccess {
  public:
   std::unique_ptr<FileSource> open_source(const std::filesystem::path& path,
                                           std::string& error) override {
+#if defined(_WIN32)
+    UserContext user;
+    if (!user) { error = "RD_FILE_PATH_INVALID"; return {}; }
+#endif
     error = "RD_FILE_PATH_INVALID";
     if (!local_path(path)) return {};
     auto result = std::make_unique<Source>();
+#if defined(_WIN32)
+    result->identity = user.identity();
+#endif
     if (!result->directory.open(path.parent_path())) return {};
     error = "RD_FILE_READ_FAILED";
 #if defined(_WIN32)
@@ -424,9 +437,16 @@ class SystemAccess final : public FileAccess {
   std::unique_ptr<FileDestination> create_destination(
       const std::filesystem::path& path, uint64_t size,
       std::string& error) override {
+#if defined(_WIN32)
+    UserContext user;
+    if (!user) { error = "RD_FILE_PATH_INVALID"; return {}; }
+#endif
     error = "RD_FILE_PATH_INVALID";
     if (!local_path(path) || size > protocol::FILE_BYTES) return {};
     auto result = std::make_unique<Destination>();
+#if defined(_WIN32)
+    result->identity = user.identity();
+#endif
     if (!result->directory.open(path.parent_path())) return {};
     result->filename = utf8(path.filename());
     result->total = size;
@@ -475,31 +495,6 @@ class SystemAccess final : public FileAccess {
   }
 };
 }  // namespace
-bool file_name_allowed(std::string_view name) {
-  if (name.empty() || name.size() > 1020 || name == "." || name == ".." ||
-      name.back() == '.' || name.back() == ' ' ||
-      !valid_utf8({reinterpret_cast<const uint8_t*>(name.data()), name.size()}))
-    return false;
-  size_t utf16_units = 0;
-  for (const auto character : name) {
-    const auto byte = static_cast<uint8_t>(character);
-    if ((byte & 0xc0) != 0x80) utf16_units += byte >= 0xf0 ? 2 : 1;
-  }
-  if (utf16_units > 255) return false;
-  for (const auto c : name)
-    if (static_cast<unsigned char>(c) < 32 ||
-        std::string_view("/\\:<>\"|?*").find(c) != std::string_view::npos)
-      return false;
-  std::string base(name.substr(0, name.find('.')));
-  for (auto& c : base)
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" ||
-      (base.size() == 4 &&
-       (base.starts_with("COM") || base.starts_with("LPT")) && base[3] >= '1' &&
-       base[3] <= '9'))
-    return false;
-  return true;
-}
 std::unique_ptr<FileAccess> system_file_access() {
   return std::make_unique<SystemAccess>();
 }

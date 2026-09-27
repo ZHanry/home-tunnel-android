@@ -41,7 +41,7 @@ object RemoteWire {
             .putInt(motion.toInt()).putLong(0).putLong(0).array()
     }
     private fun coordinates(layout: Long, display: Int, x: Int, y: Int, motion: Long) {
-        require(layout in 1..0xffffffffL && display in 0..15 && x in 0..65535 && y in 0..65535 && motion in 0 until P.SEQUENCE_RECONNECT_AT)
+        require(layout in 1..0xffffffffL && display in 0..65535 && x in 0..65535 && y in 0..65535 && motion in 0 until P.SEQUENCE_RECONNECT_AT)
     }
 
     /** Fit-center coordinates; taps in letterbox bars never become desktop clicks. */

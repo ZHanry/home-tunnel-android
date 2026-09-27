@@ -1,9 +1,14 @@
 #include "home_tunnel/remote.h"
+#include "platform/desktop_gate.hpp"
+#include "audio_blocks.hpp"
+#include "media_deadline.hpp"
+#include "../webrtc/sdp_policy.hpp"
 #include "protocol.hpp"
 #include "session_gate.hpp"
 #include "crypto.hpp"
 #include "../generated/test_vectors.hpp"
 #include "../android/surface_lifecycle.hpp"
+#include "../android/audio_buffer_policy.hpp"
 #if defined(_WIN32)
 #include "platform/windows_input.hpp"
 #endif
@@ -203,10 +208,23 @@ void abi_contract() {
     CHECK(!capabilities.available && !capabilities.can_host && capabilities.reason==HT_RD_BACKEND_UNAVAILABLE);
     const std::array<uint8_t,1> fake{0};CHECK(ht_rd_start(handle,fake.data(),fake.size())==HT_RD_BACKEND_UNAVAILABLE);
     CHECK(ht_rd_start(handle,nullptr,1)==HT_RD_INVALID_ARGUMENT);
+    CHECK(ht_rd_set_system_audio(handle,1)==HT_RD_BACKEND_UNAVAILABLE);
+    CHECK(ht_rd_set_system_audio(handle,2)==HT_RD_INVALID_ARGUMENT);
+    CHECK(ht_rd_set_files_enabled(handle,1,1)==HT_RD_BACKEND_UNAVAILABLE);
+    CHECK(ht_rd_set_files_enabled(handle,3,1)==HT_RD_INVALID_ARGUMENT);
+    const std::array<uint8_t,1> filename{'x'};
+    ht_rd_file_source_v1 file{sizeof(file),HT_RD_ABI_V1,0,0,filename.data(),filename.size()};
+    CHECK(ht_rd_files_offer(handle,&file,1)==HT_RD_BACKEND_UNAVAILABLE);
+    CHECK(ht_rd_files_offer(handle,&file,65)==HT_RD_INVALID_ARGUMENT);
+    file.descriptor=-1;CHECK(ht_rd_files_offer(handle,&file,1)==HT_RD_INVALID_ARGUMENT);
+    CHECK(ht_rd_files_accept(handle,nullptr,36,1)==HT_RD_INVALID_ARGUMENT);
+    CHECK(ht_rd_files_cancel(handle,filename.data(),1)==HT_RD_INVALID_ARGUMENT);
     CHECK(ht_rd_close(handle,0)==HT_RD_OK);CHECK(ht_rd_close(handle,0)==HT_RD_OK);
+    CHECK(ht_rd_set_system_audio(handle,0)==HT_RD_STATE_CONFLICT);
     CHECK(ht_rd_submit_input(handle,fake.data(),fake.size())==HT_RD_STATE_CONFLICT);
     ht_rd_release(handle);ht_rd_release(handle);
     CHECK(ht_rd_get_capabilities(handle,&capabilities)==HT_RD_INVALID_HANDLE);
+    CHECK(ht_rd_set_system_audio(handle,0)==HT_RD_INVALID_HANDLE);
 }
 void callback_quiescence() {
     struct Context { std::promise<void> entered; std::shared_future<void> proceed; } context;
@@ -265,6 +283,105 @@ void signature_verification() {
 #endif
 }
 }
+void audio_packets() {
+    const auto fast=android::audio_buffer_policy(192,1920);
+    CHECK(fast.requested_frames==960 && fast.write_timeout_ns==20000000 && fast.accepts(960));
+    // Actual API35 AAudio probe: a 1920 request produced 4360 capacity and
+    // 2180-frame bursts. The old hard 1920 limit disabled valid system audio.
+    const auto shared=android::audio_buffer_policy(2180,4360);
+    CHECK(shared.requested_frames==4360 && shared.accepts(4360));
+    CHECK(shared.write_timeout_ns>=90000000 && shared.write_timeout_ns<100000000);
+    CHECK(!shared.accepts(-1) && !shared.accepts(0) && !shared.accepts(4361));
+    CHECK(!android::audio_buffer_policy(0,1920).requested_frames);
+    CHECK(!android::audio_buffer_policy(2180,1920).requested_frames);
+    CHECK(!android::audio_buffer_policy(4801,19200).requested_frames);
+    const auto slow=android::audio_buffer_policy(4800,19200);
+    CHECK(slow.requested_frames==9600 && slow.maximum_frames==9600 && slow.write_timeout_ns==200000000);
+    CHECK(!slow.accepts(9601));
+    MediaDeadline first_session,second_session;
+    CHECK(!first_session.alive(0));CHECK(!first_session.renew(10));
+    first_session.begin(1000);second_session.begin(1000);
+    CHECK(first_session.alive(1499));CHECK(!first_session.alive(1500));
+    CHECK(!first_session.renew(1501));CHECK(!first_session.alive(1502));
+    first_session.begin(2000);CHECK(first_session.renew(2200));CHECK(first_session.alive(2699));
+    first_session.revoke();CHECK(!first_session.renew(2300));CHECK(!first_session.alive(2400));
+    CHECK(second_session.alive(1499));
+    AudioBlocks blocks;std::vector<int16_t> first(240,12),second(1680,23);
+    unsigned received=0;
+    auto deliver=[&](std::span<const int16_t> data){
+        CHECK(data.size()==960);
+        if(received==0){CHECK(data[0]==12 && data[239]==12 && data[240]==23 && data[959]==23);}
+        else CHECK(data[0]==23 && data[959]==23);
+        ++received;return true;
+    };
+    CHECK(blocks.append(first,deliver));CHECK(received==0);
+    CHECK(blocks.append(second,deliver));CHECK(received==2);
+    CHECK(blocks.append(first,deliver));blocks.reset();
+    std::vector<int16_t> fresh(960,23);CHECK(blocks.append(fresh,deliver));CHECK(received==3);
+    CHECK(!blocks.append(std::span(fresh).first(3),deliver));
+    CHECK(!blocks.append(std::vector<int16_t>(96002),deliver));
+    unsigned attempts=0;
+    CHECK(!blocks.append(second,[&](auto){++attempts;return false;}));CHECK(attempts==1);
+}
+void audio_sdp() {
+    std::string fingerprint;for(int n=0;n<31;++n)fingerprint+="AA:";fingerprint+="AA";
+    const std::string video="v=0\r\na=fingerprint:sha-256 "+fingerprint+"\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 VP8/90000\r\n";
+    const std::string data="m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
+    const std::string audio="m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\n";
+    const auto check=[&](std::string sdp,std::string_view direction={}){return valid_sdp_profile(sdp,fingerprint,[](auto){return false;},direction);};
+    CHECK(check(video+data));CHECK(!check(video+audio+"a=recvonly\r\n"+data));
+    CHECK(check(video+audio+"a=recvonly\r\n"+data,"recvonly"));
+    CHECK(check(video+audio+"a=sendonly\r\n"+data,"sendonly"));
+    CHECK(!check(video+audio+"a=sendrecv\r\n"+data,"recvonly"));
+    CHECK(!check(video+audio+"a=sendonly\r\n"+data,"recvonly"));
+    CHECK(!check(video+audio+"a=recvonly\r\n"+data,"sendonly"));
+    CHECK(!check(video+audio+data,"recvonly"));
+    CHECK(!check(video+data,"recvonly"));
+    CHECK(!check(video+audio+"a=recvonly\r\na=recvonly\r\n"+data,"recvonly"));
+    CHECK(!check(video+audio+"a=recvonly\r\n"+audio+"a=sendonly\r\n"+data,"recvonly"));
+    CHECK(!check(video+"m=audio 9 TCP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\na=recvonly\r\n"+data,"recvonly"));
+    CHECK(!check(video+"m=audio 0 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\na=recvonly\r\n"+data,"recvonly"));
+    CHECK(!check(video+"m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 PCMU/8000\r\na=recvonly\r\n"+data,"recvonly"));
+}
+void desktop_gate() {
+    uint8_t grant[kDesktopGrantBytes]{};
+    grant[0]=0x47;grant[1]=0x44;grant[2]=0x54;grant[3]=0x48;grant[4]=1;grant[8]=2;
+    grant[12]=0x00;grant[13]=0xE1;grant[14]=0xF5;grant[15]=0x05;
+    auto parsed=parse_desktop_grant(grant);
+    CHECK(parsed.well_formed && parsed.session_id==2 && parsed.expires_unix_ms==100000000);
+    CHECK(desktop_grant_accepts(parsed,2,99999999));
+    CHECK(!desktop_grant_accepts(parsed,2,100000000));
+    CHECK(!desktop_grant_accepts(parsed,3,1));
+    grant[0]=0;CHECK(!parse_desktop_grant(grant).well_formed);
+    CHECK(!parse_desktop_grant(std::span(grant).first(sizeof(grant)-1)).well_formed);
+    CHECK(capture_allowed(DesktopClass::ordinary,false));
+    CHECK(!capture_allowed(DesktopClass::secure,false));
+    CHECK(capture_allowed(DesktopClass::secure,true));
+    CHECK(!capture_allowed(DesktopClass::denied,true));
+    const std::string controller="controller-endpoint", thumbprint(43,'A');
+    CHECK(service_scope_matches(true,controller,thumbprint,controller,thumbprint));
+    CHECK(!service_scope_matches(false,controller,thumbprint,controller,thumbprint));
+    CHECK(!service_scope_matches(true,controller,thumbprint,"", ""));
+    CHECK(!service_scope_matches(true,controller,thumbprint,"another-controller",thumbprint));
+    CHECK(!service_scope_matches(true,controller,thumbprint,controller,std::string(43,'B')));
+    CHECK(!service_scope_matches(true,"",thumbprint,"",thumbprint));
+    CHECK(!service_scope_matches(true,controller,"short",controller,"short"));
+    // A local opt-in does not permit a session whose verified identity is
+    // missing, stale, or belongs to another controller.
+    CHECK(!capture_allowed(DesktopClass::secure,service_scope_matches(true,controller,thumbprint,"", "")));
+    CHECK(!capture_allowed(DesktopClass::secure,service_scope_matches(false,controller,thumbprint,controller,thumbprint)));
+    CHECK(clipboard_allowed(DesktopClass::ordinary,true));
+    CHECK(!clipboard_allowed(DesktopClass::secure,true));
+    CHECK(!clipboard_allowed(DesktopClass::ordinary,false));
+    CHECK(files_allowed(DesktopClass::secure,true));
+    CHECK(!files_allowed(DesktopClass::secure,false));
+    CHECK(!files_allowed(DesktopClass::denied,true));
+    CHECK(transition_releases_input(DesktopClass::ordinary,DesktopClass::secure));
+    CHECK(!transition_releases_input(DesktopClass::ordinary,DesktopClass::ordinary));
+    CHECK(protected_worker_path("C:\\Program Files\\Home Tunnel\\home_tunnel_remote_host.exe","C:\\Program Files"));
+    CHECK(!protected_worker_path("C:\\Users\\Public\\Home Tunnel\\home_tunnel_remote_host.exe","C:\\Users\\Public"));
+    CHECK(!protected_worker_path("C:\\Program Files\\Home Tunnel\\..\\other.exe","C:\\Program Files"));
+}
 int main() {
     android::SurfaceLifecycle surface;
     CHECK(surface.Replace(1, true, 100)); CHECK(!surface.presented());
@@ -279,7 +396,7 @@ int main() {
     CHECK(!surface.Presented(2, 13)); CHECK(!surface.Expired(15999));
     CHECK(surface.Presented(4, 1)); CHECK(!surface.Expired(999999));
     CHECK(!surface.Presented(4, 2));
-    framing();watchdog_and_epoch();heartbeat_replay_cannot_hold_input();network_gate();button_coordinates_and_watchdog();pointer_wheel_text_and_release();rejected_release_blocks_reenable();lease_and_isolation();abi_contract();callback_quiescence();transcript();signature_verification();
+    framing();watchdog_and_epoch();heartbeat_replay_cannot_hold_input();network_gate();button_coordinates_and_watchdog();pointer_wheel_text_and_release();rejected_release_blocks_reenable();lease_and_isolation();abi_contract();callback_quiescence();transcript();signature_verification();desktop_gate();audio_packets();audio_sdp();
 #if defined(_WIN32)
     CHECK(WindowsInputSink::scan_code(4)==0x1e && WindowsInputSink::scan_code(224)==0x1d && WindowsInputSink::scan_code(228)==0xe01d);
     CHECK(WindowsInputSink::scan_code(0)==0 && WindowsInputSink::scan_code(300)==0);

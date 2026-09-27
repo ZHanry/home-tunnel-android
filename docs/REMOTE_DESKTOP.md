@@ -4,7 +4,7 @@ This release implements account-bound P-256 AndroidKeyStore identities, DPoP RES
 
 Each Surface attachment has a fresh generation. Direct replacement and detach release input immediately; the matching new Surface must present a frame before control can be requested again. Old queued frame callbacks are ignored, and a ready foreground target with no first frame times out after 15 seconds. Native state-machine and JVM regressions cover replacement, stale callbacks, timeout and detach/reattach. The opt-in device test now creates two distinct ImageReaders and verifies real replacement, but has not been run on a physical device.
 
-The default native artifact is a **security core with no media backend** and returns `available=false`. A separately built, same-source Android arm64 controller implements real WebRTC/VP8 receive and Surface output, native ticket/lease/grant and proof verification, selected direct-UDP checks, and synchronized keyboard/pointer/text input. The 9.0.0 source also adds a signed-session-gated text clipboard channel with automatic foreground-only Android clipboard synchronization. An x86_64 test-only library passed emulator media and input runs; actual clipboard transfer and arm64 runtime still require separate acceptance. Audio and files remain unavailable in this controller profile. A successful compile or imported library is not device acceptance.
+The default native artifact is a **security core with no media backend** and returns `available=false`. Production arm64-v8a and x86_64 controller SDKs now come from the same unmodified client source and pinned WebRTC build. They implement VP8/Surface video, direct-UDP path verification, signed authority, synchronized input, foreground text clipboard, descriptor-based files and AAudio system playback. Audio availability also depends on the actual output device. The controller does not capture microphone audio. Successful compilation or import does not establish device acceptance.
 
 ## Build and provenance
 
@@ -17,17 +17,14 @@ python scripts/build-remote-native.py
 ./gradlew -PremoteNativeRoot="$PWD/.cache/remote-native" test lint assembleDebug assembleDebugAndroidTest
 ```
 
-The builder produces arm64 and x86_64 security-core libraries for development/CI; Gradle validates their hashes before linking JNI. Missing native artifacts are reported as unavailable in a management-only developer build. Release CI requires the separately published, signed, hash-locked arm64 controller SDK, JNI and matching C++ runtime, verifies their identical APK/AAB library sets and 16 KiB ELF page alignment, and publishes native provenance. It fails before signing if the final SDK lock is absent. No independent WebRTC AAR or second transport stack is included. See [RELEASING.md](RELEASING.md) for the published-release import path; the following manual import is for development diagnosis only.
-
-For the real controller, build `scripts/build-remote-android-webrtc.py --build` in
-the exact clean client repository on Linux. The Android source lock must first be
-imported from that same native source tree. Review the CI artifact's manifest
-SHA-256, then import and build explicitly:
+The security-core builder is for bounded development/CI checks. Production candidates use the signed dual-ABI import path in [RELEASING.md](RELEASING.md). The committed source lock and candidate lock bind both ABIs, the recipe, original source archive, compiler, headers and library bytes. There is no independent WebRTC AAR or second transport stack.
 
 ```sh
-python scripts/import-remote-controller.py /path/to/android-webrtc-arm64 --reviewed-manifest-sha256 REVIEWED_SHA256
-./gradlew -PremoteNativeRoot="$PWD/.cache/remote-controller" -PremoteControllerArm64=true test lint assembleDebug
+python scripts/import-sdk-candidate.py --restore
+./gradlew -PremoteNativeRoot="$PWD/.cache/remote-controller/x86_64" -PremoteControllerAbi=x86_64 testDebugUnitTest lint assembleDebug assembleDebugAndroidTest
 ```
+
+Select `arm64-v8a` in both properties to build the other production ABI. A missing native artifact remains an explicit unavailable state in a management-only development build.
 
 The importer checks every SDK file, source tree, dependency lock, toolchain recipe
 and public header. The GN build checks the C exports, static C++ runtime boundary
@@ -39,17 +36,17 @@ request/grant/state/ACK sequence, and text success requires the matching host AC
 
 ## Permission boundaries
 
-- Android is a controller only. Microphone permission is requested only after explicit activation in an authorized session. Backgrounding, logout and account changes close the local input/microphone gates; no permanent foreground service is added.
+- Android is a controller only. System audio is playback-only and requires both a signed scope and peer feature acknowledgement. Backgrounding, logout and account changes close input, audio, clipboard and file gates; no permanent foreground service is added. Microphone capture is unavailable.
 - Clipboard access requires foreground focus, a signed grant containing the direction and a peer feature acknowledgement. The session grant is the consent; no per-copy confirmation is shown. Only plain text up to 64 KiB is synchronized; providers, HTML and images are not dereferenced. Backgrounding disables both directions.
-- Files are selected through SAF; no broad storage permission is requested. Up to 64 individually selected files, 8 GiB per file and 32 GiB per batch are permitted by the shared protocol. Directories and images are outside this preview. The tested transfer primitives allow two active files and one unacknowledged chunk per file. A receive ACK follows the sink's commit callback; completion requires exact size, SHA-256 and successful output close. Cancellation and failed validation discard the incomplete output. Media-backend transport and actual SAF receive consent remain pending.
+- Files are selected through SAF without broad storage access. The shared protocol permits 64 files, 8 GiB per file and 32 GiB per batch. Native transport uses app-owned descriptors and verifies exact size and SHA-256 before reporting receipt. The receiver explicitly accepts an offer into private staging, then chooses its SAF destination. A failed export retains the verified private copy for retry; cancellation removes incomplete output. Provider opens and nonblocking pipe IO respond to cancellation on API 26 and later. Full bidirectional remote transfer still needs final-package acceptance.
 - Initial server trust is pinned on first use over HTTPS. Subsequent signing-key changes require a consecutive ES256 rotation chain rooted in the pinned active key, valid key fingerprints and validity intervals. Same-version mutations, instance changes and version/restore-epoch rollback fail closed. Restore-epoch changes clear the local remote session and authentication. Explicit recovery for lost pins or invalid chains is not implemented; failures never reset trust automatically.
 - Before native startup, Kotlin independently verifies the server ticket, lease and host-signed grant against the local account, selected endpoints and key fingerprints, server instance/restore epoch, session and original pairing request. One-session grants must name that exact request; renewal cannot change grant or account-token versions or extend past the grant/signing-key expiry. The shared public authorization vectors exercise cross-client rejection behavior.
 - Each input handshake uses a fresh UUID echoed by `CONTROL_GRANTED`, `INPUT_STATE` and `INPUT_SYNC_ACK`. Input stays disabled until the matching epoch/layout acknowledgement arrives. Backgrounding, surface loss, layout changes, explicit release and a five-second pending-handshake deadline invalidate it. Delayed acknowledgements leave the local session read-only rather than terminating video. Both Kotlin and the linked native controller enforce these gates independently.
 
 ## Controller screen
 
-The remote screen is a controller. It offers approval, one-time password, fixed password, and unattended access. Unattended can be used only when a listed host advertises it and the existing trust path accepts the request. Video, pointer, keyboard, Unicode text, clipboard, files, system audio, and microphone controls are shown only when `canUse` reports that permission for the current session. Display width and height come from the session. Scale and DPI controls are omitted while the session does not report them. Direct UDP and the native handshake gates are unchanged. A missing media backend stays unavailable.
+The remote screen is a controller. It offers approval, one-time password, fixed password, and unattended access. When a host reports `offered_access_modes`, only those modes are enabled. Unattended stays off when that list is missing unless the older host flag is set. Session tools intersect the signed grant with `ht_rd_get_capabilities` permissions and, for files and system audio, the host `capabilities.native` backends. A missing native report does not disable input or clipboard, and it does not enable files or audio. Microphone return is unavailable. The display picker uses the independently verified native layout. Switching display or reconnecting advances the server-authorized epoch while retaining the locally pinned endpoints, grant and permissions. Old input, file, clipboard and audio authority is disposed before replacement. The viewport supports bounded 1–4x zoom and two-finger panning; view transforms preserve pointer mapping. Display metrics are shown only when reported. Direct UDP and native handshake gates remain mandatory.
 
 ## Validation still required
 
-JVM protocol/crypto/state/transfer tests and AndroidKeyStore instrumentation are separate evidence. Successful compilation is not a physical-device test. Real Surface decoding, input lifecycle, Wi-Fi/cellular migration, codec negotiation, physical devices and sustained-session matrices remain required before claiming an accepted Android controller. Audio routes and actual clipboard/file transfer consent and transport need separate implementation and acceptance.
+JVM protocol/crypto/state/transfer tests and AndroidKeyStore instrumentation are separate evidence. Successful compilation is not a physical-device test. Real Surface decoding, input lifecycle, Wi-Fi/cellular migration, codec negotiation, physical devices and sustained-session matrices remain required before claiming an accepted Android controller. Audio routes, actual clipboard/files, monitor switching, reconnect, consent and permission revocation require their own runtime evidence. API35/API26 module and development instrumentation results do not stand in for final APK acceptance or arm64 device coverage.

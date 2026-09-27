@@ -1,0 +1,36 @@
+{
+  "abis": {
+    "arm64-v8a": {
+      "archive_sha256": "2f55caf90091af21e0b8fa4dd2716ee1f47465a33109855702785e0f1b07e3e5",
+      "controller_manifest_sha256": "33ca930ac13e713a5a74ff1467c78ed8e62d9a31b0687d519d9eadc93f95e9da",
+      "library_sha256": "317934a898bdbc395d527a965a3e604afc9b2dc1bbfe8603a3eccc40225224ec",
+      "provenance_sha256": "8f5699873a24b45a6481a1457973fcf2961fc7a9fa82893d9375ffb640203c6e",
+      "sbom_sha256": "295ae383ffbf1af2ae7cd0c2318974e38e462ed1624f2f19e178cbdfd343b5f1"
+    },
+    "x86_64": {
+      "archive_sha256": "a000ed828ea602216e416a188743d8b63d7a3500013ac6155818055ea517c49c",
+      "controller_manifest_sha256": "7021357f587f35859354baa0c485043207e3ca422f2e10e5b3605d1801dcf3a2",
+      "library_sha256": "88bf2bee61adf468c664fd41c1aa46f3476edf7e40bb15e95023ef15718fc0b6",
+      "provenance_sha256": "21bc9b4c466ace42c704a7cdbe44fd3e7416ebf7f836e4b98568c781b86a769d",
+      "sbom_sha256": "5054646261b7fb2cb8dccace2144d7a8edd876e2726c45e245b8f5183d38d2f7"
+    }
+  },
+  "artifact_id": "10927708666",
+  "artifact_name": "android-sdk-candidate",
+  "artifact_sha256": "c2eed01574a5c586c7e7a1a8c902f048cd73381caf5a85780855908e3d96b67f",
+  "caller_workflow": ".github/workflows/android-webrtc.yml",
+  "index_sha256": "e35bc4417b3736e622cdab5f2a48a37ee2e2afd5043f44a7122fc8591920a9a9",
+  "matches_android_snapshot": true,
+  "repository": "ZHanry/home-tunnel-client",
+  "run_attempt": 1,
+  "schema_version": 1,
+  "signer_identity_observed": true,
+  "signer_identity_regexp": "^https://github\\.com/ZHanry/home\\-tunnel\\-client/\\.github/workflows/android\\-sdk\\-candidate\\.yml@refs/heads/codex/v10\\-overhaul$",
+  "signer_workflow": ".github/workflows/android-sdk-candidate.yml",
+  "source_ref": "refs/heads/codex/v10-overhaul",
+  "source_revision": "07b5de682ddb70964e98ad949276a4453f307f5c",
+  "source_tree_sha256": "a4c552bdda7d28b050793e78ae500832824f1186170ce1926e5d2e4e46ae4346",
+  "status": "sdk-candidate-imported",
+  "upstream_lock_sha256": "f0b0e46823e19a989fa14fece5d243be35939e742b247e77f45c6a17c714585d",
+  "workflow_run_id": "36306413846"
+}

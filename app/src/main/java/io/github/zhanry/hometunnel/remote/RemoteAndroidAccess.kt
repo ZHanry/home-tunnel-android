@@ -43,7 +43,10 @@ class RemoteFiles(private val resolver: ContentResolver) {
         const val MAX_FILE_BYTES = P.FILE_BYTES
         fun safeName(value: String): String {
             require(value.isNotBlank() && value.length <= 255 && value != "." && value != "..") { "RD_FILE_NAME" }
-            require(value.none { it == '/' || it == '\\' || it.code < 32 || it == ':' } && RemoteJson.validUnicode(value)) { "RD_FILE_NAME" }
+            require(value.none { it in "/\\:<>\"|?*" || it.code < 32 } && RemoteJson.validUnicode(value) &&
+                !value.endsWith('.') && !value.endsWith(' ')) { "RD_FILE_NAME" }
+            val base = value.substringBefore('.').uppercase(java.util.Locale.ROOT)
+            require(base !in setOf("CON", "PRN", "AUX", "NUL") && !Regex("(?:COM|LPT)[1-9]").matches(base)) { "RD_FILE_NAME" }
             return value
         }
     }
@@ -52,7 +55,7 @@ class RemoteFiles(private val resolver: ContentResolver) {
         return uris.distinct().map { uri ->
             require(uri.scheme == "content") { "RD_FILE_PROVIDER_REQUIRED" }
             val type = resolver.getType(uri)
-            require(type != DocumentsContract.Document.MIME_TYPE_DIR && type?.startsWith("image/") != true) { "RD_FILE_TYPE_UNSUPPORTED" }
+            require(type != DocumentsContract.Document.MIME_TYPE_DIR) { "RD_FILE_TYPE_UNSUPPORTED" }
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                 require(cursor.moveToFirst()) { "RD_FILE_UNAVAILABLE" }
                 val name = safeName(cursor.getString(0))

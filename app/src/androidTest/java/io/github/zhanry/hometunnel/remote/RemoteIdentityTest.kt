@@ -44,7 +44,13 @@ class RemoteIdentityTest {
         try {
             if (BuildConfig.REMOTE_CONTROLLER_BACKEND) {
                 assertTrue(session.capability.available)
-                assertEquals(setOf("view", "input.keyboard", "input.pointer", "input.text"), session.capability.permissions)
+                // Keep this independent of the generated permission list: the production
+                // controller must advertise only the features implemented by this SDK.
+                // In particular, microphone capture is not a controller capability.
+                assertEquals(setOf("view", "input.keyboard", "input.pointer", "input.text",
+                    "audio.system", "clipboard.read", "clipboard.write", "files.send", "files.receive"),
+                    session.capability.permissions)
+                assertEquals(4, session.capability.maxSessions)
                 assertEquals("", session.capability.reason)
             } else {
                 assertFalse(session.capability.available)

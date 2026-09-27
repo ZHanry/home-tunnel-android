@@ -16,9 +16,14 @@ class ControllerImportPolicy(unittest.TestCase):
         sdk = root / "sdk"
         library = sdk / "lib/arm64-v8a/libhome_tunnel_remote.so"
         library.parent.mkdir(parents=True)
-        elf = bytearray(64)
+        elf = bytearray(120)
         elf[:6] = b"\x7fELF\x02\x01"
         elf[18:20] = (183).to_bytes(2, "little")
+        elf[32:40] = (64).to_bytes(8, "little")
+        elf[54:56] = (56).to_bytes(2, "little")
+        elf[56:58] = (1).to_bytes(2, "little")
+        elf[64:68] = (1).to_bytes(4, "little")
+        elf[112:120] = (16384).to_bytes(8, "little")
         library.write_bytes(elf)
         header = sdk / "include/home_tunnel/remote.h"
         header.parent.mkdir(parents=True)

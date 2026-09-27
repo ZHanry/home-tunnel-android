@@ -42,16 +42,27 @@ require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-rc\\.[1-9][0-9]*)?").matches(productV
 }
 require(versionCodeValue in 1..2_100_000_000) { "Android versionCode is outside the supported range" }
 val remoteNativeRoot = providers.gradleProperty("remoteNativeRoot").orNull
+val remoteControllerAbi = providers.gradleProperty("remoteControllerAbi").orNull
 val remoteControllerArm64 = providers.gradleProperty("remoteControllerArm64").orNull == "true"
 val remoteControllerEmulatorX64 = providers.gradleProperty("remoteControllerEmulatorX64").orNull == "true"
 val remoteAcceptanceCa = providers.gradleProperty("remoteAcceptanceCa").orNull
 val remoteCandidateLocal = providers.gradleProperty("remoteCandidateLocal").orNull == "true"
 val remoteCandidateSource = providers.gradleProperty("remoteCandidateSource").orNull
+val productionAbi = remoteControllerAbi?.also {
+    require(it == "arm64-v8a" || it == "x86_64") { "Select arm64-v8a or x86_64" }
+}
 require(remoteAcceptanceCa == null || remoteControllerEmulatorX64) { "The test CA is allowed only in the emulator-only build" }
+require(productionAbi == null || !remoteControllerEmulatorX64) { "A production ABI cannot use the emulator test build" }
 require(!(remoteControllerArm64 && remoteControllerEmulatorX64)) { "Select only one remote controller ABI" }
-require(!(remoteControllerArm64 || remoteControllerEmulatorX64) || remoteNativeRoot != null) { "A real controller artifact is required" }
-require(!remoteCandidateLocal || (remoteNativeRoot != null && remoteCandidateSource != null && (remoteControllerArm64 || remoteControllerEmulatorX64))) {
+require(productionAbi == null || !remoteControllerArm64 || productionAbi == "arm64-v8a") { "Select only one remote controller ABI" }
+require(!(remoteControllerArm64 || remoteControllerEmulatorX64 || productionAbi != null) || remoteNativeRoot != null) { "A real controller artifact is required" }
+require(!remoteCandidateLocal || (remoteNativeRoot != null && remoteCandidateSource != null && (remoteControllerArm64 || remoteControllerEmulatorX64 || productionAbi != null))) {
     "Local candidate requires an explicit native SDK, source tree and controller ABI"
+}
+val selectedControllerAbi = when {
+    remoteControllerEmulatorX64 -> "x86_64"
+    productionAbi != null -> productionAbi
+    else -> "arm64-v8a"
 }
 
 fun signingValue(environmentName: String, propertyName: String): String? =
@@ -75,9 +86,9 @@ android {
 
     defaultConfig {
         applicationId = "io.github.zhanry.hometunnel"
-        buildConfigField("boolean", "REMOTE_CONTROLLER_BACKEND", (remoteControllerArm64 || remoteControllerEmulatorX64).toString())
+        buildConfigField("boolean", "REMOTE_CONTROLLER_BACKEND", (remoteControllerArm64 || remoteControllerEmulatorX64 || productionAbi != null).toString())
         minSdk = 26
-        ndk { abiFilters += setOf(if (remoteControllerEmulatorX64) "x86_64" else "arm64-v8a") }
+        ndk { abiFilters += setOf(selectedControllerAbi) }
         targetSdk = 35
         versionCode = versionCodeValue
         versionName = versionNameValue
@@ -116,7 +127,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             // Older x86_64 emulators cannot translate the arm64 UI tooling libraries.
-            ndk { abiFilters += if (remoteControllerArm64 || remoteControllerEmulatorX64) emptySet() else setOf("x86_64") }
+            ndk { abiFilters += if (remoteControllerArm64 || remoteControllerEmulatorX64 || productionAbi != null) emptySet() else setOf("x86_64") }
         }
         release {
             isMinifyEnabled = true
@@ -201,22 +212,24 @@ if (remoteNativeRoot != null) {
             val ndk = androidComponents.sdkComponents.sdkDirectory.get().dir("ndk/27.2.12479018").asFile
             commandLine(python, "scripts/verify-local-remote-candidate.py", "--sdk", file(remoteNativeRoot).absolutePath,
                 "--source", file(remoteCandidateSource!!).absolutePath, "--ndk", ndk.absolutePath,
-                "--abi", if (remoteControllerArm64) "arm64-v8a" else "x86_64")
+                "--abi", selectedControllerAbi)
         } else {
             commandLine(listOf(python, "scripts/verify-remote-native.py", file(remoteNativeRoot).absolutePath) +
-                if (remoteControllerArm64) listOf("--abis", "arm64-v8a")
+                if (productionAbi != null) listOf("--abis", productionAbi, "--production")
+                else if (remoteControllerArm64) listOf("--abis", "arm64-v8a")
                 else if (remoteControllerEmulatorX64) listOf("--abis", "x86_64", "--emulator-test")
                 else emptyList())
         }
     }
     tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(verifyRemoteNative) }
-    if (remoteControllerArm64) {
+    if (remoteControllerArm64 || productionAbi != null) {
         val noticeNdk = androidComponents.sdkComponents.sdkDirectory.map { it.dir("ndk/27.2.12479018") }
         androidComponents.onVariants { variant ->
             val taskName = "package${variant.name.replaceFirstChar { it.uppercaseChar() }}NativeNotices"
             val packageNativeNotices = tasks.register<PackageNativeNoticesTask>(taskName) {
                 dependsOn(verifyRemoteNative)
                 workingDir(rootProject.projectDir)
+                inputs.property("controllerAbi", selectedControllerAbi)
                 inputs.files(rootProject.file("LICENSE"), rootProject.file("scripts/package-native-notices.py"),
                     file("$remoteNativeRoot/LICENSE.md"), file("$remoteNativeRoot/${if (remoteCandidateLocal) "local-candidate.json" else "android-webrtc-build.json"}"))
                 inputs.files(noticeNdk.map { it.file("NOTICE") }, noticeNdk.map { it.file("NOTICE.toolchain") },
@@ -224,6 +237,7 @@ if (remoteNativeRoot != null) {
                 doFirst {
                     commandLine(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3",
                         "scripts/package-native-notices.py", "--sdk", file(remoteNativeRoot).absolutePath,
+                        "--abi", selectedControllerAbi,
                         "--ndk", noticeNdk.get().asFile.absolutePath,
                         "--output", assetOutput.get().dir("licenses").asFile.absolutePath,
                         *(if (remoteCandidateLocal) arrayOf("--local-candidate") else emptyArray()))

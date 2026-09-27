@@ -2,8 +2,8 @@
   "component": "android",
   "stage": "public-release",
   "api_major": 1,
-  "contract_ref": "api-v1.3.0",
-  "support_policy": "9.0.0 release. Existing tunnel management remains compatible with 7.0 servers. The remote controller requires a verified SDK from the matching client release. Arm64 APK runtime, clipboard transfer and hardware decoding are unverified; audio and files remain unavailable. FRP retains its upstream version.",
+  "contract_ref": "api-v1.4.0",
+  "support_policy": "10.0.0 development; version fields still record the 9.0.0 baseline. API1.4 is proposed and has no frozen tag. Existing tunnel management retains API v1 compatibility; new remote features require advertised server/host capabilities and a verified same-source dual-ABI SDK candidate. Native files, system audio and session continuation are implemented, with final package, full remote, UI and arm64 runtime coverage still pending. FRP retains its upstream version.",
   "version": "9.0.0",
   "minimum_server": "7.0.0",
   "tested_combination": {
@@ -11,5 +11,10 @@
     "client": "9.0.0",
     "android": "9.0.0",
     "agent": "9.0.0"
-  }
+  },
+  "contract_status": "proposed",
+  "frozen_tag": null,
+  "previous_immutable_tag": "api-v1.3.0",
+  "development_target": "10.0.0",
+  "tested_combination_scope": "historical-9.0.0-baseline"
 }

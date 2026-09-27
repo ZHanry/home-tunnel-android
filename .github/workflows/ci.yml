@@ -7,15 +7,30 @@ name: Android CI
     branches:
     - main
   merge_group: null
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      release_candidate:
+        description: Sign arm64 and x64 APKs once. This does not publish a Release.
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  release-candidate:
+    name: Signed Android candidate
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/android-candidate.yml
+    secrets: inherit
   android:
     name: Android client
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.release_candidate }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -96,10 +111,7 @@ jobs:
         python3 scripts/build-remote-native.py --verify-only
     - name: Check release policy
       run: |
-        python3 -m unittest discover -s scripts -p "test_release_policy.py"
-        python3 -m unittest discover -s scripts -p "test_remote_controller_import.py"
-        python3 -m unittest discover -s scripts -p "test_remote_contract_import.py"
-        python3 -m unittest discover -s scripts -p "test_remote_controller_release.py"
+        python3 -m unittest discover -s scripts -p 'test_*.py'
   dependency-review:
     name: Dependency Review
     if: ${{ github.event_name == 'pull_request' }}
@@ -111,10 +123,11 @@ jobs:
       with:
         fail-on-severity: moderate
   quality-gate:
-    name: Quality Gate
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate && 'Candidate Build Gate' || 'Quality Gate' }}
     runs-on: ubuntu-latest
     if: ${{ always() }}
     needs:
+    - release-candidate
     - android
     - instrumentation
     - repository
@@ -123,11 +136,15 @@ jobs:
     - name: Require all component checks
       env:
         RESULTS: ${{ toJSON(needs) }}
+        CANDIDATE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate }}
       run: |
         python3 - <<'PY'
         import json, os
         results = json.loads(os.environ['RESULTS'])
-        failed = {k:v['result'] for k,v in results.items() if v['result'] != 'success' and not (k == 'dependency-review' and v['result'] == 'skipped')}
+        candidate = os.environ['CANDIDATE_RUN'] == 'true'
+        required = {'repository', 'release-candidate'} if candidate else {'android', 'instrumentation', 'repository'}
+        failed = {k:v['result'] for k,v in results.items() if (k in required and v['result'] != 'success') or v['result'] not in ('success', 'skipped')}
+        if not required.issubset(results): raise SystemExit('Missing required job results')
         if failed: raise SystemExit(str(failed))
-        print('All component checks passed')
+        print('Candidate build checks passed; device acceptance remains separate' if candidate else 'All component checks passed')
         PY

@@ -118,9 +118,15 @@ def required_assets(directory):
         expected += [f"home-tunnel-{platform}-{version}-{arch}.tar.gz" for platform in ("linux","macos") for arch in ("amd64","arm64")]
         expected += ["agent-provenance.json"]
     elif COMPONENT == "android":
-        expected = [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}.aab", "android-release-evidence.json", "android-native-evidence.json", "android-native-source.lock.json",
-                    "android-controller-sdk.lock.json", "android-controller-sdk-provenance.json", "android-controller-build.json"]
-        expected += ["android-native-" + name for name in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json")]
+        from android_release_candidate import ACCEPTANCE, MANIFEST, package_names
+        expected = list(package_names(version).values()) + [MANIFEST, ACCEPTANCE, "android-release-evidence.json",
+                    "android-native-source.lock.json", "android-controller-sdk-candidate.lock.json",
+                    "android-candidate-download.json", "android-acceptance-origin.json"]
+        for abi in ("arm64-v8a", "x86_64"):
+            expected += [f"android-native-evidence-{abi}.json", f"android-controller-build-{abi}.json",
+                         f"android-controller-sdk-provenance-{abi}.json", f"android-signature-{abi}.txt"]
+            expected += [f"android-native-{abi}-" + name for name in
+                         ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json")]
     else:
         expected = ["image-control-center.json", "image-traffic-gateway.json", "home-tunnel.v1.json"]
         for name in ("control-center", "traffic-gateway"):
@@ -132,43 +138,71 @@ def required_assets(directory):
             raise SystemExit(f"Missing release asset: {name}")
     if COMPONENT == "android":
         verify_controller_evidence(directory, version)
+        verify_staged_candidate(directory, version)
+
+
+def verify_staged_candidate(directory, version):
+    """Publish the bytes that the candidate workflow already signed. Do not rebuild them."""
+    evidence_path = directory / "android-release-candidate.json"
+    lock_path = ROOT / "native/controller-sdk-candidate.lock.json"
+    if not evidence_path.is_file() or not lock_path.is_file():
+        raise SystemExit("Stable publication requires the sealed candidate and its SDK lock")
+    from android_release_candidate import verify_publication
+    verify_publication(json.loads(evidence_path.read_text()), directory, SHA, json.loads(lock_path.read_text())["source_revision"], version, json.loads(lock_path.read_text()))
 
 
 def verify_controller_evidence(directory, version):
-    """Do not seal an APK whose SDK evidence differs from the committed release lock."""
-    lock_path = ROOT / "native/controller-sdk.lock.json"
-    if not lock_path.is_file():
-        raise SystemExit("Android release requires the reviewed published controller SDK lock")
-    for published, original in (("android-controller-sdk.lock.json", lock_path),
-                                ("android-native-source.lock.json", ROOT / "native/remote-source.lock.json")):
-        if (directory / published).read_bytes() != original.read_bytes():
+    """Recheck both package payloads against the confirmed SDK and source locks."""
+    import importlib.util
+    from android_release_candidate import digest, read_json, local_file
+    spec = importlib.util.spec_from_file_location("android_package_payloads", ROOT / "scripts/verify-remote-packages.py")
+    payloads = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(payloads)
+    lock = read_json(ROOT / "native/controller-sdk-candidate.lock.json")
+    source = read_json(ROOT / "native/remote-source.lock.json")
+    for published, original in (("android-controller-sdk-candidate.lock.json", "controller-sdk-candidate.lock.json"),
+                                ("android-native-source.lock.json", "remote-source.lock.json")):
+        if local_file(directory, published).read_bytes() != (ROOT / "native" / original).read_bytes():
             raise SystemExit("Android release changed its committed native source or SDK lock")
-    lock = json.loads(lock_path.read_text())
-    source = json.loads((ROOT / "native/remote-source.lock.json").read_text())
-    build_path = directory / "android-controller-build.json"
-    provenance_path = directory / "android-controller-sdk-provenance.json"
-    if hashlib.sha256(build_path.read_bytes()).hexdigest() != lock.get("controller_manifest_sha256") or hashlib.sha256(provenance_path.read_bytes()).hexdigest() != lock.get("provenance_sha256"):
-        raise SystemExit("Android release SDK provenance or build manifest differs from its reviewed digest")
-    build = json.loads(build_path.read_text())
-    provenance = json.loads(provenance_path.read_text())
-    native = json.loads((directory / "android-native-evidence.json").read_text())
-    if (build.get("source_revision") != source["source_revision"] or build.get("source_modified") is not False or
-            build.get("source_tree_sha256") != source["source_tree_sha256"] or build.get("source_files") != source["source_files"] or
-            build.get("controller_backend_linked") is not True or build.get("device_media_accepted") is not False or
-            provenance.get("source_revision") != source["source_revision"] or provenance.get("tag") != lock.get("tag") or
-            provenance.get("archive_sha256") != lock.get("sha256") or provenance.get("archive") != lock.get("asset") or
-            native.get("status") != "webrtc-controller-linked-device-acceptance-required" or native.get("available") is not True or
-            native.get("device_media_accepted") is not False or native.get("source_revision") != source["source_revision"] or
-            native.get("controller_manifest_sha256") != lock.get("controller_manifest_sha256") or
-            native.get("library_sha256") != build.get("files", {}).get("lib/arm64-v8a/libhome_tunnel_remote.so")):
-        raise SystemExit("Android release has a different controller library/source identity or capability")
-    run(sys.executable, str(ROOT / "scripts/verify-remote-packages.py"),
-        str(directory / f"HomeTunnel-Android-{version}-arm64-v8a.apk"), str(directory / f"HomeTunnel-Android-{version}.aab"),
-        str(directory / "android-native-evidence.json"), "--controller-build", str(build_path))
-    with zipfile.ZipFile(directory / f"HomeTunnel-Android-{version}-arm64-v8a.apk") as package:
-        for name in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json"):
-            if (directory / ("android-native-" + name)).read_bytes() != package.read("assets/licenses/" + name):
-                raise SystemExit("Android release native notices differ from the installable package")
+    facts = read_json(local_file(directory, "android-release-evidence.json"))
+    certificate = (ROOT / "release-signing-cert.sha256").read_text().strip()
+    version_code = int(re.search(r'^HOME_TUNNEL_VERSION_CODE=(\d+)$', (ROOT / "gradle.properties").read_text(), re.M).group(1))
+    if facts.get("signing_certificate_sha256") != certificate or facts.get("version_code") != version_code:
+        raise SystemExit("Candidate persistent signing identity or versionCode changed")
+    for abi in ("arm64-v8a", "x86_64"):
+        pinned = lock["abis"][abi]
+        build_path = local_file(directory, f"android-controller-build-{abi}.json")
+        provenance_path = local_file(directory, f"android-controller-sdk-provenance-{abi}.json")
+        if digest(build_path) != pinned["controller_manifest_sha256"] or digest(provenance_path) != pinned["provenance_sha256"]:
+            raise SystemExit("Candidate SDK build or provenance changed")
+        build, provenance = read_json(build_path), read_json(provenance_path)
+        native = read_json(local_file(directory, f"android-native-evidence-{abi}.json"))
+        if (any(build.get(k) != source.get(k) for k in ("source_revision", "source_tree_sha256", "source_files")) or
+                build.get("source_modified") is not False or build.get("target") != abi or
+                build.get("controller_backend_linked") is not True or build.get("device_media_accepted") is not False or
+                provenance.get("source_revision") != source["source_revision"] or provenance.get("target") != abi or
+                provenance.get("archive_sha256") != pinned["archive_sha256"] or native.get("target") != abi or
+                native.get("source_revision") != source["source_revision"] or native.get("available") is not True or
+                native.get("controller_manifest_sha256") != pinned["controller_manifest_sha256"] or
+                native.get("library_sha256") != pinned["library_sha256"] or native.get("device_media_accepted") is not False):
+            raise SystemExit("Candidate library/source identity differs from its imported SDK")
+        packages = [(abi, f"HomeTunnel-Android-{version}-{abi}.apk", f"lib/{abi}/", "assets/licenses/")]
+        if abi == "arm64-v8a":
+            packages.append(("aab", f"HomeTunnel-Android-{version}.aab", "base/lib/arm64-v8a/", "base/assets/licenses/"))
+        for key, name, prefix, notices in packages:
+            package = local_file(directory, name)
+            libraries = payloads.package_libraries(package, prefix, pinned["library_sha256"], abi)
+            notice_record = payloads.package_notices(package, notices, native, build)
+            checked = facts["packages"][key]
+            if (checked.get("libraries") != libraries or checked.get("notices") != notice_record or
+                    checked.get("certificate_sha256") != certificate or checked.get("application_id") != "io.github.zhanry.hometunnel" or
+                    checked.get("version_code") != version_code or checked.get("version_name") != version or checked.get("debuggable") is not False):
+                raise SystemExit("Candidate package verification differs from its original payloads")
+            with zipfile.ZipFile(package) as archive:
+                for notice in ("PROJECT-LICENSE", "WEBRTC-LICENSE.md", "NDK-NOTICE", "NDK-NOTICE.toolchain", "native-notices.json"):
+                    if local_file(directory, f"android-native-{abi}-{notice}").read_bytes() != archive.read(notices + notice):
+                        raise SystemExit("Candidate native notices differ from the package")
+
 
 def seal():
     directory = ROOT / "release"
@@ -210,7 +244,7 @@ def verify(directory, rc_tag):
 
 def public_asset_names(component, version):
     if component == "android":
-        return [f"HomeTunnel-Android-{version}-arm64-v8a.apk"]
+        return [f"HomeTunnel-Android-{version}-arm64-v8a.apk", f"HomeTunnel-Android-{version}-x86_64.apk"]
     if component == "client":
         return [f"HomeTunnel-Setup-{version}-x64.exe", f"HomeTunnel-Windows-{version}-x64.zip"] + [
             f"home-tunnel-{platform}-{version}-{arch}.tar.gz"

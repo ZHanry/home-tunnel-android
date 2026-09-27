@@ -1,11 +1,9 @@
 package io.github.zhanry.hometunnel.remote
 
-import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -45,11 +44,13 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -70,7 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
+
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.zhanry.hometunnel.remote.protocol.RemoteProtocol as P
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,8 @@ import io.github.zhanry.hometunnel.ui.remote.RecentCodes
 import io.github.zhanry.hometunnel.ui.remote.RemoteStage
 import io.github.zhanry.hometunnel.ui.remote.SessionControl
 import io.github.zhanry.hometunnel.ui.remote.connectModes
+import io.github.zhanry.hometunnel.ui.remote.displayCaption
+import io.github.zhanry.hometunnel.ui.remote.failureActionKey
 import io.github.zhanry.hometunnel.ui.remote.remoteStage
 import io.github.zhanry.hometunnel.ui.remote.visibleSessionControls
 import kotlinx.serialization.json.JsonPrimitive
@@ -102,6 +105,9 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
     var authenticate by remember { mutableStateOf(false) }
     var permissions by remember { mutableStateOf(setOf("view", "input.keyboard", "input.pointer", "input.text", "clipboard.read", "clipboard.write")) }
     var selected by remember { mutableStateOf(emptyList<RemoteSelectedFile>()) }
+    var pickerSession by rememberSaveable { mutableStateOf<String?>(null) }
+    var saveSession by rememberSaveable { mutableStateOf<String?>(null) }
+    var saveFileId by rememberSaveable { mutableStateOf<String?>(null) }
     var localError by remember { mutableStateOf<String?>(null) }
     var inputText by remember { mutableStateOf("") }
     var assistDeviceId by rememberSaveable { mutableStateOf(initialCode.filter(Char::isDigit).take(9)) }
@@ -114,18 +120,26 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
     var trustMfaRequired by remember { mutableStateOf(false) }
     var sessionPanel by remember { mutableStateOf<String?>(null) }
     var landscape by rememberSaveable { mutableStateOf(false) }
+    var zoom by remember { mutableFloatStateOf(1f) }
     val activity = context.activity()
     val files = remember { RemoteFiles(context.contentResolver) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) scope.launch {
-            try { selected = withContext(Dispatchers.IO) { files.selected(uris) } }
+        val session = pickerSession
+        if (uris.isNotEmpty() && session != null && controller.state.value.sessionId == session && controller.filesTransportReady()) scope.launch {
+            try {
+                val selection = withContext(Dispatchers.IO) { files.selected(uris) }
+                if (controller.state.value.sessionId == session) selected = selection
+            }
             catch (_: Exception) { localError = "RD_FILE_TYPE_OR_SIZE_UNSUPPORTED" }
         }
+        pickerSession = null
     }
-    val microphone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && controller.canUse("audio.microphone")) {
-            runCatching { controller.requestFeature("audio.microphone", true) }.onFailure { localError = "RD_MICROPHONE_UNAVAILABLE" }
-        } else localError = "RD_MICROPHONE_PERMISSION_DENIED"
+    val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val session = saveSession; val id = saveFileId
+        if (uri != null && session != null && id != null) {
+            runCatching { controller.saveFile(session, id, uri) }.onFailure { localError = "RD_FILE_SESSION_CHANGED" }
+        }
+        saveSession = null; saveFileId = null
     }
     LaunchedEffect(controller) { controller.refresh() }
     LaunchedEffect(initialCode) {
@@ -152,15 +166,23 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
         activity?.requestedOrientation = if (landscape && state.sessionId != null) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
-    LaunchedEffect(state.sessionId) { if (state.sessionId == null) { sessionPanel = null; landscape = false } }
+    LaunchedEffect(state.sessionId, accountKey) {
+        selected = emptyList(); localError = null
+        if (state.sessionId == null) { sessionPanel = null; landscape = false }
+    }
     val stage = remoteStage(state.loading, state.enabled, state.authenticated, state.phase, localError ?: state.error, state.pairing != null, state.sessionId != null)
-    val modes = connectModes(state.native.available, state.endpoints.any { it.unattendedEnabled })
+    val offered = state.endpoints.mapNotNull { it.offeredAccessModes }
+    val modes = connectModes(
+        state.native.available,
+        state.endpoints.any { hostOffersUnattended(it) },
+        if (offered.isEmpty()) null else offered.flatten().toSet(),
+    )
     val selectedMode = ConnectMode.entries.firstOrNull { it.name == assistMode } ?: ConnectMode.APPROVAL
     MaterialTheme(colorScheme = if (state.sessionId != null) darkColorScheme(background = Color(0xFF171A2A), surface = Color(0xFF20243A), primary = Color(0xFFAAA9FF)) else MaterialTheme.colorScheme) {
     if (state.sessionId != null) {
         RemoteSessionView(state, controller, localError, landscape, permissions, onLandscape = { landscape = !landscape },
             onBack = { controller.closeSession(); onBack() }, onPanel = { sessionPanel = it },
-            onControlError = { localError = it })
+            onControlError = { localError = it }, zoom = zoom, onZoom = { zoom = it })
     } else LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().imePadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -260,7 +282,7 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
             Text(stringResource(R.string.remote_permissions), style = MaterialTheme.typography.titleMedium)
             P.permissions.forEach { permission ->
                 Row {
-                    Checkbox(checked = permission in permissions, enabled = permission != "view" && !state.loading && (!state.native.available || permission in state.native.permissions),
+                    Checkbox(checked = permission in permissions, enabled = permission != "view" && permission != "audio.microphone" && !state.loading && permission in state.native.permissions,
                         onCheckedChange = { enabled -> permissions = if (enabled) permissions + permission else permissions - permission })
                     Text(permissionLabel(permission), Modifier.padding(top = 12.dp))
                 }
@@ -288,7 +310,7 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
     }
     if (sessionPanel != null && state.sessionId != null) {
         ModalBottomSheet(onDismissRequest = { sessionPanel = null }, containerColor = Color(0xFF232739)) {
-            Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(start = 22.dp, end = 22.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (sessionPanel) {
                     "keyboard" -> {
                         Text(stringResource(R.string.remote_keyboard_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -313,17 +335,37 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
                             else -> stringResource(R.string.remote_text_failed)
                         }, style = MaterialTheme.typography.bodySmall) }
                     }
+                    "display" -> {
+                        Text(stringResource(R.string.remote_display), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.remote_display_switch_note), style = MaterialTheme.typography.bodySmall)
+                        state.displays.forEachIndexed { index, display ->
+                            FilterChip(selected = display.id == state.display?.id, enabled = state.phase == "active", onClick = {
+                                runCatching { controller.selectDisplay(requireNotNull(display.id)); sessionPanel = null }
+                                    .onFailure { localError = "RD_DISPLAY_UNAVAILABLE" }
+                            }, label = {
+                                Column(Modifier.padding(vertical = 6.dp)) {
+                                    Text(display.name ?: stringResource(R.string.remote_display_number, index + 1))
+                                    Text(displayCaption(display), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                        }
+                        Text(stringResource(R.string.remote_zoom_percent, (zoom * 100).toInt()))
+                        Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 1f..4f)
+                        TextButton(onClick = { zoom = 1f }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_zoom_fit)) }
+                        Text(stringResource(R.string.remote_zoom_hint), style = MaterialTheme.typography.bodySmall)
+                    }
                     "audio" -> {
                         Text(stringResource(R.string.remote_audio_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        if (controller.canUse("audio.system")) OutlinedButton(onClick = {
-                            runCatching { controller.requestFeature("audio.system", true) }.onFailure { localError = "RD_AUDIO_UNAVAILABLE" }
-                        }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_audio_request)) }
-                        if (controller.canUse("audio.microphone")) OutlinedButton(onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                                runCatching { controller.requestFeature("audio.microphone", true) }.onFailure { localError = "RD_MICROPHONE_UNAVAILABLE" }
-                            else microphone.launch(Manifest.permission.RECORD_AUDIO)
-                        }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_mic_request)) }
-                        Text(stringResource(R.string.remote_audio_note), style = MaterialTheme.typography.bodySmall)
+                        if (controller.canUse("audio.system") && controller.audioTransportReady()) {
+                            OutlinedButton(enabled = "audio.system" !in state.pendingFeatures, onClick = {
+                                runCatching { controller.requestFeature("audio.system", !state.audioEnabled) }
+                                    .onFailure { localError = "RD_AUDIO_UNAVAILABLE" }
+                            }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(stringResource(if (state.audioEnabled) R.string.remote_audio_mute else R.string.remote_audio_request))
+                            }
+                            Text(stringResource(if ("audio.system" in state.pendingFeatures) R.string.remote_feature_pending
+                                else if (state.audioEnabled) R.string.remote_audio_playing else R.string.remote_audio_note))
+                        } else Text(stringResource(R.string.remote_audio_unavailable), style = MaterialTheme.typography.bodySmall)
                     }
                     "clipboard" -> {
                         Text(stringResource(R.string.remote_clipboard_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -332,19 +374,67 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
                     }
                     "files" -> {
                         Text(stringResource(R.string.remote_files_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        if (controller.canUse("files.send")) OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(stringResource(R.string.remote_files_choose))
+                        if (controller.canUse("files.send") && controller.filesTransportReady()) {
+                            OutlinedButton(enabled = !state.filePreparing, onClick = {
+                                pickerSession = state.sessionId; picker.launch(arrayOf("*/*"))
+                            }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.remote_files_choose))
+                            }
+                            if (selected.isNotEmpty()) {
+                                Text(stringResource(R.string.remote_files_selected, selected.joinToString { it.name }), style = MaterialTheme.typography.bodySmall)
+                                OutlinedButton(enabled = !state.filePreparing && "files.send" !in state.pendingFeatures, onClick = {
+                                    runCatching { controller.beginFileSend(selected); selected = emptyList() }.onFailure { localError = "RD_FILE_TRANSPORT_UNAVAILABLE" }
+                                }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_files_send)) }
+                                TextButton(onClick = { selected = emptyList() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text(stringResource(R.string.remote_files_cancel))
+                                }
+                            }
                         }
-                        Text(if (selected.isEmpty()) stringResource(R.string.remote_files_empty)
-                            else stringResource(R.string.remote_files_selected, selected.joinToString { it.name }), style = MaterialTheme.typography.bodySmall)
+                        if (controller.canUse("files.receive") && controller.filesTransportReady()) {
+                            OutlinedButton(enabled = "files.receive" !in state.pendingFeatures, onClick = {
+                                runCatching { controller.requestFeature("files.receive", !state.filesReceiveEnabled) }
+                                    .onFailure { localError = "RD_FILE_TRANSPORT_UNAVAILABLE" }
+                            }) { Text(stringResource(if (state.filesReceiveEnabled) R.string.remote_files_stop_receiving else R.string.remote_files_allow_receiving)) }
+                        }
+                        if (!controller.filesTransportReady()) Text(stringResource(R.string.remote_files_unavailable), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.remote_files_save_note), style = MaterialTheme.typography.bodySmall)
+                        if (state.filePreparing) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(stringResource(R.string.remote_files_preparing)) }
+                        state.fileTransfers.forEach { item ->
+                            HorizontalDivider()
+                            Text(item.name, style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(fileStateLabel(item.status)), style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.remote_files_progress, item.offset, item.size), style = MaterialTheme.typography.bodySmall)
+                            if (item.status == "progress") LinearProgressIndicator(progress = {
+                                if (item.size == 0L) 0f else (item.offset.toDouble() / item.size).toFloat().coerceIn(0f, 1f)
+                            }, modifier = Modifier.fillMaxWidth())
+                            if (!item.outgoing && item.status == "offer") OutlinedButton(
+                                enabled = state.filesReceiveEnabled && controller.canUse("files.receive"), onClick = {
+                                    runCatching { controller.acceptFile(item.id) }.onFailure { localError = "RD_FILE_WRITE_FAILED" }
+                                }) { Text(stringResource(R.string.remote_files_accept)) }
+                            if (item.status == "ready_to_save") OutlinedButton(onClick = {
+                                saveSession = state.sessionId; saveFileId = item.id; savePicker.launch(item.name)
+                            }) { Text(stringResource(R.string.remote_files_save)) }
+                            if (!item.terminal || item.status == "ready_to_save") TextButton(onClick = { controller.cancelFile(item.id) }) {
+                                Text(stringResource(R.string.remote_files_cancel_transfer))
+                            }
+                            item.error?.let { Text(stringResource(R.string.remote_files_retry), color = MaterialTheme.colorScheme.error) }
+                        }
                     }
                     else -> {
                         Text(stringResource(R.string.remote_session_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(state.hostName ?: stringResource(R.string.remote_host_fallback))
                         Text(stringResource(stageLabel(remoteStage(false, true, true, state.phase, state.error, false, true))))
-                        state.display?.let { Text("${it.width} × ${it.height}") }
-                        Text(stringResource(R.string.remote_scale_unavailable), style = MaterialTheme.typography.bodySmall)
+                        state.connectionPhase?.let { Text(stringResource(phaseLabel(it))) }
+                        state.failureAction?.takeIf { it != "none" }?.let { Text(stringResource(actionLabel(failureActionKey(it)))) }
+                        state.display?.let { display ->
+                            Text(displayCaption(display))
+                            if (!display.hasMetrics) Text(stringResource(R.string.remote_scale_unavailable), style = MaterialTheme.typography.bodySmall)
+                        }
                         Text(stringResource(R.string.remote_udp_note), style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(enabled = state.phase == "active", onClick = {
+                            runCatching { controller.retryConnection(); sessionPanel = null }
+                                .onFailure { localError = "RD_RECONNECT_UNAVAILABLE" }
+                        }) { Text(stringResource(R.string.remote_reconnect)) }
                     }
                 }
                 (localError ?: state.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -401,6 +491,44 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
     }
 }
 
+private fun fileStateLabel(status: String): Int = when (status) {
+    "offer" -> R.string.remote_files_waiting
+    "progress" -> R.string.remote_files_transferring
+    "complete" -> R.string.remote_files_delivered
+    "ready_to_save" -> R.string.remote_files_verified
+    "saving" -> R.string.remote_files_saving
+    "saved" -> R.string.remote_files_saved
+    "cancelled" -> R.string.remote_files_cancelled
+    else -> R.string.remote_files_failed
+}
+
+private fun phaseLabel(phase: String): Int = when (phase) {
+    "waiting_for_approval" -> R.string.remote_phase_approval
+    "direct_connect" -> R.string.remote_phase_direct
+    "active" -> R.string.remote_phase_active
+    "recovering" -> R.string.remote_phase_recovering
+    "ending" -> R.string.remote_phase_ending
+    "ended" -> R.string.remote_phase_ended
+    else -> R.string.remote_phase_unknown
+}
+
+private fun actionLabel(action: String): Int = when (action) {
+    "check_udp_path" -> R.string.remote_action_udp
+    "retry_session" -> R.string.remote_action_retry
+    "request_permission" -> R.string.remote_action_permission
+    "reauthenticate" -> R.string.remote_action_reauthenticate
+    "enable_host" -> R.string.remote_action_enable_host
+    "request_grant" -> R.string.remote_action_grant
+    "wait_for_host" -> R.string.remote_action_wait_host
+    "wait_for_approval" -> R.string.remote_action_wait_approval
+    "enable_unattended" -> R.string.remote_action_unattended
+    "reduce_permissions" -> R.string.remote_action_reduce
+    "new_session" -> R.string.remote_action_new
+    "reenroll" -> R.string.remote_action_reenroll
+    "switch_display" -> R.string.remote_action_display
+    else -> R.string.remote_action_unknown
+}
+
 private fun stageLabel(stage: RemoteStage): Int = when (stage) {
     RemoteStage.LOADING -> R.string.remote_stage_loading
     RemoteStage.UNAVAILABLE -> R.string.remote_stage_unavailable
@@ -431,6 +559,8 @@ private fun RemoteSessionView(
     onBack: () -> Unit,
     onPanel: (String) -> Unit,
     onControlError: (String) -> Unit,
+    zoom: Float,
+    onZoom: (Float) -> Unit,
 ) {
     val backdrop = Color(0xFF171A27)
     val toolbar = Color(0xFF202434)
@@ -456,9 +586,13 @@ private fun RemoteSessionView(
             val canvasWidth = minOf(maxWidth, maxHeight * aspect)
             val canvasHeight = canvasWidth / aspect
             Box(Modifier.width(canvasWidth).height(canvasHeight).clip(RoundedCornerShape(7.dp)).background(Color.Black)) {
-                AndroidView(factory = { viewContext -> RemoteSurfaceView(viewContext, controller) },
-                    update = { it.display(state.display) }, modifier = Modifier.fillMaxSize())
-                if (!connected) Text(stringResource(R.string.remote_connecting_overlay),
+                AndroidView(factory = { viewContext -> RemoteSurfaceView(viewContext, controller, onZoom) },
+                    update = { it.display(state.display); it.zoom(zoom) }, modifier = Modifier.fillMaxSize())
+                if (!connected) Text(stringResource(when (state.phase) {
+                    "switching_display" -> R.string.remote_switching_display
+                    "reconnecting" -> R.string.remote_reconnecting
+                    else -> R.string.remote_connecting_overlay
+                }),
                     Modifier.align(Alignment.Center).background(Color(0xCC151923), RoundedCornerShape(9.dp)).padding(14.dp),
                     color = Color.White, style = MaterialTheme.typography.bodySmall)
             }
@@ -486,7 +620,7 @@ private fun RemoteSessionView(
             }
             if (SessionControl.KEYBOARD in controls || SessionControl.UNICODE in controls) RemoteSessionTool(R.drawable.ic_session_keyboard, stringResource(R.string.remote_keyboard), false, Modifier.width(72.dp), true) { onPanel("keyboard") }
             if (SessionControl.CLIPBOARD in controls) RemoteSessionTool(R.drawable.ic_action_copy, stringResource(R.string.remote_clipboard), state.clipboardEnabled, Modifier.width(72.dp), true) { onPanel("clipboard") }
-            if (SessionControl.DISPLAY in controls) RemoteSessionTool(R.drawable.ic_session_display, stringResource(R.string.remote_display), false, Modifier.width(72.dp), true) { onPanel("info") }
+            if (SessionControl.DISPLAY in controls) RemoteSessionTool(R.drawable.ic_session_display, stringResource(R.string.remote_display), false, Modifier.width(72.dp), connected) { onPanel("display") }
             if (SessionControl.SYSTEM_AUDIO in controls || SessionControl.MICROPHONE in controls) RemoteSessionTool(R.drawable.ic_session_audio, stringResource(R.string.remote_audio), false, Modifier.width(72.dp), true) { onPanel("audio") }
             if (SessionControl.FILES in controls) RemoteSessionTool(R.drawable.ic_session_file, stringResource(R.string.remote_files), false, Modifier.width(72.dp), true) { onPanel("files") }
             RemoteSessionTool(R.drawable.ic_session_close, stringResource(R.string.remote_end), false, Modifier.width(72.dp), true, Color(0xFFFF9EAF), onBack)

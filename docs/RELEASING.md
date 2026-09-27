@@ -1,27 +1,52 @@
-# 发布流程
+# Android 候选构建与发行
 
-当前源码版本为 `9.0.0`，`compatibility.json` 使用 `public-release`，标签必须严格为 `v9.0.0`；APK/AAB 版本显示、文件名与源码完全一致。`HOME_TUNNEL_RELEASE_VERSION` 不允许覆盖为另一个版本。API 35 x86_64 模拟器已验证局域网画面与输入；交付的 arm64 APK 和真机均未经运行验收，不能将模拟器结果冒充为 arm64 验收。
+10.0.0 开发先固定源码，再构建候选包、完成安装与联调，最后发布同一批文件。当前版本字段保留 9.0.0 基线；正式冻结时统一更新四仓及自有 Agent，FRP 保留独立版本。历史版本、签名身份与协议标签保留。
 
-Android `versionCode` 独立递增，当前 9.0.0 使用 `9000000`，高于 8.0.0 的 `8000002`；每次新版本都必须高于所有已发布 APK/AAB（包含预发布）的编号。编号在 `gradle.properties` 中显式提交，不根据 Actions 次数、时间或语义版本公式重用。发布任务读取所有历史 Release 的证据并阻止降号、重复编号或覆盖已公开产物；同一个尚未公开标签的失败重试保持编号。
+## 导入同源 SDK
 
-发行流水线必须导入桌面仓库已发布、已验证且带签名的 Android Controller SDK，再构建 arm64 JNI；默认 CI 的双 ABI 安全核心不再作为远控发行包。SDK 尚未发布或缺少审核后的 `native/controller-sdk.lock.json` 时，发行在接触签名密钥前失败。签名证书、applicationId 必须保持不变，RC→正式版需要重新构建与验证。
+客户端的 `android-webrtc.yml` 通过 `candidate=true` 构建正式 arm64-v8a 和 x86_64 SDK。Android 从一个明确的成功 Actions run 导入：
 
-客户端先从最终 tag 构建 `HomeTunnel-Remote-SDK-<完整版本>-android-arm64.zip`，与原始桌面候选安装包一起经过原字节验收、封存并发布。Android 的只读 native snapshot 必须由该 SDK 的 `source/remote-artifact.json` 和源码 tar 导入，不能用开发 CI artifact 替代最终 Release。之后提交 `native/controller-sdk.lock.json`：`schema_version=1`、`repository=ZHanry/home-tunnel-client`、实际 `tag` / `source_revision` / `asset`，以及经审核的 SDK `sha256`、`android-sdk-provenance.json` 的 `provenance_sha256`、SDK 内 `android-webrtc-build.json` 的 `controller_manifest_sha256`。这些摘要只能取自真实产物，仓库当前不填占位摘要。
+```sh
+python scripts/import-sdk-candidate.py --run-id RUN_ID --revision CLIENT_COMMIT --import-source
+```
 
-`scripts/fetch-remote-controller.py` 验证 GitHub 已发布 Release、annotated tag 解引用后的 commit、固定 tag 的 Cosign 身份、客户端 `verification_stage=verified`、签名 SHA256 清单和上述固定摘要，再安全解包并调用严格同源导入器。发行附件保留 SDK 锁、SDK provenance、controller build manifest、native library 摘要和源码锁。`device_media_accepted=false` 保留在构建证据中；APK 构建通过不代表 Surface 解码、触控或实机验收通过。
+导入器核对 GitHub 产物摘要、Cosign 签名、固定工作流的构建证明、run/attempt、完整源码、公开头文件、依赖锁、编译器和每个文件的摘要。两个 ABI 必须同源，且满足 API 26 与 16 KiB ELF 对齐。提交真实生成的 `native/controller-sdk-candidate.lock.json` 与源码快照。源码快照只能重新导入，不能手工修补。
 
-APK/AAB 的 `assets/licenses` 同时保留项目许可证、SDK 中与链接目标对应的原始许可证、NDK 27.2.12479018 的 `NOTICE` 与 `NOTICE.toolchain`，以及绑定源码和库摘要的清单。发布校验核对两种安装包中的通知字节与 SDK 一致，Release 的 `android-native-*` 通知附件必须与包内文件相同。
+CI 使用 `python scripts/import-sdk-candidate.py --restore` 恢复该固定候选，保持已提交的锁与源码不变。恢复默认写入 `.cache/remote-controller/<ABI>`；现有输出不会覆盖。历史 9.0.0 的稳定版导入仍可使用 `fetch-remote-controller.py` 与其旧 Release 锁。
 
-正式版本使用 `vX.Y.Z` 标签。四个仓库与自有 Agent 使用相同版本，各组件独立构建，FRP 保留其第三方版本。源码版本与标签必须一致，`compatibility.json` 的阶段设为 `public-release`。
+## 构建候选包
 
-1. 提交代码到 `main`，等待 Quality Gate（包括 Android API 26 / 35 的密钥库与界面检查）、CodeQL 和 Secret scan 成功。
-2. 在已通过检查的提交上创建版本标签。
-3. 工作流构建完整安装包，运行组件检查，验证签名与产物身份。
-4. 完整构建证明、SBOM、扫描/安装报告及签名材料与安装包一起保存为 Release 附件；Actions 附件提供额外副本。保持封存的 `SHA256SUMS.txt` 与 Sigstore bundle 原样，不能在签名后重写或删减清单。
-5. 下载正式发布的安装文件，检查版本、签名与启动情况。
+在固定 Android 提交上，通过已有 `ci.yml` 的 `workflow_dispatch` 设置 `release_candidate=true`，调用 `android-candidate.yml`。候选流程验证仓库与 SDK，执行 JVM 测试和 Lint，使用现有 `android-release` 环境中的密钥，构建两个正式 APK 和 arm64 AAB。
 
-普通用户下载入口指向 Android `.apk`，桌面 `.exe` / `.zip` 或 Linux / macOS `.tar.gz`，服务端部署 `.tar.gz` 与 `compose.release.yaml`。Android `.aab` 和所有验证证据也在 Release 中持久保留。校验清单覆盖交付物和证据；APK 的 SHA-256 另外写入发布说明。项目入口仓库发布版本说明和发布清单并链接三个组件。
+`verify-android-candidate.py` 核对每个包的 applicationId、版本、最低 API、非调试属性、长期签名证书、ABI、原生库和许可证。两个 APK 各自携带对应 SDK；arm64 APK 与 AAB 的原生库和许可证必须一致。`seal-android-release-candidate.py` 将安装包、SPDX SBOM、校验和和构建材料绑定到源码及 Actions run，再由工作流签名和生成证明。
 
-Android 沿用已有发行签名。Windows/macOS 暂无平台证书，明确标注未签名；签名和公证流程已接入，半配置会阻止发布。API 1.3 契约固定于不可改写的 `api-v1.3.0`；保留历史契约标签。跨组件改动必须验证权限、设备隔离及兼容性。
+`android-release-candidate.json` 是不可变构建记录，始终保留 `acceptance_complete=false`。设备、UI 和升级证据应单独保存并绑定这个记录和安装包摘要，不能通过改写签名记录把构建成功变成验收通过。候选构建使用独立的 Candidate Build Gate，不能代替普通 CI 的 Quality Gate。
 
-先发布客户端并取得实际 Linux 包的 SHA-256，再更新服务端 `tests/client-baseline.json`，通过 amd64/arm64 发行联调后发布服务端。最后更新项目入口的 `releases.json`、网站副本和下载说明，使所有链接对应实际正式产物。9.0.0 的服务端和桌面版已发布；Android 发布成功后再更新项目入口清单。
+候选导入、独立验收和原文件提升已接入 `release.yml`。该入口只允许对现有版本标签手动调度，创建标签本身不会发布。当前链路仍需实际签名候选运行验证；在整包验收和提升链路都通过之前，不创建 10.0.0 标签或正式 Release。
+
+下载候选进行测试时，固定成功 run 的产物 ID 和 GitHub 提供的 ZIP SHA-256：
+
+```sh
+python scripts/fetch-android-candidate.py --run-id RUN_ID --artifact-id ARTIFACT_ID \
+  --artifact-sha256 ZIP_SHA256 --revision ANDROID_COMMIT --version VERSION --output candidate-import
+```
+
+下载器核对 CI 调度、完整源码 SHA、run/attempt、ZIP 摘要、所有文件的 Cosign 签名和工作流身份，以及候选清单和三个安装包的构建证明。测试完成后，将经审阅的验收记录提交到入口仓库 main 的 `validation/android/<ANDROID_COMMIT>/`，保持 Android 构建提交不变。记录格式见 [ANDROID_ACCEPTANCE.md](ANDROID_ACCEPTANCE.md)。实际日志、截图和抓包保留原始位置和摘要；记录不是代替实际测试的声明。
+
+正式调度 `release.yml` 时提供 `candidate_run_id`、`candidate_artifact_id`、`candidate_artifact_sha256` 和入口仓库完整 `acceptance_revision`。流程下载已验证候选及该固定提交的验收记录，重新检查两个 ABI 的原生库、许可证和包身份，原样复制安装包、SBOM 和候选签名，最后只签署发布总清单。正式流程不读取应用签名密钥，不调用 Gradle，也不重新生成安装包或 SBOM。
+
+## 版本与身份
+
+- 包名始终为 `io.github.zhanry.hometunnel`，沿用 `release-signing-cert.sha256` 中的发行证书。
+- `versionName` 必须与源码和最终标签一致。`HOME_TUNNEL_RELEASE_VERSION` 不能用来覆盖源码版本。
+- `versionCode` 显式提交，必须高于所有已公开稳定版及预发布包。候选测试不占用新的公开版本；相同候选不能在验收后重建再冒充同一文件。
+- 调试包、模拟器专用 CA 和临时修改过源码的 x64 库不具备正式发行资格。
+- 当前 API1.4 是草案。最终冻结为 `api-v1.4.0` 时更新生成类型和摘要锁，保留 `api-v1.3.0` 等历史不可变标签。
+
+## 正式发行门槛
+
+在实际本地虚拟机中验证 x64 最终包：API 35 全量功能、API 26 兼容、四种远控授权、撤销、显示器/DPI、输入、剪贴板、文件、系统音频、网络异常、升级与回退。Android 9.0.0 x64 基线必须同源且同证书，并记录其与历史 arm64 包的区别。arm64 单独记录构建、签名和实际运行范围。
+
+全部适用界面需要 Gemini 读取实际截图并审核，保存源码、安装包摘要、截图摘要和复审记录。源码或包变化后，复核受影响范围。30 次连接、两小时活动会话、24 小时在线和性能对比等共同门槛仍适用。
+
+验收通过后合入 main，并要求普通 Quality Gate、CodeQL、Secret scan 等检查通过。按客户端/共享 SDK、Android 与服务端、入口仓库的顺序发布 `v10.0.0`。发布经过验收的原文件以及校验和、SBOM、构建证明、升级说明和验收摘要；复核下载后再清理开发分支。
