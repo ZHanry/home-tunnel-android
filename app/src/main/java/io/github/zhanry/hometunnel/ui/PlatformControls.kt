@@ -110,7 +110,7 @@ private fun AccountPlatformDialog(mode: String, state: AppUiState, repository: H
             "enroll" -> platformText("设备接入码", "Device enrollment")
             else -> platformText("管理端诊断", "Management diagnostics")
         }) },
-        text = { Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        text = { Column(Modifier.imePadding().heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             when (mode) {

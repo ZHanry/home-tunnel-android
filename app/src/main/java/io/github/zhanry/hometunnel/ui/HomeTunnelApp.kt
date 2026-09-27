@@ -4,10 +4,14 @@ package io.github.zhanry.hometunnel.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -32,8 +36,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -79,6 +87,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -121,6 +130,18 @@ import io.github.zhanry.hometunnel.network.ReleaseUpdates
 import io.github.zhanry.hometunnel.repository.AppScreen
 import io.github.zhanry.hometunnel.repository.AppUiState
 import io.github.zhanry.hometunnel.repository.HomeTunnelRepository
+import io.github.zhanry.hometunnel.ui.nav.ShellLocation
+import io.github.zhanry.hometunnel.ui.nav.canOpenAdmin
+import io.github.zhanry.hometunnel.ui.nav.remoteHomeOrder
+import io.github.zhanry.hometunnel.ui.nav.systemBack
+import io.github.zhanry.hometunnel.ui.remote.nineDigitCode
+import io.github.zhanry.hometunnel.ui.theme.LocalThemeChoice
+import io.github.zhanry.hometunnel.ui.theme.ThemeChoice
+import io.github.zhanry.hometunnel.ui.theme.ThemePreferences
+import io.github.zhanry.hometunnel.ui.tunnel.TunnelDraftStore
+import io.github.zhanry.hometunnel.ui.tunnel.matchSubmittedTunnel
+import io.github.zhanry.hometunnel.ui.tunnel.suggestedSubdomain
+import io.github.zhanry.hometunnel.ui.tunnel.tunnelAccountKey
 import kotlinx.coroutines.launch
 
 @Composable
@@ -140,19 +161,22 @@ fun HomeTunnelApp(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        AnimatedContent(targetState = state.screen, label = "screen") { screen ->
-            when (screen) {
-                AppScreen.LOADING -> LoadingScreen()
-                AppScreen.LOGIN -> LoginScreen(state, repository)
-                AppScreen.PASSWORD_CHANGE -> PasswordChangeScreen(state, repository)
-                AppScreen.HOME -> key(state.persisted.activeAccountId) { HomeScreen(
-                    state = state,
-                    repository = repository,
-                    snackbar = snackbar,
-                ) }
-            }
+    val context = LocalContext.current
+    val reduceMotion = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    val screenContent: @Composable (AppScreen) -> Unit = { screen ->
+        when (screen) {
+            AppScreen.LOADING -> LoadingScreen()
+            AppScreen.LOGIN -> LoginScreen(state, repository)
+            AppScreen.PASSWORD_CHANGE -> PasswordChangeScreen(state, repository)
+            AppScreen.HOME -> key(state.persisted.activeAccountId) { HomeScreen(
+                state = state,
+                repository = repository,
+                snackbar = snackbar,
+            ) }
         }
+    }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (reduceMotion) screenContent(state.screen) else AnimatedContent(targetState = state.screen, label = "screen") { screenContent(it) }
         SnackbarHost(
             hostState = snackbar,
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
@@ -181,18 +205,15 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
     var passwordVisible by remember { mutableStateOf(false) }
     var mfa by remember { mutableStateOf("") }
     AuthFrame {
-        Box(Modifier.fillMaxWidth().height(166.dp).clip(RoundedCornerShape(24.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFFF1F0FF), Color(0xFFE9E8FF))))) {
-            Box(Modifier.align(Alignment.TopEnd).offset(x = 35.dp, y = (-55).dp).size(195.dp)
-                .border(1.dp, Color.White.copy(alpha = .65f), CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0xFFC9C8FF), Color(0xFFE9E8FF))), CircleShape))
-            Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.SpaceBetween) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 148.dp).clip(RoundedCornerShape(24.dp))
+            .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.secondaryContainer)))) {
+            Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 BrandMark()
-                Text("hometunnel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF252841))
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
         }
         Spacer(Modifier.height(18.dp))
-        Text("WELCOME BACK", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(stringResource(R.string.login_welcome), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(
             stringResource(R.string.login_heading),
             style = MaterialTheme.typography.headlineSmall,
@@ -348,17 +369,12 @@ internal fun HomeScreen(
     repository: HomeTunnelRepository,
     snackbar: SnackbarHostState,
 ) {
-    var editor by remember { mutableStateOf<ConnectionEdit?>(null) }
+    val accountKey = tunnelAccountKey(state.persisted.activeAccountId, state.persisted.profile?.apiBaseUrl, state.persisted.username)
+    var editor by rememberSaveable(stateSaver = ConnectionEditSaver) { mutableStateOf<ConnectionEdit?>(null) }
+    var reportWatch by remember { mutableStateOf<TunnelReportWatch?>(null) }
     var remoteOpen by rememberSaveable { mutableStateOf(false) }
+    var remoteCode by rememberSaveable { mutableStateOf("") }
     var updatesOpen by rememberSaveable { mutableStateOf(false) }
-    if (remoteOpen) {
-        io.github.zhanry.hometunnel.remote.RemoteScreen(repository.remote) { remoteOpen = false }
-        return
-    }
-    if (updatesOpen) {
-        UpdatesScreen { updatesOpen = false }
-        return
-    }
     var deleteTarget by remember { mutableStateOf<TunnelConnection?>(null) }
     var tab by rememberSaveable { mutableStateOf(0) }
     var selectedDevice by rememberSaveable { mutableStateOf("") }
@@ -369,11 +385,39 @@ internal fun HomeScreen(
     var selectedConnections by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val scrollState = pageScrollState(tab, when (tab) { 1 -> deviceSearch; 2 -> Triple(selectedDevice, search, tunnelFilter); else -> Unit })
+    LaunchedEffect(editor, accountKey) {
+        val current = editor ?: return@LaunchedEffect
+        if (current.changed()) TunnelDraftStore.shared.save(accountKey, current.value.id, current.exportState())
+    }
+    LaunchedEffect(state.isAdmin) { if (!canOpenAdmin(state.isAdmin) && tab == 4) tab = 0 }
+    val openRemote: (String) -> Unit = { deviceId ->
+        remoteCode = nineDigitCode(deviceId).orEmpty()
+        remoteOpen = true
+    }
+    if (remoteOpen) {
+        io.github.zhanry.hometunnel.remote.RemoteScreen(repository.remote, { remoteOpen = false }, accountKey, remoteCode)
+        return
+    }
+    if (updatesOpen) {
+        UpdatesScreen {
+            updatesOpen = ShellLocation(tab = tab, updates = true).systemBack().updates
+        }
+        return
+    }
     val tabLabels = listOf(R.string.nav_overview, R.string.nav_devices, R.string.nav_connections, R.string.nav_account, R.string.nav_management)
+    val tabKickers = listOf(R.string.tab_kicker_remote, R.string.tab_kicker_devices, R.string.tab_kicker_tunnels, R.string.tab_kicker_account, R.string.tab_kicker_admin)
     val tabIcons = listOf(R.drawable.ic_nav_remote, R.drawable.ic_nav_devices, R.drawable.ic_nav_tunnels, R.drawable.ic_nav_account)
     val visibleTabs = listOf(0, 1, 2, 3)
-    val scrollState = pageScrollState(tab, when (tab) { 1 -> deviceSearch; 2 -> Triple(selectedDevice, search, tunnelFilter); else -> Unit })
-    LaunchedEffect(state.isAdmin) { if (!state.isAdmin && tab == 4) tab = 0 }
+    BackHandler(enabled = tab == 4) {
+        tab = ShellLocation(tab).systemBack().tab
+    }
+    val closeEditor = {
+        val current = editor
+        if (current != null) TunnelDraftStore.shared.clear(accountKey, current.value.id)
+        reportWatch = null
+        editor = null
+    }
     val createConnection = {
         val available = state.devices.filter { it.status == "active" }
         if (available.isEmpty()) {
@@ -381,7 +425,8 @@ internal fun HomeScreen(
         } else {
             val deviceId = selectedDevice.takeIf { id -> available.any { it.id == id } }
                 ?: available.singleOrNull()?.id.orEmpty()
-            editor = ConnectionEdit(newHttpConnection(state, deviceId), true)
+            val seeded = newHttpConnection(state, deviceId).copy(subdomain = suggestedSubdomain(state.persisted.username.orEmpty()))
+            editor = ConnectionEdit(seeded, true)
         }
         Unit
     }
@@ -390,21 +435,38 @@ internal fun HomeScreen(
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("url", url))
         scope.launch { snackbar.showSnackbar(context.getString(R.string.copied_address)) }
     }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val wide = maxWidth >= 720.dp
+    Row(Modifier.fillMaxSize()) {
+    if (wide) {
+        NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
+            visibleTabs.forEach { index ->
+                NavigationRailItem(
+                    selected = tab == index || tab == 4 && index == 3,
+                    onClick = { tab = index },
+                    icon = { Icon(painterResource(tabIcons[index]), contentDescription = stringResource(tabLabels[index])) },
+                    label = { Text(stringResource(tabLabels[index])) },
+                )
+            }
+        }
+    }
     Scaffold(
+        modifier = Modifier.weight(1f),
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
         topBar = {
             TopAppBar(
                 title = { Column {
-                    Text(listOf("REMOTE DESKTOP", "MY DEVICES", "PRIVATE SERVICES", "ACCOUNT", "CONTROL CENTER")[tab], style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold)
+                    Text(stringResource(tabKickers[tab]), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(tabLabels[tab]), fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                 } },
-                actions = { if (tab != 4) IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy) {
+                actions = { if (tab != 4) IconButton(onClick = { repository.refreshConnections() }, enabled = !state.busy, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = stringResource(R.string.refresh_status))
                 } },
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            if (!wide) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 visibleTabs.forEach { index ->
                     NavigationBarItem(selected = tab == index || tab == 4 && index == 3, onClick = { tab = index },
                         icon = { Icon(painterResource(tabIcons[index]), contentDescription = null) },
@@ -431,46 +493,63 @@ internal fun HomeScreen(
                 if (state.stale) item { WarningCard(stringResource(R.string.cached_data_warning)) }
                 when (tab) {
                     0 -> {
-                        item { RemoteHomeHero { remoteOpen = true } }
-                        item { SectionLabel(platformText("我的远控设备", "My remote devices")) }
+                        item { RemoteHomeHero { openRemote("") } }
+                        item { Text(stringResource(R.string.remote_controller_only), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                        item { SectionLabel(stringResource(R.string.remote_all_devices)) }
                         if (state.devices.isEmpty()) item { OutlinedCard(Modifier.fillMaxWidth()) {
-                            Text(platformText("还没有登记设备。请先在电脑上安装桌面客户端。", "No devices yet. Install the desktop client on your computer first."), Modifier.padding(22.dp))
+                            Text(stringResource(R.string.remote_empty), Modifier.padding(22.dp))
                         } }
-                        items(state.devices.sortedWith(compareByDescending<ManagedDevice> { it.online }.thenBy { it.name }), key = { it.id }) { device ->
-                            RemoteHomeDevice(device.name, device.online && device.status == "active") { remoteOpen = true }
+                        items(remoteHomeOrder(state.devices), key = { it.id }) { device ->
+                            RemoteHomeDevice(device.name, device.online && device.status == "active", device.favorite) { openRemote(device.id) }
                         }
                         item { OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Text(platformText("无人值守", "Unattended access"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(platformText("被控电脑由管理员开启并绑定后，可在远控页面快捷连接；不支持时仍需单次授权。", "Once an administrator enables and binds the host, connect quickly from Remote Desktop. Otherwise one-session approval is required."), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.remote_unattended_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.remote_unattended_detail), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                             }
                         } }
                     }
                     1 -> {
                         item { OutlinedTextField(deviceSearch, { deviceSearch = it }, modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text(platformText("搜索设备名称或 ID", "Search name or ID")) }, singleLine = true,
+                            placeholder = { Text(stringResource(R.string.device_search)) }, singleLine = true,
                             leadingIcon = { Icon(painterResource(R.drawable.ic_action_search), contentDescription = null) }) }
                         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            SectionLabel(platformText("全部设备", "All devices"))
-                            Text(platformText("${state.devices.size} 台设备", "${state.devices.size} devices"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                            SectionLabel(stringResource(R.string.remote_all_devices))
+                            Text(stringResource(R.string.device_count, state.devices.size), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         } }
-                        val visibleDevices = state.devices.filter { it.name.contains(deviceSearch, true) || it.id.contains(deviceSearch, true) }
-                            .sortedWith(compareByDescending<ManagedDevice> { it.favorite }.thenByDescending { it.online })
+                        val visibleDevices = remoteHomeOrder(state.devices).filter { it.name.contains(deviceSearch, true) || it.id.contains(deviceSearch, true) }
                         if (visibleDevices.isEmpty()) item { EmptyDevicesCard(hasDevices = state.devices.isNotEmpty()) }
                         items(visibleDevices, key = { it.id }) { device ->
                             DeviceListCard(device, repository, state.connections.count { it.deviceId == device.id },
-                                onConnections = { selectedDevice = device.id; search = ""; tab = 2 }, onRemote = { remoteOpen = true })
+                                onConnections = { selectedDevice = device.id; search = ""; tab = 2 }, onRemote = { openRemote(device.id) })
                         }
                     }
                     2 -> {
                         item { TunnelsHero() }
+                        val pendingDraft = TunnelDraftStore.shared.load(accountKey, "")
+                        if (editor == null && pendingDraft != null) item {
+                            OutlinedCard(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(stringResource(R.string.wizard_draft_title), fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.wizard_draft_detail), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(onClick = { TunnelDraftStore.shared.clear(accountKey, "") }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                            Text(stringResource(R.string.discard))
+                                        }
+                                        Button(onClick = { editor = importConnectionEdit(pendingDraft) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                            Text(stringResource(R.string.wizard_draft_continue))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            SectionLabel(platformText("我的连接", "My connections"))
-                            Text(platformText("${state.connections.size} 条", "${state.connections.size} tunnels"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                            SectionLabel(stringResource(R.string.nav_connections))
+                            Text(stringResource(R.string.tunnel_count, state.connections.size), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         } }
                         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("all" to platformText("全部", "All"), "online" to platformText("运行中", "Running"), "paused" to platformText("已暂停", "Paused")).forEach { (key, label) ->
-                                FilterChip(selected = tunnelFilter == key, onClick = { tunnelFilter = key }, label = { Text(label) })
+                            listOf("all" to R.string.filter_all, "online" to R.string.filter_running, "paused" to R.string.filter_paused).forEach { (key, label) ->
+                                FilterChip(selected = tunnelFilter == key, onClick = { tunnelFilter = key }, label = { Text(stringResource(label)) })
                             }
                         } }
                         item { OutlinedTextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(),
@@ -495,19 +574,24 @@ internal fun HomeScreen(
                                     Checkbox(checked = connection.id in selectedConnections,
                                         enabled = connection.kind != ProxyKind.UNKNOWN && !state.busy && (selectedConnections.size < 50 || connection.id in selectedConnections),
                                         onCheckedChange = { checked -> selectedConnections = if (checked) selectedConnections + connection.id else selectedConnections - connection.id })
-                                    Text(platformText("选择此连接", "Select connection"))
+                                    Text(stringResource(R.string.select_connection))
                                 }
-                                ConnectionCard(connection, { editor = ConnectionEdit(connection, false) }, copyAddress)
+                                ConnectionCard(connection, {
+                                    editor = TunnelDraftStore.shared.load(accountKey, connection.id)?.let(::importConnectionEdit)
+                                        ?: ConnectionEdit(connection, false)
+                                }, copyAddress)
                             }
                         }
                     }
                     3 -> {
-                        item { AccountContent(state, repository, onManagement = { tab = 4 },
+                        item { AccountContent(state, repository, onManagement = { if (canOpenAdmin(state.isAdmin)) tab = 4 },
                             onUpdates = { updatesOpen = true }) { confirmLogout = true } }
                     }
                 }
             }
         }
+    }
+    }
     }
     if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false },
         title = { Text(stringResource(R.string.sign_out)) },
@@ -516,21 +600,39 @@ internal fun HomeScreen(
         dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.cancel)) } })
 
     editor?.let { edit ->
+        val watch = reportWatch
+        val reportSettled = watch != null && !state.busy && (state.error != null || state.stale || state.lastSyncedAt != watch.syncStamp)
+        val reported = if (watch != null && reportSettled && state.error == null) {
+            matchSubmittedTunnel(state.connections, watch.submitted, watch.previousIds, watch.isNew)
+        } else null
         ConnectionEditor(
             edit = edit,
             devices = state.devices,
             capabilities = state.capabilities,
-            username = state.persisted.username.orEmpty(),
             busy = state.busy,
             error = state.error,
+            reported = reported,
+            waitingForServer = watch != null && !reportSettled && state.error == null,
+            reportUnconfirmed = watch != null && reportSettled && state.error == null && reported == null,
+            onEdit = { editor = it },
+            onRefreshReport = { repository.refreshConnections() },
+            onCopyAddress = copyAddress,
+            onDone = { if (!state.busy) closeEditor() },
             onReloadLatest = {
                 repository.loadConnectionVersion(edit.value.id) { version ->
-                    editor = edit.copy(value = edit.value.copy(version = version))
+                    editor = edit.copy(value = edit.value.copy(version = version), baseline = edit.baseline.copy(version = version))
                 }
             },
-            onDismiss = { if (!state.busy) editor = null },
+            onDismiss = { if (!state.busy) closeEditor() },
             onSave = { value ->
-                repository.saveConnection(value, edit.isNew, edit.baseline) { editor = null }
+                editor = edit.copy(step = 3)
+                reportWatch = TunnelReportWatch(
+                    previousIds = state.connections.map { it.id }.toSet(),
+                    submitted = value,
+                    isNew = edit.isNew,
+                    syncStamp = state.lastSyncedAt,
+                )
+                repository.saveConnection(value, edit.isNew, edit.baseline) { }
             },
             onDelete = if (edit.isNew || edit.value.kind == ProxyKind.UNKNOWN) null else {
                 { deleteTarget = edit.value }
@@ -564,11 +666,11 @@ private fun RemoteHomeHero(onOpen: () -> Unit) {
         ).padding(23.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("CONNECT FROM ANYWHERE", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-        Text(platformText("你的电脑，\n就在身边。", "Your computer,\nwithin reach."), color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(platformText("选择设备，进入远程桌面。", "Choose a device to open remote desktop."), color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall)
-        Button(onClick = onOpen, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF4B4CC8))) {
-            Text(platformText("查看远控设备 →", "View remote devices →"))
+        Text(stringResource(R.string.remote_hero_kicker), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.remote_hero_title), color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.remote_hero_detail), color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall)
+        Button(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF4B4CC8))) {
+            Text(stringResource(R.string.remote_hero_action))
         }
     }
 }
@@ -581,10 +683,10 @@ private fun TunnelsHero() {
             .padding(23.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("YOUR SERVICES", color = Color.White.copy(alpha = .8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-        Text(platformText("家里的服务，\n随时能访问。", "Your services,\nwithin reach."), color = Color.White,
+        Text(stringResource(R.string.tunnel_hero_kicker), color = Color.White.copy(alpha = .8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.tunnel_hero_title), color = Color.White,
             style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text(platformText("远程桌面与内网穿透分开管理。", "Remote desktop and tunnels have separate workspaces."),
+        Text(stringResource(R.string.tunnel_hero_detail),
             color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -596,8 +698,7 @@ private fun EmptyDevicesCard(hasDevices: Boolean) {
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(painterResource(R.drawable.ic_nav_devices), contentDescription = null,
                 modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
-            Text(if (hasDevices) platformText("没有匹配的设备", "No matching devices")
-                else platformText("还没有登记设备", "No registered devices"), fontWeight = FontWeight.Bold)
+            Text(stringResource(if (hasDevices) R.string.devices_no_match else R.string.devices_empty_title), fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -630,8 +731,8 @@ private fun DeviceListCard(device: ManagedDevice, repository: HomeTunnelReposito
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onConnections) { Text(platformText("查看连接", "View tunnels")) }
-                OutlinedButton(onClick = onRemote, enabled = online) { Text(platformText("远控入口", "Remote access")) }
+                TextButton(onClick = onConnections, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.view_tunnels)) }
+                OutlinedButton(onClick = onRemote, enabled = online, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_entry)) }
             }
             DeviceMetadataControls(device, repository)
         }
@@ -639,7 +740,7 @@ private fun DeviceListCard(device: ManagedDevice, repository: HomeTunnelReposito
 }
 
 @Composable
-private fun RemoteHomeDevice(name: String, online: Boolean, onOpen: () -> Unit) {
+private fun RemoteHomeDevice(name: String, online: Boolean, favorite: Boolean, onOpen: () -> Unit) {
     OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -648,12 +749,19 @@ private fun RemoteHomeDevice(name: String, online: Boolean, onOpen: () -> Unit) 
                 }
                 Column(Modifier.weight(1f)) {
                     Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(if (online) platformText("在线", "Online") else platformText("离线", "Offline"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        listOfNotNull(
+                            stringResource(if (online) R.string.status_online else R.string.status_offline),
+                            if (favorite) stringResource(R.string.favorite_mark) else null,
+                        ).joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                OutlinedButton(onClick = onOpen, enabled = online) { Text(platformText("打开远控", "Open remote")) }
+                OutlinedButton(onClick = onOpen, enabled = online, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.open_remote)) }
             }
         }
     }
@@ -784,7 +892,7 @@ private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository,
             }
         }
         PlatformAccountControls(state, repository)
-        if (state.isAdmin) OutlinedButton(onClick = onManagement, modifier = Modifier.fillMaxWidth()) {
+        if (canOpenAdmin(state.isAdmin)) OutlinedButton(onClick = onManagement, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Icon(painterResource(R.drawable.ic_action_shield), contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.nav_management))
@@ -793,10 +901,10 @@ private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository,
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.language)); LanguageMenu(compact = false)
         }
-        Text(stringResource(R.string.theme_system), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ThemeChoices()
         HorizontalDivider()
         SectionLabel(stringResource(R.string.about_app))
-        OutlinedButton(onClick = onUpdates, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onUpdates, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.check_update))
@@ -809,7 +917,36 @@ private fun AccountContent(state: AppUiState, repository: HomeTunnelRepository,
 }
 
 @Composable
+private fun ThemeChoices() {
+    val context = LocalContext.current
+    val selected = LocalThemeChoice.current
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.theme_heading), fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+        listOf(
+            ThemeChoice.SYSTEM to R.string.theme_option_system,
+            ThemeChoice.LIGHT to R.string.theme_option_light,
+            ThemeChoice.DARK to R.string.theme_option_dark,
+        ).forEach { (choice, label) ->
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                    selected = selected == choice,
+                    onClick = { ThemePreferences.save(context, choice) },
+                    role = Role.RadioButton,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selected == choice, onClick = null)
+                Spacer(Modifier.width(12.dp))
+                Text(stringResource(label))
+            }
+        }
+        Text(stringResource(R.string.theme_system), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
 private fun UpdatesScreen(onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val latestMessage = stringResource(R.string.update_current)
@@ -818,13 +955,13 @@ private fun UpdatesScreen(onBack: () -> Unit) {
     var release by remember { mutableStateOf<AvailableUpdate?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-        .statusBarsPadding().navigationBarsPadding()) {
+        .statusBarsPadding().navigationBarsPadding().imePadding()) {
         Column(Modifier.align(Alignment.TopCenter).widthIn(max = 540.dp).fillMaxWidth()
             .verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(painterResource(R.drawable.ic_action_back), contentDescription = stringResource(R.string.cancel))
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.ic_action_back), contentDescription = stringResource(R.string.back))
                 }
                 Text(stringResource(R.string.check_update), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
@@ -837,9 +974,9 @@ private fun UpdatesScreen(onBack: () -> Unit) {
                             tint = MaterialTheme.colorScheme.primary)
                     }
                     Text(release?.let { stringResource(R.string.update_available, it.version) }
-                        ?: platformText("检查正式版本", "Check official releases"),
+                        ?: stringResource(R.string.updates_check_heading),
                         style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(message ?: platformText("仅检查 GitHub 正式 Release", "Only official GitHub Releases are checked"),
+                    Text(message ?: stringResource(R.string.updates_check_detail),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = {
                         checking = true
@@ -863,18 +1000,17 @@ private fun UpdatesScreen(onBack: () -> Unit) {
                     }
                 }
             }
-            SectionLabel(platformText("更新设置", "Update settings"))
+            SectionLabel(stringResource(R.string.updates_settings))
             OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-                    UpdateDetailRow(platformText("当前版本", "Current version"), BuildConfig.VERSION_NAME)
+                    UpdateDetailRow(stringResource(R.string.updates_current), BuildConfig.VERSION_NAME)
                     HorizontalDivider()
-                    UpdateDetailRow(platformText("检查方式", "Check method"), platformText("手动 · 正式版", "Manual · stable"))
+                    UpdateDetailRow(stringResource(R.string.updates_method), stringResource(R.string.updates_method_value))
                     HorizontalDivider()
-                    UpdateDetailRow(platformText("自动下载安装", "Automatic install"), platformText("未启用", "Disabled"))
+                    UpdateDetailRow(stringResource(R.string.updates_auto), stringResource(R.string.updates_auto_value))
                 }
             }
-            Text(platformText("私有候选包不会显示为公开更新。安装前请核对发布来源与完整性。",
-                "Private release candidates are not shown as public updates. Verify the source and integrity before installing."),
+            Text(stringResource(R.string.updates_note),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -928,6 +1064,13 @@ private fun LanguageMenu(compact: Boolean) {
 private fun BrandMark() {
     Image(painterResource(R.drawable.ic_home_tunnel), contentDescription = null, Modifier.size(56.dp))
 }
+
+private data class TunnelReportWatch(
+    val previousIds: Set<String>,
+    val submitted: TunnelConnection,
+    val isNew: Boolean,
+    val syncStamp: String?,
+)
 
 private fun newHttpConnection(state: AppUiState, deviceId: String): TunnelConnection = TunnelConnection(
     id = "",

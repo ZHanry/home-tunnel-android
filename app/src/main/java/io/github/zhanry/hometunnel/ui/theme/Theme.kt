@@ -6,6 +6,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 private val LightColors = lightColorScheme(
@@ -26,8 +28,8 @@ private val LightColors = lightColorScheme(
     surface = Color(0xFFFBFCFF),
     onSurface = Color(0xFF242640),
     surfaceVariant = Color(0xFFF1F2FA),
-    onSurfaceVariant = Color(0xFF666D82),
-    outline = Color(0xFF858BA2),
+    onSurfaceVariant = Color(0xFF3E445C),
+    outline = Color(0xFF5C6278),
     error = Color(0xFFBA1A1A),
 )
 
@@ -54,11 +56,20 @@ private val DarkColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
 )
 
+val LocalThemeChoice = staticCompositionLocalOf { ThemeChoice.SYSTEM }
+
 @Composable
-fun HomeTunnelTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        typography = Typography(),
-        content = content,
-    )
+fun HomeTunnelTheme(choice: ThemeChoice = ThemeChoice.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (choice) {
+        ThemeChoice.SYSTEM -> isSystemInDarkTheme()
+        ThemeChoice.LIGHT -> false
+        ThemeChoice.DARK -> true
+    }
+    CompositionLocalProvider(LocalThemeChoice provides choice) {
+        MaterialTheme(
+            colorScheme = if (dark) DarkColors else LightColors,
+            typography = Typography(),
+            content = content,
+        )
+    }
 }

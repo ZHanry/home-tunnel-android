@@ -109,4 +109,10 @@
     <string name="admin_audit_enabled">User enabled</string>
     <string name="admin_audit_password">Password reset</string>
     <string name="admin_audit_settings">System settings updated</string>
+    <string name="admin_pool_summary">Deployment pool: %1$d–%2$d; allocated %3$d; available %4$d</string>
+    <string name="admin_pool_firewall">Enable this protocol in deployment configuration and the firewall first.</string>
+    <string name="admin_pool_enable">Allow new connections</string>
+    <string name="admin_pool_first">First port</string>
+    <string name="admin_pool_last">Last port</string>
+    <string name="admin_pool_unsupported">This server does not support port pool settings.</string>
 </resources>

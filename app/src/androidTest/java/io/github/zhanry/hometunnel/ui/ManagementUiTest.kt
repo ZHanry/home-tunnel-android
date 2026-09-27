@@ -88,6 +88,7 @@ class ManagementUiTest {
         openHome()
         navigate(R.string.nav_connections)
         compose.onNodeWithText(context.getString(R.string.add_connection), useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.wizard_step_device)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.choose_device)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.save)).assertIsNotEnabled()
         compose.onNodeWithText("家庭 NAS").performClick()

@@ -16,6 +16,14 @@ Android 是远程管理端，不在手机上运行 FRP 或保持隧道。需要�
 初次安装核对 Release 中的 SHA256SUMS 和签名证据。现有用户直接升级保留包名和签名，
 旧单账号加密状态自动迁移。不要卸载来“修复”升级：卸载可能丢失本地密钥与保存账号。
 
+## Controller UI
+
+The phone is a controller and management client. Light, dark, and system themes are a device preference. Remote, devices, tunnels, and account stay in one place; Back leaves a remote session, the update screen, or admin and returns to the previous management tab.
+
+New tunnels use four steps: device and template, local target, access, then review. Templates cover HTTP, HTTPS, TCP, UDP, NAS, Home Assistant, Immich, Jellyfin, SSH, RDP, and RTSP. A template is available only when the server capabilities allow its transport. The public port shown is the server assignment. A missing port stays unassigned. The review step does not report target health. Drafts keep the non-secret form for the active account.
+
+Remote connection offers approval, a one-time password, a fixed password, and unattended access. Unattended stays disabled until a host advertises it. Session tools for pointer, keyboard, Unicode text, clipboard, files, system audio, and microphone appear only after the packaged session authorizes that permission. Display scale and DPI are not edited here unless a session reports them.
+
 English: Android is a management client, not an FRP host. Use server 7.0.0. Save up
 to 20 encrypted server/account profiles, switch without cross-account caches,
 manage MFA/sessions/enrollment, create capability-authorized transports and edit

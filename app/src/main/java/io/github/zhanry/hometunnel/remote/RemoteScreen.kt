@@ -23,12 +23,15 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,9 +59,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -71,10 +78,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.saveable.rememberSaveable
 import io.github.zhanry.hometunnel.R
+import io.github.zhanry.hometunnel.ui.remote.ConnectMode
+import io.github.zhanry.hometunnel.ui.remote.RecentCodes
+import io.github.zhanry.hometunnel.ui.remote.RemoteStage
+import io.github.zhanry.hometunnel.ui.remote.SessionControl
+import io.github.zhanry.hometunnel.ui.remote.connectModes
+import io.github.zhanry.hometunnel.ui.remote.remoteStage
+import io.github.zhanry.hometunnel.ui.remote.visibleSessionControls
 import kotlinx.serialization.json.JsonPrimitive
-
-@Composable
-private fun text(zh: String, en: String): String = if (LocalConfiguration.current.locales[0].language == "zh") zh else en
 
 private tailrec fun Context.activity(): Activity? = when (this) {
     is Activity -> this
@@ -84,7 +95,7 @@ private tailrec fun Context.activity(): Activity? = when (this) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
+fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: String = "", initialCode: String = "") {
     val state by controller.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -93,9 +104,9 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
     var selected by remember { mutableStateOf(emptyList<RemoteSelectedFile>()) }
     var localError by remember { mutableStateOf<String?>(null) }
     var inputText by remember { mutableStateOf("") }
-    var assistDeviceId by remember { mutableStateOf("") }
+    var assistDeviceId by rememberSaveable { mutableStateOf(initialCode.filter(Char::isDigit).take(9)) }
     var assistPassword by remember { mutableStateOf("") }
-    var assistMode by remember { mutableStateOf("request") }
+    var assistMode by rememberSaveable { mutableStateOf(ConnectMode.APPROVAL.name) }
     var mfaRequired by remember { mutableStateOf(false) }
     var trustTarget by remember { mutableStateOf<RemoteEndpoint?>(null) }
     var trustPassword by remember { mutableStateOf("") }
@@ -117,6 +128,10 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
         } else localError = "RD_MICROPHONE_PERMISSION_DENIED"
     }
     LaunchedEffect(controller) { controller.refresh() }
+    LaunchedEffect(initialCode) {
+        val code = initialCode.filter(Char::isDigit).take(9)
+        if (code.length == 9) assistDeviceId = code
+    }
     LaunchedEffect(state.native.available, state.native.permissions) {
         if (state.native.available) permissions = (permissions intersect state.native.permissions) + "view"
     }
@@ -138,71 +153,111 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
             else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
     LaunchedEffect(state.sessionId) { if (state.sessionId == null) { sessionPanel = null; landscape = false } }
+    val stage = remoteStage(state.loading, state.enabled, state.authenticated, state.phase, localError ?: state.error, state.pairing != null, state.sessionId != null)
+    val modes = connectModes(state.native.available, state.endpoints.any { it.unattendedEnabled })
+    val selectedMode = ConnectMode.entries.firstOrNull { it.name == assistMode } ?: ConnectMode.APPROVAL
     MaterialTheme(colorScheme = if (state.sessionId != null) darkColorScheme(background = Color(0xFF171A2A), surface = Color(0xFF20243A), primary = Color(0xFFAAA9FF)) else MaterialTheme.colorScheme) {
     if (state.sessionId != null) {
-        RemoteSessionView(state, controller, localError, landscape, onLandscape = { landscape = !landscape },
+        RemoteSessionView(state, controller, localError, landscape, permissions, onLandscape = { landscape = !landscape },
             onBack = { controller.closeSession(); onBack() }, onPanel = { sessionPanel = it },
             onControlError = { localError = it })
-    } else LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (state.sessionId == null) item {
+    } else LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().imePadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { controller.closeSession(); onBack() }) { Text(text("返回", "Back")) }
-                TextButton(onClick = { controller.refresh() }, enabled = !state.loading) { Text(text("刷新", "Refresh")) }
+                TextButton(onClick = { controller.closeSession(); onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.back)) }
+                TextButton(onClick = { controller.refresh() }, enabled = !state.loading, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_refresh)) }
             }
-            Text(text("远程桌面", "Remote desktop"), style = MaterialTheme.typography.headlineMedium)
-            Text(text("选择设备，开始安全的 UDP 直连。", "Choose a device for a secure direct UDP connection."))
+            Text(stringResource(R.string.remote_title), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+            Text(stringResource(R.string.remote_intro))
+            Text(stringResource(stageLabel(stage)), color = MaterialTheme.colorScheme.primary, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
         if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-        if (state.error != null || localError != null) item {
-            Text(localError ?: state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
+        if ((state.error != null && state.error != "MFA_REQUIRED") || localError != null) item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(localError ?: state.error.orEmpty(), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                if (stage == RemoteStage.FAILED) {
+                    OutlinedButton(onClick = { localError = null; controller.refresh() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.remote_retry))
+                    }
+                }
+            }
         }
         if (!state.enabled && !state.loading) item {
-            OutlinedCard(Modifier.fillMaxWidth()) { Text(text("该服务器未启用远程桌面。现有隧道管理仍可使用。", "This server has not enabled remote desktop. Tunnel management remains available."), Modifier.padding(16.dp)) }
+            OutlinedCard(Modifier.fillMaxWidth()) { Text(stringResource(R.string.remote_unavailable), Modifier.padding(16.dp)) }
         }
         if (!state.native.available && state.sessionId == null) item {
             OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text("此预览包尚不能建立画面、音频或文件连接", "This preview cannot yet establish video, audio or file connections"))
-                Text(text("可验证账号身份与配对流程。远控引擎就绪后，连接功能才会开放。", "Account identity and pairing are available for verification. Connections become available when the remote engine is ready."), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.remote_native_title))
+                Text(stringResource(R.string.remote_native_detail), style = MaterialTheme.typography.bodySmall)
             } }
         }
         if (state.enabled && !state.authenticated && state.sessionId == null) item {
-            Button(onClick = { authenticate = true }, enabled = !state.loading) { Text(text("验证账号并启用此控制端", "Verify account and enroll this controller")) }
+            Button(onClick = { authenticate = true }, enabled = !state.loading, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_enroll)) }
         }
         state.fingerprint?.takeIf { state.sessionId == null }?.let { fingerprint -> item {
-            Text(text("本机身份指纹", "This controller's fingerprint"), style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.remote_fingerprint), style = MaterialTheme.typography.labelLarge)
             Text(fingerprint, style = MaterialTheme.typography.bodySmall)
         } }
         if (state.authenticated && state.sessionId == null) item {
+            val recent = RecentCodes.read(context, accountKey)
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(text("连接其他账号", "Connect another account"), style = MaterialTheme.typography.titleMedium)
-                    Text(text("选择连接方式并输入被控端的 9 位设备 ID。", "Choose a method and enter the host's 9-digit device ID."), style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("request" to text("请求批准", "Request"), "fixed" to text("固定密码", "Fixed"), "temporary" to text("临时密码", "One-time")).forEach { (mode, label) ->
-                            if (assistMode == mode) Button(onClick = { assistMode = mode }, enabled = !state.loading) { Text(label) }
-                            else OutlinedButton(onClick = { assistMode = mode }, enabled = !state.loading) { Text(label) }
+                    Text(stringResource(R.string.remote_connect_other), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.remote_connect_other_detail), style = MaterialTheme.typography.bodySmall)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        modes.forEach { mode ->
+                            FilterChip(
+                                selected = selectedMode == mode.mode,
+                                onClick = { assistMode = mode.mode.name },
+                                enabled = mode.enabled && !state.loading,
+                                label = { Text(stringResource(modeLabel(mode.mode))) },
+                            )
                         }
                     }
-                    OutlinedTextField(assistDeviceId, { assistDeviceId = it.filter(Char::isDigit).take(9) },
-                        modifier = Modifier.fillMaxWidth(), label = { Text(text("设备 ID", "Device ID")) }, singleLine = true)
-                    if (assistMode != "request") OutlinedTextField(assistPassword, { assistPassword = it.take(128) },
-                        modifier = Modifier.fillMaxWidth(), label = { Text(if (assistMode == "fixed") text("固定密码", "Fixed password") else text("临时密码", "Temporary password")) },
-                        visualTransformation = PasswordVisualTransformation(), singleLine = true)
-                    Button(onClick = {
-                        when (assistMode) {
-                            "request" -> controller.requestAccess(assistDeviceId, permissions)
-                            "fixed" -> controller.fixedPassword(assistDeviceId, assistPassword, permissions)
-                            else -> controller.assist(assistDeviceId, assistPassword, permissions)
-                        }
-                        assistPassword = ""
-                    }, enabled = assistDeviceId.length == 9 && (assistMode == "request" || assistPassword.isNotBlank()) && state.native.available && !state.loading && state.pairing == null) {
-                        Text(if (assistMode == "request") text("发送连接请求", "Send request") else text("连接远程设备", "Connect remote device"))
+                    modes.firstOrNull { it.mode == selectedMode && !it.enabled }?.let { blocked ->
+                        Text(stringResource(if (blocked.blockedReason == "unattended") R.string.remote_mode_unattended_off else R.string.remote_mode_native_off),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
-                    if (assistMode == "request" && state.loading) Text(text("等待被控端批准，最多两分钟。", "Waiting for host approval, up to two minutes."), style = MaterialTheme.typography.bodySmall)
+                    if (selectedMode == ConnectMode.UNATTENDED) {
+                        if (modes.first { it.mode == ConnectMode.UNATTENDED }.enabled) {
+                            Text(stringResource(R.string.remote_trust_detail), style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else {
+                        if (recent.isNotEmpty()) {
+                            Text(stringResource(R.string.remote_recent), style = MaterialTheme.typography.labelLarge)
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                recent.forEach { code ->
+                                    FilterChip(selected = assistDeviceId == code, onClick = { assistDeviceId = code }, label = { Text(code) })
+                                }
+                            }
+                        }
+                        OutlinedTextField(assistDeviceId, { assistDeviceId = it.filter(Char::isDigit).take(9) },
+                            modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.remote_device_code)) }, singleLine = true)
+                        if (selectedMode != ConnectMode.APPROVAL) OutlinedTextField(assistPassword, { assistPassword = it.take(128) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(if (selectedMode == ConnectMode.FIXED) R.string.remote_password_fixed else R.string.remote_password_once)) },
+                            visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                        Button(onClick = {
+                            when (selectedMode) {
+                                ConnectMode.APPROVAL -> controller.requestAccess(assistDeviceId, permissions)
+                                ConnectMode.FIXED -> controller.fixedPassword(assistDeviceId, assistPassword, permissions)
+                                ConnectMode.ONE_TIME -> controller.assist(assistDeviceId, assistPassword, permissions)
+                                ConnectMode.UNATTENDED -> Unit
+                            }
+                            if (selectedMode != ConnectMode.UNATTENDED) {
+                                RecentCodes.push(context, accountKey, assistDeviceId)
+                                assistPassword = ""
+                            }
+                        }, enabled = selectedMode != ConnectMode.UNATTENDED && assistDeviceId.length == 9 && (selectedMode == ConnectMode.APPROVAL || assistPassword.isNotBlank()) && state.native.available && !state.loading && state.pairing == null,
+                            modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(stringResource(if (selectedMode == ConnectMode.APPROVAL) R.string.remote_send_request else R.string.remote_connect))
+                        }
+                        if (selectedMode == ConnectMode.APPROVAL && state.loading) Text(stringResource(R.string.remote_waiting_approval), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
             HorizontalDivider()
-            Text(text("本次配对请求的权限", "Permissions requested for this pairing"), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.remote_permissions), style = MaterialTheme.typography.titleMedium)
             P.permissions.forEach { permission ->
                 Row {
                     Checkbox(checked = permission in permissions, enabled = permission != "view" && !state.loading && (!state.native.available || permission in state.native.permissions),
@@ -216,15 +271,15 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(endpoint.name, style = MaterialTheme.typography.titleMedium)
                     Text(endpoint.fingerprint, style = MaterialTheme.typography.bodySmall)
-                    Text(if (endpoint.available) text("已在本机开启", "Enabled on host") else text("被控端未开启或已撤销", "Host disabled or revoked"))
-                    OutlinedButton(onClick = { controller.pair(endpoint, permissions) }, enabled = state.authenticated && state.native.available && endpoint.available && !state.loading && state.pairing == null) {
-                        Text(text("连接设备", "Connect device"))
+                    Text(if (endpoint.available) stringResource(R.string.remote_endpoint_on) else stringResource(R.string.remote_endpoint_off))
+                    OutlinedButton(onClick = { controller.pair(endpoint, permissions) }, enabled = state.authenticated && state.native.available && endpoint.available && !state.loading && state.pairing == null, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.remote_connect_device))
                     }
                     if (controller.canBindTrusted(endpoint, permissions)) {
                         OutlinedButton(onClick = {
                             trustTarget = endpoint; trustPassword = ""; trustMfa = ""; trustMfaRequired = false
-                        }, enabled = state.authenticated && state.native.available && !state.loading && state.pairing == null) {
-                            Text(text("绑定可信设备", "Trust this device"))
+                        }, enabled = state.authenticated && state.native.available && !state.loading && state.pairing == null, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.remote_trust))
                         }
                     }
                 }
@@ -236,8 +291,8 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 when (sessionPanel) {
                     "keyboard" -> {
-                        Text(text("键盘与文本", "Keyboard and text"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.remote_keyboard_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        if (controller.canUse("input.keyboard")) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("Esc" to 41, "Tab" to 43, "Enter" to 40, "⌫" to 42).forEach { (label, usage) ->
                                 OutlinedButton(enabled = state.inputEnabled && controller.canUse("input.keyboard"), onClick = {
                                     runCatching { controller.key(usage, true); controller.key(usage, false) }
@@ -245,52 +300,51 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
                                 }) { Text(label) }
                             }
                         }
-                        OutlinedTextField(inputText, { if (it.toByteArray().size <= P.TEXT_BYTES) inputText = it },
-                            enabled = state.inputEnabled && controller.canUse("input.text"), modifier = Modifier.fillMaxWidth(),
-                            label = { Text(text("输入法文本", "Text input")) })
-                        Button(enabled = inputText.isNotEmpty() && state.textStatus != "pending" && state.inputEnabled && controller.canUse("input.text"), onClick = {
+                        if (controller.canUse("input.text")) OutlinedTextField(inputText, { if (it.toByteArray().size <= P.TEXT_BYTES) inputText = it },
+                            enabled = state.inputEnabled, modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.remote_text_label)) })
+                        if (controller.canUse("input.text")) Button(enabled = inputText.isNotEmpty() && state.textStatus != "pending" && state.inputEnabled, onClick = {
                             runCatching { controller.submitText(inputText); inputText = "" }.onFailure { localError = "RD_INPUT_FAILED" }
-                        }) { Text(text("发送文本", "Send text")) }
+                        }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_send_text)) }
                         state.textStatus?.let { status -> Text(when (status) {
-                            "pending" -> text("等待远端确认输入", "Waiting for remote confirmation")
-                            "confirmed" -> text("远端已确认输入", "Remote input confirmed")
-                            "unconfirmed" -> text("未收到确认，请先查看画面，避免重复输入", "Not confirmed. Check the screen before retrying")
-                            else -> text("远端未能输入文本", "Remote text input failed")
+                            "pending" -> stringResource(R.string.remote_text_pending)
+                            "confirmed" -> stringResource(R.string.remote_text_confirmed)
+                            "unconfirmed" -> stringResource(R.string.remote_text_unconfirmed)
+                            else -> stringResource(R.string.remote_text_failed)
                         }, style = MaterialTheme.typography.bodySmall) }
                     }
                     "audio" -> {
-                        Text(text("声音", "Audio"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        OutlinedButton(enabled = controller.canUse("audio.system"), onClick = {
+                        Text(stringResource(R.string.remote_audio_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        if (controller.canUse("audio.system")) OutlinedButton(onClick = {
                             runCatching { controller.requestFeature("audio.system", true) }.onFailure { localError = "RD_AUDIO_UNAVAILABLE" }
-                        }) { Text(text("请求接收远端声音", "Request remote system audio")) }
-                        OutlinedButton(enabled = controller.canUse("audio.microphone"), onClick = {
+                        }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_audio_request)) }
+                        if (controller.canUse("audio.microphone")) OutlinedButton(onClick = {
                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                                 runCatching { controller.requestFeature("audio.microphone", true) }.onFailure { localError = "RD_MICROPHONE_UNAVAILABLE" }
                             else microphone.launch(Manifest.permission.RECORD_AUDIO)
-                        }) { Text(text("请求麦克风回传", "Request microphone return")) }
-                        Text(text("声音需要会话授权；请求不会自动开启权限。", "Audio requires session permission; requesting it does not grant access."), style = MaterialTheme.typography.bodySmall)
+                        }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_mic_request)) }
+                        Text(stringResource(R.string.remote_audio_note), style = MaterialTheme.typography.bodySmall)
                     }
                     "clipboard" -> {
-                        Text(text("文本剪贴板", "Text clipboard"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(if (state.clipboardEnabled) text("已开启双向同步", "Two-way sync is on")
-                            else text("等待远端授权或系统剪贴板", "Waiting for remote authorization or system clipboard"))
-                        Text(text("连接且应用位于前台时自动同步纯文本，最多 64 KB。离开应用后立即暂停。", "Plain text syncs automatically while connected and foregrounded, up to 64 KB. It pauses when you leave the app."),
-                            style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.remote_clipboard_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(if (state.clipboardEnabled) stringResource(R.string.remote_clipboard_on) else stringResource(R.string.remote_clipboard_off))
+                        Text(stringResource(R.string.remote_clipboard_note), style = MaterialTheme.typography.bodySmall)
                     }
                     "files" -> {
-                        Text(text("文件", "Files"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        OutlinedButton(enabled = controller.canUse("files.send"), onClick = { picker.launch(arrayOf("*/*")) }) {
-                            Text(text("选择文件", "Choose files"))
+                        Text(stringResource(R.string.remote_files_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        if (controller.canUse("files.send")) OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.remote_files_choose))
                         }
-                        Text(if (selected.isEmpty()) text("尚未选择文件。文件传输仍需远端确认。", "No files selected. Transfer still requires host approval.")
-                            else text("已选择，尚未发送：", "Selected, not sent: ") + selected.joinToString { it.name }, style = MaterialTheme.typography.bodySmall)
+                        Text(if (selected.isEmpty()) stringResource(R.string.remote_files_empty)
+                            else stringResource(R.string.remote_files_selected, selected.joinToString { it.name }), style = MaterialTheme.typography.bodySmall)
                     }
                     else -> {
-                        Text(text("会话信息", "Session information"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(state.hostName ?: text("远程电脑", "Remote computer"))
-                        Text(text("连接状态：", "Connection: ") + state.phase)
+                        Text(stringResource(R.string.remote_session_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(state.hostName ?: stringResource(R.string.remote_host_fallback))
+                        Text(stringResource(stageLabel(remoteStage(false, true, true, state.phase, state.error, false, true))))
                         state.display?.let { Text("${it.width} × ${it.height}") }
-                        Text(text("仅使用 UDP 直连。切到后台会暂停输入与麦克风。", "Direct UDP only. Backgrounding pauses input and microphone."), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.remote_scale_unavailable), style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.remote_udp_note), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 (localError ?: state.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -301,48 +355,69 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit) {
     if (authenticate) {
         var password by remember { mutableStateOf("") }
         var mfa by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { authenticate = false }, title = { Text(text("重新验证账号", "Verify your account")) },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(password, { password = it }, label = { Text(text("密码", "Password")) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-                if (mfaRequired) OutlinedTextField(mfa, { mfa = it }, label = { Text(text("动态码或恢复码", "MFA or recovery code")) }, singleLine = true)
+        AlertDialog(onDismissRequest = { authenticate = false }, title = { Text(stringResource(R.string.remote_verify_title)) },
+            text = { Column(Modifier.imePadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(password, { password = it }, label = { Text(stringResource(R.string.password)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                if (mfaRequired) OutlinedTextField(mfa, { mfa = it }, label = { Text(stringResource(R.string.remote_mfa)) }, singleLine = true)
                 if (state.error != null && state.error != "MFA_REQUIRED") Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
             } },
             confirmButton = { Button(enabled = password.isNotEmpty() && !state.loading && (!mfaRequired || mfa.isNotBlank()), onClick = {
                 controller.authenticate(password, mfa)
-            }) { Text(text("验证", "Verify")) } },
-            dismissButton = { TextButton(onClick = { authenticate = false }) { Text(text("取消", "Cancel")) } })
+            }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.remote_verify_action)) } },
+            dismissButton = { TextButton(onClick = { authenticate = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cancel)) } })
     }
     trustTarget?.let { target ->
         AlertDialog(onDismissRequest = { if (!state.loading) { trustTarget = null; trustPassword = ""; trustMfa = ""; trustMfaRequired = false } },
-            title = { Text(text("绑定可信设备", "Trust this device")) },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            title = { Text(stringResource(R.string.remote_trust)) },
+            text = { Column(Modifier.imePadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(target.name)
-                Text(text("请重新验证账号；被控电脑的本机管理员仍需批准持续授权。", "Verify your account again. The host administrator must still approve persistent access."))
-                OutlinedTextField(trustPassword, { trustPassword = it }, label = { Text(text("密码", "Password")) },
+                Text(stringResource(R.string.remote_trust_detail))
+                OutlinedTextField(trustPassword, { trustPassword = it }, label = { Text(stringResource(R.string.password)) },
                     visualTransformation = PasswordVisualTransformation(), singleLine = true)
-                if (trustMfaRequired) OutlinedTextField(trustMfa, { trustMfa = it }, label = { Text(text("动态码或恢复码", "MFA or recovery code")) }, singleLine = true)
+                if (trustMfaRequired) OutlinedTextField(trustMfa, { trustMfa = it }, label = { Text(stringResource(R.string.remote_mfa)) }, singleLine = true)
                 state.error?.let { if (it != "MFA_REQUIRED") Text(it, color = MaterialTheme.colorScheme.error) }
             } },
             confirmButton = { Button(enabled = trustPassword.isNotEmpty() && !state.loading && (!trustMfaRequired || trustMfa.isNotBlank()),
                 onClick = { controller.bindTrusted(target, permissions, trustPassword, trustMfa); trustMfa = "" }) {
-                Text(text("验证并申请绑定", "Verify and request trust"))
+                Text(stringResource(R.string.remote_trust_action))
             } },
-            dismissButton = { TextButton(onClick = { trustTarget = null; trustPassword = ""; trustMfa = ""; trustMfaRequired = false }, enabled = !state.loading) {
-                Text(text("取消", "Cancel"))
+            dismissButton = { TextButton(onClick = { trustTarget = null; trustPassword = ""; trustMfa = ""; trustMfaRequired = false }, enabled = !state.loading, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.cancel))
             } })
     }
     state.pairing?.let { pending ->
         val assisted = pending.host.assistInviteId != null
-        AlertDialog(onDismissRequest = { controller.cancelPairing() }, title = { Text(if (assisted) text("正在验证连接", "Verifying connection") else text("等待被控端批准", "Waiting for host approval")) },
+        AlertDialog(onDismissRequest = { controller.cancelPairing() }, title = { Text(stringResource(if (assisted) R.string.remote_pairing_verify else R.string.remote_pairing_wait)) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(pending.host.name)
-                Text(pending.code ?: if (assisted) text("正在核对设备身份与本次授权。", "Checking the device identity and access grant.") else text("等待被控电脑本机批准。", "Waiting for approval on the host."))
-                Text(if (assisted) text("画面与标准输入将自动连接；附加功能仍需被控端支持。", "Screen and standard input connect automatically; extra features require host support.")
-                    else if (pending.transcript["mode"] == JsonPrimitive("persistent")) text("本机管理员批准后，将绑定此控制端并自动连接。持续授权可在被控端随时撤销。", "After the host administrator approves, this controller will be trusted and connect automatically. The host can revoke access at any time.")
-                    else text("批准后将自动建立安全连接。", "The secure connection starts automatically after approval."))
+                Text(pending.code ?: stringResource(if (assisted) R.string.remote_pairing_check else R.string.remote_pairing_host))
+                Text(when {
+                    assisted -> stringResource(R.string.remote_pairing_auto)
+                    pending.transcript["mode"] == JsonPrimitive("persistent") -> stringResource(R.string.remote_pairing_persistent)
+                    else -> stringResource(R.string.remote_pairing_secure)
+                })
             } },
-            confirmButton = { TextButton(onClick = { controller.cancelPairing() }, enabled = !state.loading) { Text(text("取消", "Cancel")) } })
+            confirmButton = { TextButton(onClick = { controller.cancelPairing() }, enabled = !state.loading, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.cancel)) } })
     }
+}
+
+private fun stageLabel(stage: RemoteStage): Int = when (stage) {
+    RemoteStage.LOADING -> R.string.remote_stage_loading
+    RemoteStage.UNAVAILABLE -> R.string.remote_stage_unavailable
+    RemoteStage.READY -> R.string.remote_stage_ready
+    RemoteStage.AUTHENTICATION -> R.string.remote_stage_auth
+    RemoteStage.APPROVAL -> R.string.remote_stage_approval
+    RemoteStage.DIRECT_UDP -> R.string.remote_stage_udp
+    RemoteStage.CONNECTED -> R.string.remote_stage_connected
+    RemoteStage.PAUSED -> R.string.remote_stage_paused
+    RemoteStage.FAILED -> R.string.remote_stage_failed
+}
+
+private fun modeLabel(mode: ConnectMode): Int = when (mode) {
+    ConnectMode.APPROVAL -> R.string.remote_mode_approval
+    ConnectMode.ONE_TIME -> R.string.remote_mode_once
+    ConnectMode.FIXED -> R.string.remote_mode_fixed
+    ConnectMode.UNATTENDED -> R.string.remote_mode_unattended
 }
 
 @Composable
@@ -351,6 +426,7 @@ private fun RemoteSessionView(
     controller: RemoteController,
     localError: String?,
     landscape: Boolean,
+    requested: Set<String>,
     onLandscape: () -> Unit,
     onBack: () -> Unit,
     onPanel: (String) -> Unit,
@@ -360,16 +436,20 @@ private fun RemoteSessionView(
     val toolbar = Color(0xFF202434)
     val muted = Color(0xFFADB4CC)
     val connected = state.phase == "active"
+    val authorized = P.permissions.filter { controller.canUse(it) }.toSet()
+    val controls = visibleSessionControls(authorized, state.display != null)
+    val stage = remoteStage(false, true, true, state.phase, localError ?: state.error, false, true)
     Column(Modifier.fillMaxSize().background(backdrop).statusBarsPadding().navigationBarsPadding()) {
-        Row(Modifier.fillMaxWidth().height(68.dp).background(Color(0xFF151923)).padding(horizontal = 12.dp),
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).background(Color(0xFF151923)).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_session_close), contentDescription = text("结束并返回", "End and go back")) }
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) { Icon(painterResource(R.drawable.ic_session_close), contentDescription = stringResource(R.string.remote_end_back)) }
             Column(Modifier.weight(1f)) {
-                Text(state.hostName ?: text("远程电脑", "Remote computer"), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                Text(text("远程控制 · UDP 直连", "Remote control · direct UDP"), color = muted, style = MaterialTheme.typography.labelSmall)
+                Text(state.hostName ?: stringResource(R.string.remote_host_fallback), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.remote_udp_label), color = muted, style = MaterialTheme.typography.labelSmall)
             }
-            Text(if (connected) text("● 已连接", "● Connected") else text("● 连接中", "● Connecting"),
-                color = if (connected) Color(0xFF72D4AD) else Color(0xFFF3CA7C), style = MaterialTheme.typography.labelSmall)
+            Text(stringResource(stageLabel(stage)),
+                color = if (connected) Color(0xFF72D4AD) else Color(0xFFF3CA7C), style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(backdrop), contentAlignment = Alignment.Center) {
             val aspect = state.display?.takeIf { it.width > 0 && it.height > 0 }?.let { it.width.toFloat() / it.height } ?: 16f / 9f
@@ -378,19 +458,20 @@ private fun RemoteSessionView(
             Box(Modifier.width(canvasWidth).height(canvasHeight).clip(RoundedCornerShape(7.dp)).background(Color.Black)) {
                 AndroidView(factory = { viewContext -> RemoteSurfaceView(viewContext, controller) },
                     update = { it.display(state.display) }, modifier = Modifier.fillMaxSize())
-                if (!connected) Text(text("正在建立安全连接…", "Establishing a secure connection…"),
+                if (!connected) Text(stringResource(R.string.remote_connecting_overlay),
                     Modifier.align(Alignment.Center).background(Color(0xCC151923), RoundedCornerShape(9.dp)).padding(14.dp),
                     color = Color.White, style = MaterialTheme.typography.bodySmall)
             }
-            if (connected) Text(if (state.inputEnabled) text("轻触点击 · 拖动移动鼠标", "Tap to click · drag to move pointer")
-                else text("仅查看 · 点按下方鼠标请求控制", "View only · tap Mouse to request control"),
+            if (connected) Text(
+                if (SessionControl.POINTER in controls && state.inputEnabled) stringResource(R.string.remote_input_hint)
+                else stringResource(R.string.remote_view_only),
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp), color = muted, style = MaterialTheme.typography.labelSmall)
             Row(Modifier.align(Alignment.TopEnd).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = { onPanel("info") }, modifier = Modifier.size(40.dp).background(toolbar, RoundedCornerShape(10.dp))) {
-                    Icon(painterResource(R.drawable.ic_session_info), contentDescription = text("会话信息", "Session information"), modifier = Modifier.size(19.dp))
+                IconButton(onClick = { onPanel("info") }, modifier = Modifier.size(48.dp).background(toolbar, RoundedCornerShape(10.dp))) {
+                    Icon(painterResource(R.drawable.ic_session_info), contentDescription = stringResource(R.string.remote_info), modifier = Modifier.size(19.dp))
                 }
-                IconButton(onClick = onLandscape, modifier = Modifier.size(40.dp).background(toolbar, RoundedCornerShape(10.dp))) {
-                    Icon(painterResource(R.drawable.ic_session_rotate), contentDescription = if (landscape) text("切换竖屏", "Portrait") else text("切换横屏", "Landscape"), modifier = Modifier.size(19.dp))
+                IconButton(onClick = onLandscape, modifier = Modifier.size(48.dp).background(toolbar, RoundedCornerShape(10.dp))) {
+                    Icon(painterResource(R.drawable.ic_session_rotate), contentDescription = stringResource(if (landscape) R.string.remote_portrait else R.string.remote_landscape), modifier = Modifier.size(19.dp))
                 }
             }
             (localError ?: state.error)?.let { error ->
@@ -398,17 +479,17 @@ private fun RemoteSessionView(
                     color = Color(0xFFFFC6CF), style = MaterialTheme.typography.labelSmall)
             }
         }
-        Row(Modifier.fillMaxWidth().height(70.dp).background(toolbar).padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            RemoteSessionTool(R.drawable.ic_session_mouse, text("鼠标", "Mouse"), state.inputEnabled, Modifier.weight(1f), connected) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).background(toolbar).horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (SessionControl.POINTER in controls) RemoteSessionTool(R.drawable.ic_session_mouse, stringResource(R.string.remote_mouse), state.inputEnabled, Modifier.width(72.dp), connected && "input.pointer" in requested) {
                 if (state.inputEnabled) runCatching { controller.releaseControl() }.onFailure { onControlError("RD_CONTROL_NOT_READY") }
                 else runCatching { controller.requestControl() }.onFailure { onControlError("RD_CONTROL_NOT_READY") }
             }
-            RemoteSessionTool(R.drawable.ic_session_keyboard, text("键盘", "Keyboard"), false, Modifier.weight(1f), true) { onPanel("keyboard") }
-            RemoteSessionTool(R.drawable.ic_action_copy, text("剪贴板", "Clipboard"), state.clipboardEnabled, Modifier.weight(1f), true) { onPanel("clipboard") }
-            RemoteSessionTool(R.drawable.ic_session_display, text("画面", "Display"), false, Modifier.weight(1f), true) { onPanel("info") }
-            RemoteSessionTool(R.drawable.ic_session_audio, text("声音", "Audio"), false, Modifier.weight(1f), true) { onPanel("audio") }
-            RemoteSessionTool(R.drawable.ic_session_file, text("文件", "Files"), false, Modifier.weight(1f), true) { onPanel("files") }
-            RemoteSessionTool(R.drawable.ic_session_close, text("断开", "End"), false, Modifier.weight(1f), true, Color(0xFFFF9EAF), onBack)
+            if (SessionControl.KEYBOARD in controls || SessionControl.UNICODE in controls) RemoteSessionTool(R.drawable.ic_session_keyboard, stringResource(R.string.remote_keyboard), false, Modifier.width(72.dp), true) { onPanel("keyboard") }
+            if (SessionControl.CLIPBOARD in controls) RemoteSessionTool(R.drawable.ic_action_copy, stringResource(R.string.remote_clipboard), state.clipboardEnabled, Modifier.width(72.dp), true) { onPanel("clipboard") }
+            if (SessionControl.DISPLAY in controls) RemoteSessionTool(R.drawable.ic_session_display, stringResource(R.string.remote_display), false, Modifier.width(72.dp), true) { onPanel("info") }
+            if (SessionControl.SYSTEM_AUDIO in controls || SessionControl.MICROPHONE in controls) RemoteSessionTool(R.drawable.ic_session_audio, stringResource(R.string.remote_audio), false, Modifier.width(72.dp), true) { onPanel("audio") }
+            if (SessionControl.FILES in controls) RemoteSessionTool(R.drawable.ic_session_file, stringResource(R.string.remote_files), false, Modifier.width(72.dp), true) { onPanel("files") }
+            RemoteSessionTool(R.drawable.ic_session_close, stringResource(R.string.remote_end), false, Modifier.width(72.dp), true, Color(0xFFFF9EAF), onBack)
         }
     }
 }
@@ -418,7 +499,7 @@ private fun RemoteSessionTool(icon: Int, label: String, selected: Boolean, modif
     tint: Color = Color(0xFFDDE2F2), onClick: () -> Unit) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         IconButton(onClick = onClick, enabled = enabled,
-            modifier = Modifier.size(38.dp).background(if (selected) Color(0xFF3D416B) else Color.Transparent, RoundedCornerShape(10.dp))) {
+            modifier = Modifier.size(48.dp).background(if (selected) Color(0xFF3D416B) else Color.Transparent, RoundedCornerShape(10.dp))) {
             Icon(painterResource(icon), contentDescription = label, modifier = Modifier.size(21.dp), tint = if (enabled) tint else tint.copy(alpha = .45f))
         }
         Text(label, color = if (selected) Color(0xFFB9B7FF) else tint, style = MaterialTheme.typography.labelSmall)
@@ -426,15 +507,15 @@ private fun RemoteSessionTool(icon: Int, label: String, selected: Boolean, modif
 }
 
 @Composable private fun permissionLabel(permission: String): String = when (permission) {
-    "view" -> text("查看画面", "View screen")
-    "input.keyboard" -> text("键盘", "Keyboard")
-    "input.pointer" -> text("鼠标与触控", "Pointer and touch")
-    "input.text" -> text("输入法文本", "IME text")
-    "audio.system" -> text("接收系统声音", "Receive system audio")
-    "audio.microphone" -> text("麦克风回传", "Microphone return")
-    "clipboard.read" -> text("读取远端文本剪贴板", "Read remote text clipboard")
-    "clipboard.write" -> text("写入远端文本剪贴板", "Write remote text clipboard")
-    "files.send" -> text("发送文件", "Send files")
-    "files.receive" -> text("接收文件", "Receive files")
+    "view" -> stringResource(R.string.remote_perm_view)
+    "input.keyboard" -> stringResource(R.string.remote_perm_keyboard)
+    "input.pointer" -> stringResource(R.string.remote_perm_pointer)
+    "input.text" -> stringResource(R.string.remote_perm_text)
+    "audio.system" -> stringResource(R.string.remote_perm_system_audio)
+    "audio.microphone" -> stringResource(R.string.remote_perm_mic)
+    "clipboard.read" -> stringResource(R.string.remote_perm_clip_read)
+    "clipboard.write" -> stringResource(R.string.remote_perm_clip_write)
+    "files.send" -> stringResource(R.string.remote_perm_files_send)
+    "files.receive" -> stringResource(R.string.remote_perm_files_receive)
     else -> permission
 }

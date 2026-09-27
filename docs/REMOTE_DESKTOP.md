@@ -46,6 +46,10 @@ request/grant/state/ACK sequence, and text success requires the matching host AC
 - Before native startup, Kotlin independently verifies the server ticket, lease and host-signed grant against the local account, selected endpoints and key fingerprints, server instance/restore epoch, session and original pairing request. One-session grants must name that exact request; renewal cannot change grant or account-token versions or extend past the grant/signing-key expiry. The shared public authorization vectors exercise cross-client rejection behavior.
 - Each input handshake uses a fresh UUID echoed by `CONTROL_GRANTED`, `INPUT_STATE` and `INPUT_SYNC_ACK`. Input stays disabled until the matching epoch/layout acknowledgement arrives. Backgrounding, surface loss, layout changes, explicit release and a five-second pending-handshake deadline invalidate it. Delayed acknowledgements leave the local session read-only rather than terminating video. Both Kotlin and the linked native controller enforce these gates independently.
 
+## Controller screen
+
+The remote screen is a controller. It offers approval, one-time password, fixed password, and unattended access. Unattended can be used only when a listed host advertises it and the existing trust path accepts the request. Video, pointer, keyboard, Unicode text, clipboard, files, system audio, and microphone controls are shown only when `canUse` reports that permission for the current session. Display width and height come from the session. Scale and DPI controls are omitted while the session does not report them. Direct UDP and the native handshake gates are unchanged. A missing media backend stays unavailable.
+
 ## Validation still required
 
 JVM protocol/crypto/state/transfer tests and AndroidKeyStore instrumentation are separate evidence. Successful compilation is not a physical-device test. Real Surface decoding, input lifecycle, Wi-Fi/cellular migration, codec negotiation, physical devices and sustained-session matrices remain required before claiming an accepted Android controller. Audio routes and actual clipboard/file transfer consent and transport need separate implementation and acceptance.

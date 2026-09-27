@@ -308,7 +308,7 @@ private fun AdminSettingsForm(value: AdminSettings, saved: AdminSettings?, busy:
                     onChange(value.copy(transportTunnels = if (name == "TCP") pools.copy(tcp = changed) else pools.copy(udp = changed)))
                 }
             }
-        } ?: Text(platformText("此服务器尚不支持端口池设置。", "This server does not support port pool settings."))
+        } ?: Text(stringResource(R.string.admin_pool_unsupported))
         Button(onClick = onSave, enabled = !busy && value != saved, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(stringResource(R.string.save)) }
     }
 }
@@ -418,7 +418,7 @@ private fun AdminUserEditor(user: AdminUser?, state: AdminUiState, controller: A
     val valid = validName && (user != null || validUsername)
     AlertDialog(onDismissRequest = { if (!state.saving) onDismiss() },
         title = { Text(stringResource(if (user == null) R.string.admin_new_user else R.string.admin_edit)) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        text = { Column(Modifier.imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (user == null) Text(stringResource(R.string.admin_create_hint))
             OutlinedTextField(username, { username = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, readOnly = user != null,
                 label = { Text(stringResource(R.string.admin_username)) }, enabled = !state.saving,
@@ -449,7 +449,7 @@ private fun AdminUserAction(user: AdminUser, action: String, state: AdminUiState
     }
     AlertDialog(onDismissRequest = { if (!state.saving) onDismiss() },
         title = { Text(stringResource(title)) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        text = { Column(Modifier.imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(warning)
             if (action == "delete") OutlinedTextField(confirmation, { confirmation = it }, enabled = !state.saving,
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -502,16 +502,19 @@ private tailrec fun Context.activity(): Activity? = when (this) {
 private fun TransportPoolForm(name: String, value: io.github.zhanry.hometunnel.model.TransportPool, busy: Boolean, onChange: (io.github.zhanry.hometunnel.model.TransportPool) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(name, style = MaterialTheme.typography.titleMedium)
-        Text(platformText("部署端口范围：${value.poolStart}–${value.poolEnd}；已分配 ${value.allocatedPorts}；可用 ${value.availablePorts}",
-            "Deployment pool: ${value.poolStart}–${value.poolEnd}; allocated ${value.allocatedPorts}; available ${value.availablePorts}"))
-        if (!value.deploymentReady) Text(platformText("请先在部署配置和防火墙开放此协议。", "Enable this protocol in deployment configuration and firewall first."))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        val poolStart = value.poolStart
+        val poolEnd = value.poolEnd
+        if (poolStart != null && poolEnd != null) {
+            Text(stringResource(R.string.admin_pool_summary, poolStart, poolEnd, value.allocatedPorts, value.availablePorts))
+        }
+        if (!value.deploymentReady) Text(stringResource(R.string.admin_pool_firewall))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)) {
             Switch(value.configuredEnabled, { onChange(value.copy(configuredEnabled = it)) }, enabled = !busy)
-            Text(platformText("允许新建连接", "Enable new connections"))
+            Text(stringResource(R.string.admin_pool_enable))
         }
         OutlinedTextField(value.portStart.toString(), { input -> onChange(value.copy(portStart = input.filter(Char::isDigit).take(5).toIntOrNull() ?: 0)) },
-            enabled = !busy, label = { Text(platformText("起始端口", "First port")) }, isError = value.portStart !in 1..65535)
+            enabled = !busy, label = { Text(stringResource(R.string.admin_pool_first)) }, isError = value.portStart !in 1..65535)
         OutlinedTextField(value.portEnd.toString(), { input -> onChange(value.copy(portEnd = input.filter(Char::isDigit).take(5).toIntOrNull() ?: 0)) },
-            enabled = !busy, label = { Text(platformText("结束端口", "Last port")) }, isError = value.portEnd !in value.portStart..65535)
+            enabled = !busy, label = { Text(stringResource(R.string.admin_pool_last)) }, isError = value.portEnd !in value.portStart..65535)
     }
 }

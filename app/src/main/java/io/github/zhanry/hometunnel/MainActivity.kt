@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.zhanry.hometunnel.ui.HomeTunnelApp
 import io.github.zhanry.hometunnel.ui.theme.HomeTunnelTheme
+import io.github.zhanry.hometunnel.ui.theme.ThemePreferences
 
 class MainActivity : AppCompatActivity() {
     private val repository
@@ -36,7 +37,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         setContent {
-            HomeTunnelTheme {
+            HomeTunnelTheme(ThemePreferences.current(this)) {
                 HomeTunnelApp(repository = repository)
             }
         }
