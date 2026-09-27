@@ -192,7 +192,7 @@ internal fun HomeTunnelContent(state: AppUiState, repository: HomeTunnelReposito
         if (reduceMotion) screenContent(state.screen) else AnimatedContent(targetState = state.screen, label = "screen") { screenContent(it) }
         SnackbarHost(
             hostState = snackbar,
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding(),
         )
     }
 }
