@@ -197,8 +197,8 @@ class UiReviewCaptureTest {
                 compose.activity.getSystemService(InputMethodManager::class.java)
                     .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
             }
-            compose.waitUntil(10_000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
             try {
+                compose.waitUntil(10_000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
                 compose.waitUntil(5_000) {
                     runCatching { compose.onAllNodes(hasSetTextAction() and isFocused()).onFirst().assertIsDisplayed() }.isSuccess
                 }
