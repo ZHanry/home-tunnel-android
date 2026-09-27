@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -133,7 +134,12 @@ class UiReviewCaptureTest {
         val empty = stateName == "empty"
         val profile = ServerProfile("https://console.example.test", "https://console.example.test/api/v1", "example.test", 7000, "example.test")
         val state = AppUiState(
-            screen = AppScreen.HOME,
+            screen = when (screen) {
+                "loading" -> AppScreen.LOADING
+                "login", "login-mfa" -> AppScreen.LOGIN
+                "password-change" -> AppScreen.PASSWORD_CHANGE
+                else -> AppScreen.HOME
+            },
             persisted = PersistedState(username = "review-user", userDisplayName = "Review User", profile = profile),
             currentUser = UserInfo("review-user", "review-user", "Review User", role, "normal"),
             busy = stateName == "loading", stale = stateName == "offline", loginMfaRequired = screen == "login-mfa",
@@ -143,14 +149,21 @@ class UiReviewCaptureTest {
                 TunnelConnection("automation", "study", "Home Assistant", "home", "http", publicUrl = "https://home.example.test", localPort = 8123, version = 1, state = "Pending"),
             ),
         )
+        val shownState = mutableStateOf(state)
+        val authentication = screen in setOf("login", "login-mfa", "password-change")
+        val noticeCode = if (authentication) when (stateName) {
+            "offline" -> "NETWORK_ERROR"
+            "error" -> if (screen == "login-mfa") "MFA_INVALID" else "AUTH_INVALID"
+            "no-permission" -> "USER_DISABLED"
+            else -> null
+        } else null
         val admin = if (adminPage != null) AdminRepository({ UiReviewAdminApi(stateName) }, { state.currentUser }).also { reviewAdmin = it } else null
         compose.setContent {
                 HomeTunnelTheme(choice) {
                     Surface(Modifier.fillMaxSize().testTag("ui-review-content")) {
                         when (screen) {
                             "loading" -> LoadingScreen()
-                            "login", "login-mfa" -> LoginScreen(state, repository)
-                            "password-change" -> PasswordChangeScreen(state, repository)
+                            "login", "login-mfa", "password-change" -> HomeTunnelContent(shownState.value, repository)
                             else -> when {
                                 admin != null -> HomeScreen(state, repository, remember { SnackbarHostState() }, administration = admin)
                                 wizardStep >= 0 -> UiReviewWizard(wizardStep.coerceAtMost(3), screen == "tunnel-result", template, stateName, state.devices)
@@ -224,6 +237,15 @@ class UiReviewCaptureTest {
             if (interaction == "search-empty")
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
+        // Deliver the notice after the real keyboard has settled. This exercises
+        // the production root snackbar, which isolated form captures omitted.
+        val noticeText = noticeCode?.let { localized.getString(userNoticeResource(it)) }
+        if (noticeCode != null) {
+            compose.runOnUiThread { shownState.value = state.copy(error = noticeCode) }
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithText(requireNotNull(noticeText)).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
         val frames = JSONArray()
         val foregroundMatcher = foregroundRootMatcher()
         val foregroundRoot = compose.onNode(foregroundMatcher).fetchSemanticsNode()
@@ -257,7 +279,7 @@ class UiReviewCaptureTest {
                 .put("semantics_file", semantics.name)
                 .put("semantics_sha256", MessageDigest.getInstance("SHA-256").digest(semantics.readBytes()).joinToString("") { "%02x".format(it) }))
             bitmap.recycle()
-            if (scroll == null || offset >= maximum - 0.5f || usesKeyboard) { complete = true; break }
+            if (scroll == null || offset >= maximum - 0.5f || usesKeyboard || noticeCode != null) { complete = true; break }
             previousOffset = offset
             compose.onAllNodes(matcher).onFirst().performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, scroll.boundsInRoot.height * 0.6f) }
         }
@@ -271,5 +293,15 @@ class UiReviewCaptureTest {
             .put("capture_method", "actual-device-scrolled-viewport")
             .put("locale_method", "Production application theme and AppCompat application locale verified on Activity resources; cold-start locale persistence not tested")
         File(directory, "capture.json").writeText(record.toString(2) + "\n")
+        if (noticeText != null) {
+            val notice = compose.onNodeWithText(noticeText).assertIsDisplayed().fetchSemanticsNode()
+            val insets = requireNotNull(ViewCompat.getRootWindowInsets(compose.activity.window.decorView))
+            val obstruction = if (usesKeyboard) insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                else insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val visibleBottom = compose.activity.window.decorView.height - obstruction
+            check(notice.boundsInWindow.bottom <= visibleBottom + 1f) {
+                "Production notice is below the visible window: ${notice.boundsInWindow.bottom} > $visibleBottom"
+            }
+        }
     }
 }

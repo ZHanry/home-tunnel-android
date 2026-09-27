@@ -157,11 +157,15 @@ fun HomeTunnelApp(
     repository: HomeTunnelRepository,
 ) {
     val state by repository.uiState.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
     if (state.screen == AppScreen.HOME) {
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { repository.refreshConnections(silent = true) }
     }
+    HomeTunnelContent(state, repository)
+}
 
+@Composable
+internal fun HomeTunnelContent(state: AppUiState, repository: HomeTunnelRepository) {
+    val snackbar = remember { SnackbarHostState() }
     val notice = state.error?.let { stringResource(userNoticeResource(it)) }
     LaunchedEffect(state.error, notice) {
         notice?.let {
