@@ -1,13 +1,15 @@
 package io.github.zhanry.hometunnel.ui
 
 import android.graphics.Bitmap
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
@@ -34,12 +36,24 @@ import io.github.zhanry.hometunnel.ui.theme.HomeTunnelTheme
 import java.io.File
 import org.junit.Rule
 import org.junit.Test
+import org.junit.After
+import org.junit.Before
 
 class ManagementUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Before @After fun clearOnlyThisFixtureDraft() {
+        TunnelDraftStore.shared.clear(tunnelAccountKey(null, "https://console.home.example/api/v1", "lin"), "")
+    }
+
     private fun openHome() {
+        compose.runOnUiThread {
+            // Match MainActivity and its manifest: adjustPan distorts the root
+            // bounds and cannot validate production keyboard layout.
+            compose.activity.enableEdgeToEdge()
+            compose.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
         val repository = HomeTunnelRepository(context, SecureStateStore(context))
         val state = AppUiState(
             persisted = PersistedState(username = "lin", userDisplayName = "林先生",
@@ -84,8 +98,8 @@ class ManagementUiTest {
         compose.onNodeWithText("家庭相册").assertIsDisplayed()
         compose.onNodeWithText("Home Assistant").assertDoesNotExist()
         capture("connections")
-        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
-        compose.onNodeWithText(context.getString(R.string.search_connections)).performTextInput("no-match")
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(context.getString(R.string.search_connections)))
+        compose.onNodeWithText(context.getString(R.string.search_connections)).assertIsDisplayed().performClick().performTextInput("no-match")
         compose.onNodeWithText("家庭相册").assertDoesNotExist()
         capture("search-empty")
         compose.onNodeWithText(context.getString(R.string.no_search_results)).assertIsDisplayed()
