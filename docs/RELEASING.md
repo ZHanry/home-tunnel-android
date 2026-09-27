@@ -4,7 +4,15 @@
 
 ## 导入同源 SDK
 
-客户端的 `android-webrtc.yml` 通过 `candidate=true` 构建正式 arm64-v8a 和 x86_64 SDK。Android 从一个明确的成功 Actions run 导入：
+完整客户端候选通过 `release.yml` 的 `candidate=true` 构建并封装同源 arm64-v8a 和 x86_64 SDK。Android 可直接导入成功 run 的原始 `candidate-assets`：
+
+```sh
+python scripts/import-sdk-candidate.py --candidate-format client --run-id RUN_ID --revision CLIENT_COMMIT --import-source
+```
+
+导入器验证原始 `client-candidate.json`、全部附件摘要、两个 ABI 各自的签名和构建证明。调用工作流必须是 `release.yml`，签名工作流必须是 `client-candidate.yml`，并且匹配同一源码、分支、run 和 attempt。它仅在内存中整理 ABI 信息；不会生成冒充原始签名记录的 SDK 清单。锁文件保存完整候选的产物 ID、摘要和原始清单摘要。
+
+独立的 SDK 构建仍可使用 `android-webrtc.yml` 的 `candidate=true`；其签名工作流为 `android-sdk-candidate.yml`，导入方式保留：
 
 ```sh
 python scripts/import-sdk-candidate.py --run-id RUN_ID --revision CLIENT_COMMIT --import-source
@@ -12,7 +20,7 @@ python scripts/import-sdk-candidate.py --run-id RUN_ID --revision CLIENT_COMMIT 
 
 导入器核对 GitHub 产物摘要、Cosign 签名、固定工作流的构建证明、run/attempt、完整源码、公开头文件、依赖锁、编译器和每个文件的摘要。两个 ABI 必须同源，且满足 API 26 与 16 KiB ELF 对齐。提交真实生成的 `native/controller-sdk-candidate.lock.json` 与源码快照。源码快照只能重新导入，不能手工修补。
 
-CI 使用 `python scripts/import-sdk-candidate.py --restore` 恢复该固定候选，保持已提交的锁与源码不变。恢复默认写入 `.cache/remote-controller/<ABI>`；现有输出不会覆盖。历史 9.0.0 的稳定版导入仍可使用 `fetch-remote-controller.py` 与其旧 Release 锁。
+CI 使用 `python scripts/import-sdk-candidate.py --restore` 按锁文件中的调用者、签名者和产物名称恢复对应格式，禁止混用两条链路，保持已提交的锁与源码不变。恢复默认写入 `.cache/remote-controller/<ABI>`；现有输出不会覆盖。历史 9.0.0 的稳定版导入仍可使用 `fetch-remote-controller.py` 与其旧 Release 锁。
 
 ## 构建候选包
 

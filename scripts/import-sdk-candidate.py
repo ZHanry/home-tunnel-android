@@ -1,9 +1,9 @@
 """Import a trusted Android SDK candidate from one fixed client Actions run.
 
 Historical stable arm64 Releases stay on scripts/fetch-remote-controller.py.
-This path does not invent a run, digest, or certificate subject. The signer
-workflow is the called android-sdk-candidate.yml. Its exact OIDC subject is
-unconfirmed until a bundle from a real run verifies.
+Two explicit formats are supported: the standalone SDK build and the complete
+client candidate. Their caller, signer and artifact names cannot be mixed.
+Exact source, run/attempt and certificate subjects must verify before import.
 """
 import argparse
 import hashlib
@@ -23,6 +23,10 @@ SIGNER_WORKFLOW = ".github/workflows/android-sdk-candidate.yml"
 IDENTITY_REGEXP = r"^https://github.com/ZHanry/home-tunnel-client/\.github/workflows/android-sdk-candidate\.yml@refs/"
 ABIS = ("arm64-v8a", "x86_64")
 PREFIXES = {"arm64-v8a": "android-webrtc-arm64", "x86_64": "android-webrtc-x86_64"}
+PROFILES = {
+    "standalone-sdk": (CALLER_WORKFLOW, SIGNER_WORKFLOW, "android-sdk-candidate", "android-sdk-candidate.json"),
+    "client": (".github/workflows/release.yml", ".github/workflows/client-candidate.yml", "candidate-assets", "client-candidate.json"),
+}
 
 
 def module(name):
@@ -52,11 +56,12 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def verify_run(run, revision, run_id, ref=None):
+def verify_run(run, revision, run_id, ref=None, candidate_format="standalone-sdk"):
+    caller, _, _, _ = PROFILES[candidate_format]
     if run.get("repository") != REPOSITORY:
         raise SystemExit("SDK candidate run is not from ZHanry/home-tunnel-client")
-    if run.get("path") != CALLER_WORKFLOW or run.get("event") != "workflow_dispatch":
-        raise SystemExit("SDK candidate run was not the registered android-webrtc dispatch")
+    if run.get("path") != caller or run.get("event") != "workflow_dispatch":
+        raise SystemExit("SDK candidate run was not the selected registered dispatch")
     if run.get("head_sha") != revision or not re.fullmatch(r"[0-9a-f]{40}", revision or ""):
         raise SystemExit("SDK candidate run does not match the requested commit")
     if str(run.get("id")) != str(run_id) or not re.fullmatch(r"[1-9][0-9]{0,19}", str(run_id)):
@@ -67,8 +72,8 @@ def verify_run(run, revision, run_id, ref=None):
         raise SystemExit("SDK candidate run is for a different ref")
 
 
-def verify_artifact(artifact, expected_sha):
-    if artifact.get("name") != "android-sdk-candidate":
+def verify_artifact(artifact, expected_sha, candidate_format="standalone-sdk"):
+    if artifact.get("name") != PROFILES[candidate_format][2]:
         raise SystemExit("SDK candidate artifact name mismatch")
     digest_value = str(artifact.get("digest", ""))
     if digest_value.startswith("sha256:"):
@@ -89,12 +94,17 @@ def verify_tree(directory, revision, verify_blob, identity=IDENTITY_REGEXP):
         raise SystemExit("SDK candidate caller or signer workflow mismatch")
     if record.get("caller_event") != "workflow_dispatch" or record.get("device_media_accepted") is not False:
         raise SystemExit("SDK candidate event or acceptance flag mismatch")
+    return verify_sdk_payload(record, directory, revision, verify_blob, identity, {"android-sdk-candidate.json"})
+
+
+def verify_sdk_payload(record, directory, revision, verify_blob, identity, other_subjects):
+    """Check both original ABI subjects after their enclosing index is verified."""
     abis = record.get("abis") or {}
     if set(abis) != set(ABIS):
         raise SystemExit("SDK candidate must contain arm64-v8a and x86_64")
     trees = set()
     locks = set()
-    subjects_seen = {"android-sdk-candidate.json"}
+    subjects_seen = set(other_subjects)
     for abi, item in abis.items():
         if item.get("production_controller") is not True or item.get("controller_backend_linked") is not True or item.get("device_media_accepted") is not False:
             raise SystemExit(f"SDK candidate ABI is not a production controller awaiting acceptance: {abi}")
@@ -147,7 +157,8 @@ def verify_tree(directory, revision, verify_blob, identity=IDENTITY_REGEXP):
     return record
 
 
-def write_lock(record, revision, run_id, artifact_sha, snapshot_matches, identity_observed):
+def write_lock(record, revision, run_id, artifact_sha, snapshot_matches, identity_observed, candidate_format="standalone-sdk"):
+    caller, signer, artifact, _ = PROFILES[candidate_format]
     abis = {abi: {"archive_sha256": item["archive_sha256"], "provenance_sha256": item["provenance_sha256"], "sbom_sha256": item["sbom_sha256"]}
             for abi, item in record["abis"].items()}
     return {
@@ -158,11 +169,11 @@ def write_lock(record, revision, run_id, artifact_sha, snapshot_matches, identit
         "source_revision": revision,
         "source_tree_sha256": record.get("source_tree_sha256"),
         "upstream_lock_sha256": record.get("upstream_lock_sha256"),
-        "caller_workflow": CALLER_WORKFLOW,
-        "signer_workflow": SIGNER_WORKFLOW,
-        "signer_identity_regexp": IDENTITY_REGEXP,
+        "caller_workflow": caller,
+        "signer_workflow": signer,
+        "signer_identity_regexp": "^" + re.escape(f"https://github.com/{REPOSITORY}/{signer}@refs/"),
         "signer_identity_observed": identity_observed,
-        "artifact_name": "android-sdk-candidate",
+        "artifact_name": artifact,
         "artifact_sha256": artifact_sha,
         "matches_android_snapshot": snapshot_matches,
         "abis": abis,
@@ -191,9 +202,9 @@ def import_candidate(run, artifact, directory, revision, run_id, artifact_sha, v
     return write_lock(record, revision, run_id, artifact_sha, snapshot_matches(record), identity_observed)
 
 
-def verify_attestation(path, revision, ref, run_id, attempt, evidence):
+def verify_attestation(path, revision, ref, run_id, attempt, evidence, candidate_format="standalone-sdk"):
     command = ["gh", "attestation", "verify", str(path), "--repo", REPOSITORY,
-               "--signer-workflow", REPOSITORY + "/" + SIGNER_WORKFLOW,
+               "--signer-workflow", REPOSITORY + "/" + PROFILES[candidate_format][1],
                "--source-digest", revision, "--source-ref", ref, "--signer-digest", revision,
                "--deny-self-hosted-runners", "--format", "json"]
     result = subprocess.check_output(command)
@@ -212,13 +223,16 @@ def verify_attestation(path, revision, ref, run_id, attempt, evidence):
     (evidence / (path.name + ".verification.json")).write_bytes(result)
 
 
-def extract_artifact(archive, directory):
+def extract_artifact(archive, directory, candidate_format="standalone-sdk"):
     if directory.exists():
         raise SystemExit("Candidate download extraction directory must be new")
     fetch = module("fetch-remote-controller")
     with zipfile.ZipFile(archive) as bundle:
         members = fetch.checked_members(bundle)
-        if len(members) > 32 or any("/" in name for name in members):
+        if (len(members) > (256 if candidate_format == "client" else 32) or
+                len({name.casefold() for name in members}) != len(members) or any(
+                    not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", name) or name.endswith(".") or
+                    re.fullmatch(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?", name, re.I) for name in members)):
             raise SystemExit("Unexpected SDK candidate artifact layout")
         directory.mkdir(parents=True)
         for name in members:
@@ -234,6 +248,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id")
     parser.add_argument("--revision")
+    parser.add_argument("--candidate-format", choices=tuple(PROFILES), help="Use client for SDKs sealed inside the complete client candidate")
     parser.add_argument("--cache", type=Path, default=ROOT / ".cache/sdk-candidate-download")
     parser.add_argument("--output", type=Path, default=ROOT / ".cache/remote-controller")
     parser.add_argument("--lock", type=Path, default=ROOT / "native/controller-sdk-candidate.lock.json")
@@ -242,8 +257,17 @@ def main():
     parser.add_argument("--cosign", default="cosign")
     args = parser.parse_args()
     pinned = read_json(args.lock) if args.restore else None
-    if args.restore and (args.run_id or args.revision or args.import_source):
+    if args.restore and (args.run_id or args.revision or args.import_source or args.candidate_format):
         parser.error("--restore uses only the committed lock and never replaces the source snapshot")
+    if pinned:
+        formats = [name for name, (caller, signer, artifact, _) in PROFILES.items()
+                   if (pinned.get("caller_workflow"), pinned.get("signer_workflow"), pinned.get("artifact_name")) == (caller, signer, artifact)]
+        if len(formats) != 1:
+            raise SystemExit("Pinned SDK candidate has an unknown caller/signer/artifact combination")
+        candidate_format = formats[0]
+    else:
+        candidate_format = args.candidate_format or "standalone-sdk"
+    _, signer, artifact_name, index_name = PROFILES[candidate_format]
     revision = pinned["source_revision"] if pinned else args.revision
     run_id = pinned["workflow_run_id"] if pinned else args.run_id
     if not re.fullmatch(r"[0-9a-f]{40}", str(revision)) or not re.fullmatch(r"[1-9][0-9]{0,19}", str(run_id)):
@@ -254,14 +278,14 @@ def main():
     run = api(f"repos/{REPOSITORY}/actions/runs/{run_id}")
     run["repository"] = run.get("repository", {}).get("full_name")
     run["ref"] = "refs/heads/" + run["head_branch"]
-    verify_run(run, revision, run_id)
+    verify_run(run, revision, run_id, candidate_format=candidate_format)
     artifacts = api(f"repos/{REPOSITORY}/actions/runs/{run_id}/artifacts?per_page=100")
-    matches = [value for value in artifacts["artifacts"] if value.get("name") == "android-sdk-candidate"]
+    matches = [value for value in artifacts["artifacts"] if value.get("name") == artifact_name]
     if len(matches) != 1:
         raise SystemExit("The successful run has no unique sealed SDK candidate")
     artifact = matches[0]
     artifact_sha = str(artifact.get("digest", "")).removeprefix("sha256:")
-    verify_artifact(artifact, artifact_sha)
+    verify_artifact(artifact, artifact_sha, candidate_format)
     if artifact.get("workflow_run", {}).get("id") != int(run_id) or artifact.get("workflow_run", {}).get("head_sha") != revision:
         raise SystemExit("Artifact belongs to a different source/run")
     if pinned and (artifact_sha != pinned.get("artifact_sha256") or str(artifact["id"]) != str(pinned.get("artifact_id")) or run["run_attempt"] != pinned.get("run_attempt")):
@@ -269,20 +293,23 @@ def main():
     args.cache.mkdir(parents=True)
     archive = args.cache / "artifact.zip"
     with archive.open("xb") as stream:
-        subprocess.run(["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip", "--allow-escape-sequences"], stdout=stream, check=True)
+        subprocess.run(["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip", "--allow-escape-sequences"], stdout=stream, check=True, timeout=1800)
     if digest(archive) != artifact_sha:
         raise SystemExit("Downloaded SDK artifact differs from the GitHub artifact digest")
     directory = args.cache / "subjects"
-    extract_artifact(archive, directory)
+    extract_artifact(archive, directory, candidate_format)
     evidence = args.cache / "verification"
-    verify_attestation(directory / "android-sdk-candidate.json", revision, run["ref"], run_id, run["run_attempt"], evidence)
-    identity = "^" + re.escape(f"https://github.com/{REPOSITORY}/{SIGNER_WORKFLOW}@{run['ref']}") + "$"
+    verify_attestation(directory / index_name, revision, run["ref"], run_id, run["run_attempt"], evidence, candidate_format)
+    identity = "^" + re.escape(f"https://github.com/{REPOSITORY}/{signer}@{run['ref']}") + "$"
 
     def verify_blob(path, bundle, expected_identity):
         subprocess.run([args.cosign, "verify-blob", "--bundle", str(bundle), "--certificate-identity-regexp", expected_identity,
                         "--certificate-oidc-issuer", "https://token.actions.githubusercontent.com", str(path)], check=True)
 
-    record = verify_tree(directory, revision, verify_blob, identity)
+    if candidate_format == "client":
+        record = module("client_sdk_candidate").verify_tree(directory, revision, run, verify_blob, identity)
+    else:
+        record = verify_tree(directory, revision, verify_blob, identity)
     if str(record.get("workflow_run_id")) != str(run_id):
         raise SystemExit("SDK candidate index was sealed for a different run")
     fetch = module("fetch-remote-controller")
@@ -292,7 +319,7 @@ def main():
     source_record = contents = source_tree = None
     for abi, item in record["abis"].items():
         for name in (item["archive"], item["provenance"]):
-            verify_attestation(directory / name, revision, run["ref"], run_id, run["run_attempt"], evidence)
+            verify_attestation(directory / name, revision, run["ref"], run_id, run["run_attempt"], evidence, candidate_format)
         extracted = args.cache / abi
         fetch.extract_sdk(directory / item["archive"], extracted, read_json(directory / item["provenance"]))
         packaged = read_json(extracted / "source/remote-artifact.json")
@@ -328,9 +355,9 @@ def main():
     for abi, (sdk, manifest, manifest_sha) in sdk_records.items():
         controller.stage_sdk(sdk, args.output / abi, manifest, source_record, manifest_sha, abi)
         subprocess.run([sys.executable, ROOT / "scripts/verify-remote-native.py", args.output / abi, "--abis", abi, "--production"], check=True)
-    lock = write_lock(record, revision, run_id, artifact_sha, snapshot_matches(record), True)
+    lock = write_lock(record, revision, run_id, artifact_sha, snapshot_matches(record), True, candidate_format)
     lock.update(artifact_id=str(artifact["id"]), run_attempt=run["run_attempt"], source_ref=run["ref"],
-                index_sha256=digest(directory / "android-sdk-candidate.json"), signer_identity_regexp=identity)
+                index_sha256=digest(directory / index_name), signer_identity_regexp=identity)
     for abi, (_, manifest, manifest_sha) in sdk_records.items():
         lock["abis"][abi].update(controller_manifest_sha256=manifest_sha,
                                  library_sha256=manifest["files"][f"lib/{abi}/libhome_tunnel_remote.so"])
