@@ -33,6 +33,8 @@ import io.github.zhanry.hometunnel.repository.AppUiState
 import io.github.zhanry.hometunnel.repository.HomeTunnelRepository
 import io.github.zhanry.hometunnel.storage.SecureStateStore
 import io.github.zhanry.hometunnel.ui.theme.HomeTunnelTheme
+import io.github.zhanry.hometunnel.ui.tunnel.TunnelDraftStore
+import io.github.zhanry.hometunnel.ui.tunnel.tunnelAccountKey
 import java.io.File
 import org.junit.Rule
 import org.junit.Test
