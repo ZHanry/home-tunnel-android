@@ -1,25 +1,25 @@
 {
   "abis": {
     "arm64-v8a": {
-      "archive_sha256": "cf8ad05ea04108a4d489d1bf60550cfad863529c10d257d30b10ab365eda6bf8",
-      "controller_manifest_sha256": "43732c7d164e78088f66d692511fd749d557d2cb715b96cf38257e7cda5bbd9a",
+      "archive_sha256": "cb4227ab6e97892b02cd918c271b6c3cf46a96949e465f8c0f5f4fdbe178ce7f",
+      "controller_manifest_sha256": "1e7126456f7c0a1783576969aca893e74c57ef0b498273c5e69ffd0b319dcd0d",
       "library_sha256": "317934a898bdbc395d527a965a3e604afc9b2dc1bbfe8603a3eccc40225224ec",
-      "provenance_sha256": "d29bace351e9dc0f966c182f127980cc86e66f4c440a10660131ee00c930342e",
-      "sbom_sha256": "d5f7f87d2cb3d082c3df1baa8bd352a8129b0985230b527239cf4f061fa06163"
+      "provenance_sha256": "b5975038d044ac2eb9e326a9b1b157d351a6e9cf517163b024d28ec733728db4",
+      "sbom_sha256": "dfe933850a1df8a6339273e22a93307b007ceda2e66f160c1593ae6bcec3a640"
     },
     "x86_64": {
-      "archive_sha256": "0cf8cce12cb7a5e6070d1353a6971b03a7cfa79ca3a73dc77e50a77dfc82220b",
-      "controller_manifest_sha256": "39c6c4904e540ef6e8d2b9211c44b01512ca6052934adb0ccfd679c1554bb613",
+      "archive_sha256": "3d56c7bc317cbf74e3c9b4889e052b3ccff2c74b6473c772ed1957eb2732348b",
+      "controller_manifest_sha256": "3c8b894ee73f5fbc31dc205f023598008014ac441d75241cfd6c49d06a84a161",
       "library_sha256": "88bf2bee61adf468c664fd41c1aa46f3476edf7e40bb15e95023ef15718fc0b6",
-      "provenance_sha256": "909ef9a100bc68e97ef04188f5b3943195aeae0e5450bf89b083d131da054061",
-      "sbom_sha256": "87b82c0174dc04265f8521b857d964f2df17d11b161a17b80a3cea7202cc79e3"
+      "provenance_sha256": "6a3f91100cab3a7824098c4465f7f42dc36e4d48312fdbd8bb4a7735ac506192",
+      "sbom_sha256": "8712e794d119b111546062e50c236c7b4d3f2e0672e2adc1c5773b7053527b7e"
     }
   },
-  "artifact_id": "10932217089",
+  "artifact_id": "10942127099",
   "artifact_name": "candidate-assets",
-  "artifact_sha256": "f8e8396834ba131f210155496dcf652df85e6607b2f76acaffecfe33ca1e27a5",
+  "artifact_sha256": "e36f03e4a1b2ce8aa2c5d0dd32ce71ad342b04d2ecd92406f9c53a986c75cd84",
   "caller_workflow": ".github/workflows/release.yml",
-  "index_sha256": "faa3b2d7a40e48451de36fef07e115654e26b5916535e4d397e4c49f494e4ff3",
+  "index_sha256": "81d7ef3f52799146d3266599cf526d86b5877684ca68d7c9edd3870320aba4bc",
   "matches_android_snapshot": true,
   "repository": "ZHanry/home-tunnel-client",
   "run_attempt": 1,
@@ -28,9 +28,9 @@
   "signer_identity_regexp": "^https://github\\.com/ZHanry/home\\-tunnel\\-client/\\.github/workflows/client\\-candidate\\.yml@refs/heads/codex/v10\\-overhaul$",
   "signer_workflow": ".github/workflows/client-candidate.yml",
   "source_ref": "refs/heads/codex/v10-overhaul",
-  "source_revision": "b35143a38d40613b5eb7f9cb08fc44ae28abb917",
+  "source_revision": "d10c04bd1d6a70d67384ff099cef85d95935ce43",
   "source_tree_sha256": "f20a17494f9ddf50a7fb1916fd53168af11959bd184f8aa0986ec80d284a6570",
   "status": "sdk-candidate-imported",
   "upstream_lock_sha256": "f0b0e46823e19a989fa14fece5d243be35939e742b247e77f45c6a17c714585d",
-  "workflow_run_id": "36317802734"
+  "workflow_run_id": "36348359127"
 }

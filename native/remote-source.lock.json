@@ -4,7 +4,7 @@
   "status": "security-core-only-media-unavailable",
   "controller_backend_linked": false,
   "production_controller": false,
-  "source_revision": "b35143a38d40613b5eb7f9cb08fc44ae28abb917",
+  "source_revision": "d10c04bd1d6a70d67384ff099cef85d95935ce43",
   "source_tree_dirty": false,
   "source_tree_sha256": "f20a17494f9ddf50a7fb1916fd53168af11959bd184f8aa0986ec80d284a6570",
   "source_archive": "home-tunnel-remote-source-f20a17494f9d.tar.gz",
