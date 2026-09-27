@@ -41,7 +41,7 @@ python scripts/fetch-android-candidate.py --run-id RUN_ID --artifact-id ARTIFACT
 - `versionName` 必须与源码和最终标签一致。`HOME_TUNNEL_RELEASE_VERSION` 不能用来覆盖源码版本。
 - `versionCode` 显式提交，必须高于所有已公开稳定版及预发布包。候选测试不占用新的公开版本；相同候选不能在验收后重建再冒充同一文件。
 - 调试包、模拟器专用 CA 和临时修改过源码的 x64 库不具备正式发行资格。
-- 当前 API1.4 是草案。最终冻结为 `api-v1.4.0` 时更新生成类型和摘要锁，保留 `api-v1.3.0` 等历史不可变标签。
+- 当前 API1.4 是草案。最终冻结为 `api-v1.4.0` 时更新生成类型和摘要锁，保留 `api-v1.3.0` 等历史不可变标签。正式发行入口要求兼容性记录、API 锁和远控锁都声明同一个已冻结标签与干净服务端提交，并核对 GitHub 上该标签的真实提交；草案仅可用于候选构建。
 
 ## 正式发行门槛
 
