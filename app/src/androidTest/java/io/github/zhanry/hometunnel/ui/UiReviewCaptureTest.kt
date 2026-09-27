@@ -12,14 +12,15 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
@@ -72,6 +73,15 @@ class UiReviewCaptureTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private var reviewAdmin: AdminRepository? = null
+
+    private fun foregroundRootMatcher(): SemanticsMatcher {
+        // Text insertion handles have their own tiny popup root. They are not
+        // the application scroll container, even when last in the root list.
+        val foreground = compose.onAllNodes(isDialog()).fetchSemanticsNodes().lastOrNull()
+            ?: compose.onNodeWithTag("ui-review-content").fetchSemanticsNode()
+        val root = generateSequence(foreground) { it.parent }.last()
+        return SemanticsMatcher("foreground dialog or application root") { it.id == root.id }
+    }
 
     @After fun stopReviewRequests() { compose.runOnUiThread { reviewAdmin?.reset() } }
 
@@ -136,7 +146,7 @@ class UiReviewCaptureTest {
         val admin = if (adminPage != null) AdminRepository({ UiReviewAdminApi(stateName) }, { state.currentUser }).also { reviewAdmin = it } else null
         compose.setContent {
                 HomeTunnelTheme(choice) {
-                    Surface(Modifier.fillMaxSize()) {
+                    Surface(Modifier.fillMaxSize().testTag("ui-review-content")) {
                         when (screen) {
                             "loading" -> LoadingScreen()
                             "login", "login-mfa" -> LoginScreen(state, repository)
@@ -208,14 +218,15 @@ class UiReviewCaptureTest {
                     File(directory, "focus-failure.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                     bitmap.recycle()
                 }
-                File(directory, "focus-failure-semantics.txt").writeText(compose.onAllNodes(isRoot()).onLast().printToString())
+                File(directory, "focus-failure-semantics.txt").writeText(compose.onNode(foregroundRootMatcher()).printToString())
                 throw failure
             }
             if (interaction == "search-empty")
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
         val frames = JSONArray()
-        val foregroundRoot = compose.onAllNodes(isRoot()).fetchSemanticsNodes().last()
+        val foregroundMatcher = foregroundRootMatcher()
+        val foregroundRoot = compose.onNode(foregroundMatcher).fetchSemanticsNode()
         val matcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and
             SemanticsMatcher("belongs to the foreground window") { node ->
                 generateSequence(node.parent) { it.parent }.any { it.id == foregroundRoot.id }
@@ -227,7 +238,7 @@ class UiReviewCaptureTest {
             instrumentation.waitForIdleSync()
             // PixelCopy waits for the Compose frame to reach the display before
             // the full-device capture, which also includes system bars/IME.
-            compose.onAllNodes(isRoot()).onLast().captureToImage()
+            compose.onNode(foregroundMatcher).captureToImage()
             instrumentation.uiAutomation.waitForIdle(100, 5_000)
             val nodes = compose.onAllNodes(matcher).fetchSemanticsNodes()
             val scroll = nodes.firstOrNull()
@@ -239,7 +250,7 @@ class UiReviewCaptureTest {
             val file = File(directory, "frame-${index.toString().padStart(2, '0')}.png")
             file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             val semantics = File(directory, "frame-${index.toString().padStart(2, '0')}-semantics.txt")
-            semantics.writeText(compose.onAllNodes(isRoot()).onLast().printToString())
+            semantics.writeText(compose.onNode(foregroundMatcher).printToString())
             frames.put(JSONObject().put("file", file.name).put("width", bitmap.width).put("height", bitmap.height)
                 .put("bytes", file.length()).put("sha256", MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) })
                 .put("scroll_value", offset.toDouble()).put("scroll_maximum", maximum.toDouble())
