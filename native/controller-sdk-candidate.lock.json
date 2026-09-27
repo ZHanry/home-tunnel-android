@@ -1,36 +1,36 @@
 {
   "abis": {
     "arm64-v8a": {
-      "archive_sha256": "2f55caf90091af21e0b8fa4dd2716ee1f47465a33109855702785e0f1b07e3e5",
-      "controller_manifest_sha256": "33ca930ac13e713a5a74ff1467c78ed8e62d9a31b0687d519d9eadc93f95e9da",
+      "archive_sha256": "cf8ad05ea04108a4d489d1bf60550cfad863529c10d257d30b10ab365eda6bf8",
+      "controller_manifest_sha256": "43732c7d164e78088f66d692511fd749d557d2cb715b96cf38257e7cda5bbd9a",
       "library_sha256": "317934a898bdbc395d527a965a3e604afc9b2dc1bbfe8603a3eccc40225224ec",
-      "provenance_sha256": "8f5699873a24b45a6481a1457973fcf2961fc7a9fa82893d9375ffb640203c6e",
-      "sbom_sha256": "295ae383ffbf1af2ae7cd0c2318974e38e462ed1624f2f19e178cbdfd343b5f1"
+      "provenance_sha256": "d29bace351e9dc0f966c182f127980cc86e66f4c440a10660131ee00c930342e",
+      "sbom_sha256": "d5f7f87d2cb3d082c3df1baa8bd352a8129b0985230b527239cf4f061fa06163"
     },
     "x86_64": {
-      "archive_sha256": "a000ed828ea602216e416a188743d8b63d7a3500013ac6155818055ea517c49c",
-      "controller_manifest_sha256": "7021357f587f35859354baa0c485043207e3ca422f2e10e5b3605d1801dcf3a2",
+      "archive_sha256": "0cf8cce12cb7a5e6070d1353a6971b03a7cfa79ca3a73dc77e50a77dfc82220b",
+      "controller_manifest_sha256": "39c6c4904e540ef6e8d2b9211c44b01512ca6052934adb0ccfd679c1554bb613",
       "library_sha256": "88bf2bee61adf468c664fd41c1aa46f3476edf7e40bb15e95023ef15718fc0b6",
-      "provenance_sha256": "21bc9b4c466ace42c704a7cdbe44fd3e7416ebf7f836e4b98568c781b86a769d",
-      "sbom_sha256": "5054646261b7fb2cb8dccace2144d7a8edd876e2726c45e245b8f5183d38d2f7"
+      "provenance_sha256": "909ef9a100bc68e97ef04188f5b3943195aeae0e5450bf89b083d131da054061",
+      "sbom_sha256": "87b82c0174dc04265f8521b857d964f2df17d11b161a17b80a3cea7202cc79e3"
     }
   },
-  "artifact_id": "10927708666",
-  "artifact_name": "android-sdk-candidate",
-  "artifact_sha256": "c2eed01574a5c586c7e7a1a8c902f048cd73381caf5a85780855908e3d96b67f",
-  "caller_workflow": ".github/workflows/android-webrtc.yml",
-  "index_sha256": "e35bc4417b3736e622cdab5f2a48a37ee2e2afd5043f44a7122fc8591920a9a9",
+  "artifact_id": "10932217089",
+  "artifact_name": "candidate-assets",
+  "artifact_sha256": "f8e8396834ba131f210155496dcf652df85e6607b2f76acaffecfe33ca1e27a5",
+  "caller_workflow": ".github/workflows/release.yml",
+  "index_sha256": "faa3b2d7a40e48451de36fef07e115654e26b5916535e4d397e4c49f494e4ff3",
   "matches_android_snapshot": true,
   "repository": "ZHanry/home-tunnel-client",
   "run_attempt": 1,
   "schema_version": 1,
   "signer_identity_observed": true,
-  "signer_identity_regexp": "^https://github\\.com/ZHanry/home\\-tunnel\\-client/\\.github/workflows/android\\-sdk\\-candidate\\.yml@refs/heads/codex/v10\\-overhaul$",
-  "signer_workflow": ".github/workflows/android-sdk-candidate.yml",
+  "signer_identity_regexp": "^https://github\\.com/ZHanry/home\\-tunnel\\-client/\\.github/workflows/client\\-candidate\\.yml@refs/heads/codex/v10\\-overhaul$",
+  "signer_workflow": ".github/workflows/client-candidate.yml",
   "source_ref": "refs/heads/codex/v10-overhaul",
-  "source_revision": "07b5de682ddb70964e98ad949276a4453f307f5c",
-  "source_tree_sha256": "a4c552bdda7d28b050793e78ae500832824f1186170ce1926e5d2e4e46ae4346",
+  "source_revision": "b35143a38d40613b5eb7f9cb08fc44ae28abb917",
+  "source_tree_sha256": "f20a17494f9ddf50a7fb1916fd53168af11959bd184f8aa0986ec80d284a6570",
   "status": "sdk-candidate-imported",
   "upstream_lock_sha256": "f0b0e46823e19a989fa14fece5d243be35939e742b247e77f45c6a17c714585d",
-  "workflow_run_id": "36306413846"
+  "workflow_run_id": "36317802734"
 }
