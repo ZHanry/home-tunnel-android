@@ -185,7 +185,7 @@ fun HomeTunnelApp(
 }
 
 @Composable
-private fun LoadingScreen() {
+internal fun LoadingScreen() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             BrandMark()
@@ -196,7 +196,7 @@ private fun LoadingScreen() {
 }
 
 @Composable
-private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
+internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
     var server by rememberSaveable { mutableStateOf(state.persisted.lastServerUrl ?: state.persisted.profile?.publicBaseUrl.orEmpty()) }
     var username by rememberSaveable { mutableStateOf(state.persisted.username.orEmpty()) }
     // Passwords deliberately use remember, not rememberSaveable: they must not
@@ -281,7 +281,7 @@ private fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
 }
 
 @Composable
-private fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepository) {
+internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepository) {
     var current by remember { mutableStateOf("") }
     var next by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
