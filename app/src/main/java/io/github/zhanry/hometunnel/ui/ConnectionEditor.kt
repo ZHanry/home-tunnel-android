@@ -117,7 +117,7 @@ internal val ConnectionEditSaver = object : Saver<ConnectionEdit?, String> {
 }
 
 @Composable
-private fun visibleEditorField(): Modifier {
+private fun Modifier.visibleEditorField(): Modifier {
     val requester = remember { BringIntoViewRequester() }
     var focused by remember { mutableStateOf(false) }
     val keyboardBottom = WindowInsets.ime.getBottom(LocalDensity.current)
@@ -128,7 +128,7 @@ private fun visibleEditorField(): Modifier {
             requester.bringIntoView()
         }
     }
-    return Modifier.fillMaxWidth().bringIntoViewRequester(requester).onFocusChanged { focused = it.isFocused }
+    return fillMaxWidth().bringIntoViewRequester(requester).onFocusChanged { focused = it.isFocused }
 }
 
 @Composable
@@ -327,7 +327,7 @@ private fun DeviceStep(
     OutlinedTextField(
         value = edit.fields.name,
         onValueChange = { onEdit(edit.copy(fields = edit.fields.copy(name = it))) },
-        modifier = visibleEditorField(),
+        modifier = Modifier.visibleEditorField(),
         enabled = !busy && !unknown,
         label = { Text(stringResource(R.string.connection_name)) },
         singleLine = true,
@@ -341,7 +341,7 @@ private fun TargetStep(edit: ConnectionEdit, busy: Boolean, unknown: Boolean, on
     OutlinedTextField(
         value = edit.fields.host,
         onValueChange = { onEdit(edit.copy(fields = edit.fields.copy(host = it))) },
-        modifier = visibleEditorField(),
+        modifier = Modifier.visibleEditorField(),
         enabled = !busy && !unknown,
         label = { Text(stringResource(R.string.local_host)) },
         singleLine = true,
@@ -350,7 +350,7 @@ private fun TargetStep(edit: ConnectionEdit, busy: Boolean, unknown: Boolean, on
     OutlinedTextField(
         value = edit.fields.port,
         onValueChange = { onEdit(edit.copy(fields = edit.fields.copy(port = it.filter(Char::isDigit).take(5)))) },
-        modifier = visibleEditorField(),
+        modifier = Modifier.visibleEditorField(),
         enabled = !busy && !unknown,
         label = { Text(stringResource(R.string.local_port)) },
         isError = edit.fields.port.isNotEmpty() && port !in 1..65535,
@@ -394,7 +394,7 @@ private fun AccessStep(
         OutlinedTextField(
             value = edit.fields.subdomain,
             onValueChange = { onEdit(edit.copy(fields = edit.fields.copy(subdomain = it.lowercase()))) },
-            modifier = visibleEditorField(),
+            modifier = Modifier.visibleEditorField(),
             enabled = !busy && !unknown,
             label = { Text(stringResource(R.string.public_subdomain)) },
             isError = edit.fields.subdomain.isNotEmpty() && !valid,
