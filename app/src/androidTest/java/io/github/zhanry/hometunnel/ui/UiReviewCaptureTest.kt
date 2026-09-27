@@ -18,6 +18,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
@@ -45,6 +49,8 @@ import io.github.zhanry.hometunnel.model.UserInfo
 import io.github.zhanry.hometunnel.repository.AppScreen
 import io.github.zhanry.hometunnel.repository.AppUiState
 import io.github.zhanry.hometunnel.repository.HomeTunnelRepository
+import io.github.zhanry.hometunnel.repository.AdminRepository
+import io.github.zhanry.hometunnel.repository.AdminPage
 import io.github.zhanry.hometunnel.storage.SecureStateStore
 import io.github.zhanry.hometunnel.ui.theme.HomeTunnelTheme
 import io.github.zhanry.hometunnel.ui.theme.ThemeChoice
@@ -56,6 +62,7 @@ import org.json.JSONObject
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.After
 
 /** Opt-in screenshots of production Composables with declared development data.
  * This never establishes backend, native media, installed-release or locale-persistence acceptance.
@@ -65,6 +72,9 @@ class UiReviewCaptureTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
+    private var reviewAdmin: AdminRepository? = null
+
+    @After fun stopReviewRequests() { compose.runOnUiThread { reviewAdmin?.reset() } }
 
     @Test fun captureDeclaredReviewCase() {
         val args = InstrumentationRegistry.getArguments()
@@ -83,8 +93,15 @@ class UiReviewCaptureTest {
         require(locale in setOf("en", "zh-CN"))
         require(theme in setOf("light", "dark", "system-light", "system-dark"))
         require(role in setOf("user", "admin"))
-        require(stateName in setOf("ready", "empty", "loading", "offline"))
-        require(screen in setOf("loading", "login", "login-mfa", "password-change", "overview", "devices", "connections", "account"))
+        val adminPage = screen.removePrefix("admin-").uppercase().let { value -> AdminPage.entries.firstOrNull { it.name == value } }
+            .takeIf { screen.startsWith("admin-") }
+        val wizardStep = listOf("tunnel-device", "tunnel-target", "tunnel-access", "tunnel-review", "tunnel-result").indexOf(screen)
+        require(stateName in setOf("ready", "empty", "loading", "offline", "error", "no-permission", "conflict", "waiting", "unconfirmed", "port-conflict", "sync-failed"))
+        require(screen in setOf("loading", "login", "login-mfa", "password-change", "overview", "devices", "connections", "account") || adminPage != null || wizardStep >= 0)
+        require(adminPage == null || role == "admin")
+        val interaction = args.getString("reviewInteraction") ?: "view"
+        require(interaction in setOf("view", "keyboard", "search-empty", "create-user", "edit-user", "delete-user", "disable-user", "reset-password", "discard", "logout"))
+        val template = args.getString("reviewTemplate") ?: "http"
         val expectedOrientation = if (orientation == "landscape") Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
         compose.activityRule.scenario.onActivity { activity ->
             activity.requestedOrientation = if (orientation == "landscape") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -117,6 +134,7 @@ class UiReviewCaptureTest {
                 TunnelConnection("automation", "study", "Home Assistant", "home", "http", publicUrl = "https://home.example.test", localPort = 8123, version = 1, state = "Pending"),
             ),
         )
+        val admin = if (adminPage != null) AdminRepository({ UiReviewAdminApi(stateName) }, { state.currentUser }).also { reviewAdmin = it } else null
         compose.setContent {
             CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config) {
                 HomeTunnelTheme(choice) {
@@ -125,17 +143,44 @@ class UiReviewCaptureTest {
                             "loading" -> LoadingScreen()
                             "login", "login-mfa" -> LoginScreen(state, repository)
                             "password-change" -> PasswordChangeScreen(state, repository)
-                            else -> HomeScreen(state, repository, remember { SnackbarHostState() })
+                            else -> when {
+                                admin != null -> AdminWorkspace(admin, profile.publicBaseUrl)
+                                wizardStep >= 0 -> UiReviewWizard(wizardStep.coerceAtMost(3), screen == "tunnel-result", template, stateName, state.devices)
+                                else -> HomeScreen(state, repository, remember { SnackbarHostState() })
+                            }
                         }
                     }
                 }
             }
         }
         compose.waitForIdle()
+        if (admin != null && adminPage != null) {
+            compose.runOnUiThread { if (adminPage == AdminPage.USER) admin.openUser("member-1") else admin.open(adminPage) }
+            compose.waitUntil(5_000) { admin.state.value.loading == (stateName == "loading") }
+            if (stateName in setOf("error", "offline", "no-permission"))
+                check(admin.state.value.errorCode != null) { "Declared administrative error was not reached" }
+        }
         val tab = when (screen) { "devices" -> R.string.nav_devices; "connections" -> R.string.nav_connections; "account" -> R.string.nav_account; else -> null }
         tab?.let { compose.onAllNodesWithText(localized.getString(it)).onLast().performClick() }
-        val interaction = args.getString("reviewInteraction") ?: "view"
-        require(interaction in setOf("view", "keyboard", "search-empty"))
+        val actionLabel = when (interaction) {
+            "create-user" -> R.string.admin_new_user
+            "edit-user" -> R.string.admin_edit
+            "delete-user" -> R.string.admin_delete
+            "disable-user" -> R.string.admin_disable
+            "reset-password" -> R.string.admin_reset
+            "logout" -> R.string.sign_out
+            else -> null
+        }
+        if (actionLabel != null) {
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(localized.getString(actionLabel)))
+            compose.onAllNodesWithText(localized.getString(actionLabel)).onLast().performClick()
+            compose.onAllNodes(isDialog()).onLast().assertIsDisplayed()
+        }
+        if (interaction == "discard") {
+            require(wizardStep >= 0)
+            compose.onNodeWithContentDescription(localized.getString(R.string.wizard_back)).performClick()
+            compose.onNodeWithText(localized.getString(R.string.discard_title)).assertIsDisplayed()
+        }
         if (interaction == "search-empty") {
             require(screen == "connections")
             val searchLabel = localized.getString(R.string.search_connections)
@@ -145,7 +190,7 @@ class UiReviewCaptureTest {
         }
         val usesKeyboard = interaction in setOf("keyboard", "search-empty")
         if (usesKeyboard) {
-            require(screen in setOf("login", "login-mfa", "password-change", "connections"))
+            require(screen in setOf("login", "login-mfa", "password-change", "connections") || wizardStep in 0..2)
             if (screen == "login-mfa") compose.onAllNodes(hasSetTextAction()).onLast().performClick()
             else if (interaction == "keyboard") compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
             compose.runOnUiThread {
@@ -157,7 +202,11 @@ class UiReviewCaptureTest {
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
         val frames = JSONArray()
-        val matcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+        val foregroundRoot = compose.onAllNodes(isRoot()).fetchSemanticsNodes().last()
+        val matcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and
+            SemanticsMatcher("belongs to the foreground window") { node ->
+                generateSequence(node.parent) { it.parent }.any { it.id == foregroundRoot.id }
+            }
         var previousOffset = -1f
         var complete = false
         for (index in 0 until 24) {
@@ -165,7 +214,7 @@ class UiReviewCaptureTest {
             instrumentation.waitForIdleSync()
             // PixelCopy waits for the Compose frame to reach the display before
             // the full-device capture, which also includes system bars/IME.
-            compose.onRoot().captureToImage()
+            compose.onAllNodes(isRoot()).onLast().captureToImage()
             instrumentation.uiAutomation.waitForIdle(100, 5_000)
             val nodes = compose.onAllNodes(matcher).fetchSemanticsNodes()
             val scroll = nodes.firstOrNull()
@@ -176,9 +225,13 @@ class UiReviewCaptureTest {
             val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot()) { "Device screenshot unavailable" }
             val file = File(directory, "frame-${index.toString().padStart(2, '0')}.png")
             file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            val semantics = File(directory, "frame-${index.toString().padStart(2, '0')}-semantics.txt")
+            semantics.writeText(compose.onAllNodes(isRoot()).onLast().printToString())
             frames.put(JSONObject().put("file", file.name).put("width", bitmap.width).put("height", bitmap.height)
                 .put("bytes", file.length()).put("sha256", MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) })
-                .put("scroll_value", offset.toDouble()).put("scroll_maximum", maximum.toDouble()))
+                .put("scroll_value", offset.toDouble()).put("scroll_maximum", maximum.toDouble())
+                .put("semantics_file", semantics.name)
+                .put("semantics_sha256", MessageDigest.getInstance("SHA-256").digest(semantics.readBytes()).joinToString("") { "%02x".format(it) }))
             bitmap.recycle()
             if (scroll == null || offset >= maximum - 0.5f || usesKeyboard) { complete = true; break }
             previousOffset = offset
@@ -186,6 +239,7 @@ class UiReviewCaptureTest {
         }
         check(complete) { "Scrollable page exceeded the bounded capture; inspect before continuing" }
         val record = JSONObject().put("case_id", caseId).put("screen", screen).put("locale", locale).put("theme", theme)
+            .put("template", template)
             .put("role", role).put("state", stateName).put("interaction", interaction).put("frames", frames)
             .put("synthetic_data", true).put("formal_acceptance", false).put("system_dark", systemDark)
             .put("density_dpi", actual.densityDpi).put("font_scale", actual.fontScale.toDouble()).put("orientation", actual.orientation)
