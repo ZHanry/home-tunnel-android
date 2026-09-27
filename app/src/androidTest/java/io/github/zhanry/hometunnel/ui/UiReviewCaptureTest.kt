@@ -32,6 +32,7 @@ import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -191,8 +192,8 @@ class UiReviewCaptureTest {
         val usesKeyboard = interaction in setOf("keyboard", "search-empty")
         if (usesKeyboard) {
             require(screen in setOf("login", "login-mfa", "password-change", "connections") || wizardStep in 0..2)
-            if (screen == "login-mfa") compose.onAllNodes(hasSetTextAction()).onLast().performClick()
-            else if (interaction == "keyboard") compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
+            if (screen == "login-mfa") compose.onAllNodes(hasSetTextAction()).onLast().performScrollTo().assertIsDisplayed().performClick()
+            else if (interaction == "keyboard") compose.onAllNodes(hasSetTextAction()).onFirst().performScrollTo().assertIsDisplayed().performClick()
             compose.runOnUiThread {
                 compose.activity.getSystemService(InputMethodManager::class.java)
                     .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
