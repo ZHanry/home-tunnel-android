@@ -105,7 +105,10 @@ class ManagementUiTest {
         compose.onNodeWithText("家庭相册").assertDoesNotExist()
         capture("search-empty")
         compose.onNodeWithText(context.getString(R.string.no_search_results)).assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.search_connections)).assertIsDisplayed().performImeAction()
+        compose.onNodeWithText("no-match").assertIsDisplayed().performImeAction()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(context.getString(R.string.nav_account)).fetchSemanticsNodes().isNotEmpty()
+        }
         navigate(R.string.nav_account)
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("林先生"))
         compose.onNodeWithText("林先生").assertIsDisplayed()
