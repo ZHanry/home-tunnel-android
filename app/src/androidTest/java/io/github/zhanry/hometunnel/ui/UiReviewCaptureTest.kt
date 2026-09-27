@@ -1,7 +1,12 @@
 package io.github.zhanry.hometunnel.ui
 
 import android.content.res.Configuration
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -14,13 +19,15 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.model.ManagedDevice
 import io.github.zhanry.hometunnel.model.PersistedState
@@ -47,7 +54,7 @@ import org.junit.Test
  * The host runner binds the resulting device PNGs to clean source and both installed APK hashes.
  */
 class UiReviewCaptureTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
@@ -63,12 +70,23 @@ class UiReviewCaptureTest {
         val theme = requireNotNull(args.getString("reviewTheme"))
         val stateName = args.getString("reviewState") ?: "ready"
         val role = args.getString("reviewRole") ?: "user"
+        val orientation = requireNotNull(args.getString("reviewOrientation"))
+        require(orientation in setOf("portrait", "landscape"))
         require(locale in setOf("en", "zh-CN"))
         require(theme in setOf("light", "dark", "system-light", "system-dark"))
         require(role in setOf("user", "admin"))
         require(stateName in setOf("ready", "empty", "loading", "offline"))
         require(screen in setOf("loading", "login", "login-mfa", "password-change", "overview", "devices", "connections", "account"))
-        val actual = Configuration(context.resources.configuration)
+        val expectedOrientation = if (orientation == "landscape") Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+        compose.activityRule.scenario.onActivity { activity ->
+            activity.requestedOrientation = if (orientation == "landscape") ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        compose.waitUntil(10_000) { compose.activity.resources.configuration.orientation == expectedOrientation }
+        compose.runOnUiThread {
+            compose.activity.enableEdgeToEdge()
+            compose.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+        val actual = Configuration(compose.activity.resources.configuration)
         val config = Configuration(actual).apply { setLocale(Locale.forLanguageTag(locale)) }
         val localized = context.createConfigurationContext(config)
         val choice = when (theme) { "light" -> ThemeChoice.LIGHT; "dark" -> ThemeChoice.DARK; else -> ThemeChoice.SYSTEM }
@@ -113,7 +131,11 @@ class UiReviewCaptureTest {
         if (interaction == "keyboard") {
             require(screen in setOf("login", "login-mfa", "password-change"))
             compose.onAllNodes(hasSetTextAction()).onFirst().performClick()
-            instrumentation.waitForIdleSync()
+            compose.runOnUiThread {
+                compose.activity.getSystemService(InputMethodManager::class.java)
+                    .showSoftInput(compose.activity.currentFocus, InputMethodManager.SHOW_IMPLICIT)
+            }
+            compose.waitUntil(10_000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
         }
         val frames = JSONArray()
         val matcher = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
@@ -144,6 +166,7 @@ class UiReviewCaptureTest {
             .put("role", role).put("state", stateName).put("interaction", interaction).put("frames", frames)
             .put("synthetic_data", true).put("formal_acceptance", false).put("system_dark", systemDark)
             .put("density_dpi", actual.densityDpi).put("font_scale", actual.fontScale.toDouble()).put("orientation", actual.orientation)
+            .put("ime_visible", ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
             .put("capture_method", "actual-device-scrolled-viewport")
             .put("locale_method", "Production Composables with explicit localized resource context; persistence not tested")
         File(directory, "capture.json").writeText(record.toString(2) + "\n")
