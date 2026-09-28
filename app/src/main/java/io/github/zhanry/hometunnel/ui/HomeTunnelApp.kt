@@ -594,12 +594,6 @@ internal fun HomeScreen(
                         items(remoteHomeOrder(state.devices), key = { it.id }) { device ->
                             RemoteHomeDevice(device.name, device.online && device.status == "active", device.favorite) { openRemote(device.id) }
                         }
-                        item { OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Text(stringResource(R.string.remote_unattended_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(stringResource(R.string.remote_unattended_detail), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                            }
-                        } }
                     }
                     1 -> {
                         item { OutlinedTextField(deviceSearch, { deviceSearch = it }, modifier = Modifier.fillMaxWidth(),

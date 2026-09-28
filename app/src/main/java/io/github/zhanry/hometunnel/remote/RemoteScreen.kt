@@ -177,7 +177,8 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
         state.endpoints.any { hostOffersUnattended(it) },
         if (offered.isEmpty()) null else offered.flatten().toSet(),
     )
-    val selectedMode = ConnectMode.entries.firstOrNull { it.name == assistMode } ?: ConnectMode.APPROVAL
+    // Unattended access is the fixed password; the separate trusted-binding mode is not offered.
+    val selectedMode = ConnectMode.entries.firstOrNull { it.name == assistMode && it != ConnectMode.UNATTENDED } ?: ConnectMode.APPROVAL
     MaterialTheme(colorScheme = if (state.sessionId != null) darkColorScheme(background = Color(0xFF171A2A), surface = Color(0xFF20243A), primary = Color(0xFFAAA9FF)) else MaterialTheme.colorScheme) {
     if (state.sessionId != null) {
         RemoteSessionView(state, controller, localError, landscape, permissions, onLandscape = { landscape = !landscape },
@@ -227,7 +228,7 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
                     Text(stringResource(R.string.remote_connect_other), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.remote_connect_other_detail), style = MaterialTheme.typography.bodySmall)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        modes.forEach { mode ->
+                        modes.filter { it.mode != ConnectMode.UNATTENDED }.forEach { mode ->
                             FilterChip(
                                 selected = selectedMode == mode.mode,
                                 onClick = { assistMode = mode.mode.name },
@@ -296,13 +297,6 @@ fun RemoteScreen(controller: RemoteController, onBack: () -> Unit, accountKey: S
                     Text(if (endpoint.available) stringResource(R.string.remote_endpoint_on) else stringResource(R.string.remote_endpoint_off))
                     OutlinedButton(onClick = { controller.pair(endpoint, permissions) }, enabled = state.authenticated && state.native.available && endpoint.available && !state.loading && state.pairing == null, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(stringResource(R.string.remote_connect_device))
-                    }
-                    if (controller.canBindTrusted(endpoint, permissions)) {
-                        OutlinedButton(onClick = {
-                            trustTarget = endpoint; trustPassword = ""; trustMfa = ""; trustMfaRequired = false
-                        }, enabled = state.authenticated && state.native.available && !state.loading && state.pairing == null, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(stringResource(R.string.remote_trust))
-                        }
                     }
                 }
             }

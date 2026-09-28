@@ -254,7 +254,7 @@
     <string name="remote_connect_other_detail">Use the 9-digit code from the host. Passwords are not saved on this phone.</string>
     <string name="remote_mode_approval">Local approval</string>
     <string name="remote_mode_once">One-time password</string>
-    <string name="remote_mode_fixed">Fixed password</string>
+    <string name="remote_mode_fixed">Fixed password (unattended)</string>
     <string name="remote_mode_unattended">Unattended access</string>
     <string name="remote_mode_unattended_off">No host has advertised unattended access.</string>
     <string name="remote_mode_native_off">This mode needs the packaged remote engine.</string>

@@ -253,7 +253,7 @@
     <string name="remote_connect_other_detail">输入被控端的 9 位设备码。密码不会保存在这部手机上。</string>
     <string name="remote_mode_approval">本机批准</string>
     <string name="remote_mode_once">一次性密码</string>
-    <string name="remote_mode_fixed">固定密码</string>
+    <string name="remote_mode_fixed">固定密码（无人值守）</string>
     <string name="remote_mode_unattended">无人值守</string>
     <string name="remote_mode_unattended_off">没有被控端宣告开启无人值守。</string>
     <string name="remote_mode_native_off">此方式需要已打包的远控引擎。</string>
