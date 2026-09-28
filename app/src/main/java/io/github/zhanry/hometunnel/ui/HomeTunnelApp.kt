@@ -25,6 +25,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -97,6 +100,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,6 +110,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -167,8 +172,10 @@ fun HomeTunnelApp(
 internal fun HomeTunnelContent(state: AppUiState, repository: HomeTunnelRepository) {
     val snackbar = remember { SnackbarHostState() }
     val notice = state.error?.let { stringResource(userNoticeResource(it)) }
-    LaunchedEffect(state.error, notice) {
-        notice?.let {
+    val authentication = state.screen == AppScreen.LOGIN || state.screen == AppScreen.PASSWORD_CHANGE
+    LaunchedEffect(state.error, notice, authentication) {
+        if (authentication) snackbar.currentSnackbarData?.dismiss()
+        else notice?.let {
             snackbar.showSnackbar(it)
             repository.clearError()
         }
@@ -246,7 +253,7 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         Text(stringResource(R.string.server_address), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = server,
-            onValueChange = { server = it; mfa = ""; repository.clearLoginMfa() },
+            onValueChange = { server = it; mfa = ""; repository.clearLoginMfa(); repository.clearError() },
             modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             enabled = !state.busy,
             placeholder = { Text(stringResource(R.string.server_hint)) },
@@ -256,7 +263,7 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         Text(stringResource(R.string.username), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = username,
-            onValueChange = { username = it; mfa = ""; repository.clearLoginMfa() },
+            onValueChange = { username = it; mfa = ""; repository.clearLoginMfa(); repository.clearError() },
             modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             enabled = !state.busy,
             placeholder = { Text(stringResource(R.string.username)) },
@@ -266,7 +273,7 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
         Text(stringResource(R.string.password), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it; mfa = ""; repository.clearLoginMfa() },
+            onValueChange = { password = it; mfa = ""; repository.clearLoginMfa(); repository.clearError() },
             modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             enabled = !state.busy,
             placeholder = { Text(stringResource(R.string.password)) },
@@ -278,7 +285,10 @@ internal fun LoginScreen(state: AppUiState, repository: HomeTunnelRepository) {
             } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
         )
-        if (state.loginMfaRequired) MfaField(mfa, required = true, modifier = Modifier.focusRequester(mfaFocus)) { mfa = it }
+        if (state.loginMfaRequired) MfaField(mfa, required = true, modifier = Modifier.focusRequester(mfaFocus)) {
+            mfa = it; repository.clearError()
+        }
+        AuthenticationNotice(state.error)
         Button(
             onClick = { repository.login(server, username, password, mfa) },
             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -324,7 +334,7 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
         )
         OutlinedTextField(
             value = current,
-            onValueChange = { current = it },
+            onValueChange = { current = it; repository.clearError() },
             modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             label = { Text(stringResource(R.string.current_password)) },
             visualTransformation = PasswordVisualTransformation(),
@@ -332,7 +342,7 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
         )
         OutlinedTextField(
             value = next,
-            onValueChange = { next = it },
+            onValueChange = { next = it; repository.clearError() },
             modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             label = { Text(stringResource(R.string.new_password)) },
             supportingText = { Text(stringResource(R.string.password_minimum)) },
@@ -342,7 +352,7 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
         )
         OutlinedTextField(
             value = confirm,
-            onValueChange = { confirm = it },
+            onValueChange = { confirm = it; repository.clearError() },
             modifier = Modifier.fillMaxWidth().keepFocusedFieldVisible(),
             label = { Text(stringResource(R.string.confirm_password)) },
             supportingText = {
@@ -352,7 +362,8 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
         )
-        MfaField(mfa) { mfa = it }
+        MfaField(mfa) { mfa = it; repository.clearError() }
+        AuthenticationNotice(state.error)
         Button(
             onClick = { repository.changeRequiredPassword(current, next, mfa) },
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -366,6 +377,30 @@ internal fun PasswordChangeScreen(state: AppUiState, repository: HomeTunnelRepos
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.cancel))
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AuthenticationNotice(code: String?) {
+    if (code == null) return
+    val text = stringResource(userNoticeResource(code))
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(text) {
+        // Keep feedback in the form's scroll flow. A floating banner can cover
+        // the entire input area when a large-font landscape keyboard is open.
+        withFrameNanos { }
+        requester.bringIntoView()
+    }
+    val success = code == "PASSWORD_CHANGED"
+    Surface(
+        modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester)
+            .testTag("authentication-notice").semantics { liveRegion = LiveRegionMode.Polite },
+        shape = MaterialTheme.shapes.medium,
+        color = if (success) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer,
+        contentColor = if (success) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+    ) {
+        Text(text, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
     }
 }
 

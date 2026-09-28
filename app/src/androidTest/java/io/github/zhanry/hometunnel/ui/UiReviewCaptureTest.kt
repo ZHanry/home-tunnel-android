@@ -238,7 +238,7 @@ class UiReviewCaptureTest {
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
         }
         // Deliver the notice after the real keyboard has settled. This exercises
-        // the production root snackbar, which isolated form captures omitted.
+        // the production feedback lifecycle, which isolated form captures omitted.
         val noticeText = noticeCode?.let { localized.getString(userNoticeResource(it)) }
         if (noticeCode != null) {
             compose.runOnUiThread { shownState.value = state.copy(error = noticeCode) }
@@ -253,37 +253,78 @@ class UiReviewCaptureTest {
             SemanticsMatcher("belongs to the foreground window") { node ->
                 generateSequence(node.parent) { it.parent }.any { it.id == foregroundRoot.id }
             }
-        var previousOffset = -1f
-        var complete = false
-        for (index in 0 until 24) {
+        fun saveViewport(index: Int, phase: String) {
             compose.waitForIdle()
             instrumentation.waitForIdleSync()
-            // PixelCopy waits for the Compose frame to reach the display before
-            // the full-device capture, which also includes system bars/IME.
             compose.onNode(foregroundMatcher).captureToImage()
             instrumentation.uiAutomation.waitForIdle(100, 5_000)
-            val nodes = compose.onAllNodes(matcher).fetchSemanticsNodes()
-            val scroll = nodes.firstOrNull()
-            val range = scroll?.config?.get(SemanticsProperties.VerticalScrollAxisRange)
-            val offset = range?.value() ?: 0f
-            val maximum = range?.maxValue() ?: 0f
-            if (index > 0 && offset <= previousOffset) { complete = true; break }
+            val range = compose.onAllNodes(matcher).fetchSemanticsNodes().firstOrNull()
+                ?.config?.get(SemanticsProperties.VerticalScrollAxisRange)
             val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot()) { "Device screenshot unavailable" }
             val file = File(directory, "frame-${index.toString().padStart(2, '0')}.png")
             file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             val semantics = File(directory, "frame-${index.toString().padStart(2, '0')}-semantics.txt")
             semantics.writeText(compose.onNode(foregroundMatcher).printToString())
             frames.put(JSONObject().put("file", file.name).put("width", bitmap.width).put("height", bitmap.height)
+                .put("phase", phase)
                 .put("bytes", file.length()).put("sha256", MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) })
-                .put("scroll_value", offset.toDouble()).put("scroll_maximum", maximum.toDouble())
+                .put("scroll_value", (range?.value() ?: 0f).toDouble()).put("scroll_maximum", (range?.maxValue() ?: 0f).toDouble())
                 .put("semantics_file", semantics.name)
                 .put("semantics_sha256", MessageDigest.getInstance("SHA-256").digest(semantics.readBytes()).joinToString("") { "%02x".format(it) }))
             bitmap.recycle()
+        }
+        var previousOffset = -1f
+        var complete = false
+        for (index in 0 until 24) {
+            compose.waitForIdle()
+            instrumentation.waitForIdleSync()
+            val nodes = compose.onAllNodes(matcher).fetchSemanticsNodes()
+            val scroll = nodes.firstOrNull()
+            val range = scroll?.config?.get(SemanticsProperties.VerticalScrollAxisRange)
+            val offset = range?.value() ?: 0f
+            val maximum = range?.maxValue() ?: 0f
+            if (index > 0 && offset <= previousOffset) { complete = true; break }
+            // Save before geometry assertions so failures retain actual pixels.
+            saveViewport(index, if (noticeCode != null) "notice-arrived" else "page")
             if (scroll == null || offset >= maximum - 0.5f || usesKeyboard || noticeCode != null) { complete = true; break }
             previousOffset = offset
             compose.onAllNodes(matcher).onFirst().performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, scroll.boundsInRoot.height * 0.6f) }
         }
         check(complete) { "Scrollable page exceeded the bounded capture; inspect before continuing" }
+        if (noticeText != null) {
+            fun assertNoNoticeOverlap() {
+                val banner = compose.onNodeWithTag("authentication-notice").fetchSemanticsNode().boundsInWindow
+                compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().forEach { field ->
+                    val input = field.boundsInWindow
+                    check(banner.width <= 0f || banner.height <= 0f || input.width <= 0f || input.height <= 0f ||
+                        banner.bottom <= input.top + 1f || input.bottom <= banner.top + 1f ||
+                        banner.right <= input.left + 1f || input.right <= banner.left + 1f) {
+                        "Authentication notice overlaps an input: $banner / $input"
+                    }
+                }
+            }
+            val notice = compose.onNodeWithText(noticeText).assertIsDisplayed().fetchSemanticsNode()
+            val insets = requireNotNull(ViewCompat.getRootWindowInsets(compose.activity.window.decorView))
+            val obstruction = if (usesKeyboard) insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                else insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val visibleBottom = compose.activity.window.decorView.height - obstruction
+            check(notice.boundsInWindow.top >= insets.getInsets(WindowInsetsCompat.Type.statusBars()).top - 1f &&
+                notice.boundsInWindow.bottom <= visibleBottom + 1f) {
+                "Production notice is outside the visible window: ${notice.boundsInWindow} / $visibleBottom"
+            }
+            assertNoNoticeOverlap()
+            if (usesKeyboard) {
+                val focused = compose.onAllNodes(hasSetTextAction() and isFocused()).onFirst()
+                focused.performScrollTo().assertIsDisplayed()
+                saveViewport(frames.length(), "input-reachable")
+                check(ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
+                assertNoNoticeOverlap()
+                val action = localized.getString(if (screen == "password-change") R.string.save_password else R.string.sign_in)
+                compose.onNodeWithText(action).performScrollTo().assertIsDisplayed()
+                saveViewport(frames.length(), "submit-reachable")
+                assertNoNoticeOverlap()
+            }
+        }
         val record = JSONObject().put("case_id", caseId).put("screen", screen).put("locale", locale).put("theme", theme)
             .put("template", template)
             .put("role", role).put("state", stateName).put("interaction", interaction).put("frames", frames)
@@ -293,15 +334,5 @@ class UiReviewCaptureTest {
             .put("capture_method", "actual-device-scrolled-viewport")
             .put("locale_method", "Production application theme and AppCompat application locale verified on Activity resources; cold-start locale persistence not tested")
         File(directory, "capture.json").writeText(record.toString(2) + "\n")
-        if (noticeText != null) {
-            val notice = compose.onNodeWithText(noticeText).assertIsDisplayed().fetchSemanticsNode()
-            val insets = requireNotNull(ViewCompat.getRootWindowInsets(compose.activity.window.decorView))
-            val obstruction = if (usesKeyboard) insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-                else insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            val visibleBottom = compose.activity.window.decorView.height - obstruction
-            check(notice.boundsInWindow.bottom <= visibleBottom + 1f) {
-                "Production notice is below the visible window: ${notice.boundsInWindow.bottom} > $visibleBottom"
-            }
-        }
     }
 }
