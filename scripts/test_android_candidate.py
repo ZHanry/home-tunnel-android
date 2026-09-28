@@ -91,6 +91,18 @@ class AndroidCandidateTests(unittest.TestCase):
                     SEAL.seal(directory, "10.0.0", revision, lock, identity)
                 self.assertFalse((directory / "android-release-candidate.json").exists())
 
+    def test_sdk_subject_names_follow_the_committed_candidate_format(self):
+        committed = json.loads((Path(__file__).parents[1] / "native/controller-sdk-candidate.lock.json").read_text())
+        index, provenance = VERIFY.sdk_subject_names(committed)
+        # The committed lock pins the full client candidate; its signed index is not the standalone SDK index.
+        self.assertEqual(index, "client-candidate.json")
+        self.assertEqual(provenance, {"arm64-v8a": "android-sdk-provenance.json", "x86_64": "android-sdk-x86_64-provenance.json"})
+        standalone = dict(committed, caller_workflow=".github/workflows/android-webrtc.yml",
+                          signer_workflow=".github/workflows/android-sdk-candidate.yml", artifact_name="android-sdk-candidate")
+        self.assertEqual(VERIFY.sdk_subject_names(standalone), ("android-sdk-candidate.json", None))
+        with self.assertRaises(SystemExit):
+            VERIFY.sdk_subject_names(dict(committed, artifact_name="unexpected"))
+
 
 if __name__ == "__main__":
     unittest.main()

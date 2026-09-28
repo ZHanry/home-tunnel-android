@@ -32,6 +32,19 @@ def run(*args):
     return subprocess.check_output([str(a) for a in args], text=True, encoding="utf-8", stderr=subprocess.STDOUT).strip()
 
 
+def sdk_subject_names(lock):
+    """Return the signed index and per-ABI provenance names for the lock's candidate format."""
+    profiles = module("import-sdk-candidate").PROFILES
+    formats = [name for name, (caller, signer, artifact, _) in profiles.items()
+               if (lock.get("caller_workflow"), lock.get("signer_workflow"), lock.get("artifact_name")) == (caller, signer, artifact)]
+    if len(formats) != 1:
+        raise SystemExit("SDK candidate lock has an unknown caller/signer/artifact combination")
+    index = profiles[formats[0]][3]
+    if formats[0] == "client":
+        return index, {"arm64-v8a": "android-sdk-provenance.json", "x86_64": "android-sdk-x86_64-provenance.json"}
+    return index, None
+
+
 def apk_certificate(output):
     if "Verified using v2 scheme (APK Signature Scheme v2): true" not in output:
         raise SystemExit("Every APK must have a verified v2 signature")
@@ -104,9 +117,12 @@ def main():
     if digest(args.bundletool) != "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29":
         raise SystemExit("bundletool differs from pinned 1.18.3")
     run("java", "-jar", args.bundletool, "validate", f"--bundle={directory / f'HomeTunnel-Android-{version}.aab'}")
-    sdk_index = json.loads((args.sdk_subjects / "android-sdk-candidate.json").read_text())
-    if digest(args.sdk_subjects / "android-sdk-candidate.json") != lock["index_sha256"]:
+    index_name, provenance_names = sdk_subject_names(lock)
+    if digest(args.sdk_subjects / index_name) != lock["index_sha256"]:
         raise SystemExit("Restored SDK index differs from the verified candidate lock")
+    if provenance_names is None:
+        sdk_index = json.loads((args.sdk_subjects / index_name).read_text())
+        provenance_names = {abi: sdk_index["abis"][abi]["provenance"] for abi in ABIS}
     records = {}
     natives = {}
     builds = {}
@@ -136,7 +152,7 @@ def main():
         (directory / f"android-signature-{abi}.txt").write_text(signature + "\n", encoding="utf-8")
         shutil.copyfile(sdk / abi / "remote-artifact.json", directory / f"android-native-evidence-{abi}.json")
         shutil.copyfile(sdk / "android-webrtc-build.json", directory / f"android-controller-build-{abi}.json")
-        provenance = args.sdk_subjects / sdk_index["abis"][abi]["provenance"]
+        provenance = args.sdk_subjects / provenance_names[abi]
         if digest(provenance) != lock["abis"][abi]["provenance_sha256"]:
             raise SystemExit("SDK provenance differs from its verified import")
         shutil.copyfile(provenance, directory / f"android-controller-sdk-provenance-{abi}.json")
