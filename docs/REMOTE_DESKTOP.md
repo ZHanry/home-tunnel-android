@@ -1,4 +1,4 @@
-# Android 9.0.0 remote desktop
+# Android 10.0.0 remote desktop
 
 This release implements account-bound P-256 AndroidKeyStore identities, DPoP REST authentication, single-use WebSocket authentication, server-key pinning, pairing confirmation, bounded protocol parsing, and local input/lease gates. The existing tunnel-management app remains available. The stable version label does not replace the outstanding device acceptance evidence.
 

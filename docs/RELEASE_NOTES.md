@@ -1,3 +1,21 @@
+# Home Tunnel Android 10.0.0
+
+The Android controller now uses the same-source production remote SDK from the
+10.0.0 desktop release for both arm64-v8a and x86_64. Remote sessions add scoped
+system audio playback, consent-bound file transfer, monitor selection, bounded
+reconnect and viewport gestures on top of the 9.0.0 authorization modes. Login,
+MFA, password change and tunnel editors stay visible above the soft keyboard in
+landscape and with large text, and account/network notices follow the app
+language. The APK keeps the existing application ID and release signing identity
+and uses versionCode `10000000`. Microphone return is not available.
+
+Release validation covered real remote control of a Windows host and Gemini
+review of the Android screenshots. The 2-hour/24-hour soak, performance
+comparison, NAT/IPv6 fault matrix and physical arm64 phones were not run for
+this release.
+
+## Previous release: 9.0.0
+
 # Home Tunnel Android 9.0.0
 
 The app refreshes navigation and the remote-control surface and exposes

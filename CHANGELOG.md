@@ -1,5 +1,12 @@
 # Changelog
 
+## 10.0.0
+
+- Integrate the same-source production remote SDK for both arm64-v8a and x86_64: scoped system audio playback, consent-bound file transfer, monitor selection, bounded reconnect and viewport gestures.
+- Keep authentication fields, notices and tunnel editors visible above the soft keyboard, with large-text, landscape and resized-window layouts.
+- Localize account and network notices by structured error code instead of mixing server text into the UI language.
+- Verify signed candidates against the pinned full client SDK candidate. versionCode `10000000`; application ID and signing certificate are unchanged.
+
 ## 9.0.0
 
 - Add three cross-account connection modes, a foreground-only text clipboard source path and refreshed navigation/session visuals.

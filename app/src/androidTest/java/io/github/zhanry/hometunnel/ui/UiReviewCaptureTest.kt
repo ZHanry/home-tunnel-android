@@ -13,6 +13,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -40,6 +42,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.zhanry.hometunnel.R
 import io.github.zhanry.hometunnel.UiReviewActivity
@@ -150,6 +153,7 @@ class UiReviewCaptureTest {
             ),
         )
         val shownState = mutableStateOf(state)
+        lateinit var focusManager: FocusManager
         val authentication = screen in setOf("login", "login-mfa", "password-change")
         val noticeCode = if (authentication) when (stateName) {
             "offline" -> "NETWORK_ERROR"
@@ -160,6 +164,7 @@ class UiReviewCaptureTest {
         val admin = if (adminPage != null) AdminRepository({ UiReviewAdminApi(stateName) }, { state.currentUser }).also { reviewAdmin = it } else null
         compose.setContent {
                 HomeTunnelTheme(choice) {
+                    focusManager = LocalFocusManager.current
                     Surface(Modifier.fillMaxSize().testTag("ui-review-content")) {
                         when (screen) {
                             "loading" -> LoadingScreen()
@@ -236,6 +241,41 @@ class UiReviewCaptureTest {
             }
             if (interaction == "search-empty")
                 compose.onNodeWithText(localized.getString(R.string.no_search_results)).assertIsDisplayed()
+        }
+        fun imeVisible() = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        fun foregroundScrollMatcher(): SemanticsMatcher {
+            val root = compose.onNode(foregroundRootMatcher()).fetchSemanticsNode()
+            return SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and
+                SemanticsMatcher("belongs to the foreground window") { node ->
+                    generateSequence(node.parent) { it.parent }.any { it.id == root.id }
+                }
+        }
+        if (interaction == "view") {
+            // Passive "view" cases document the unobstructed resting layout. A
+            // production screen may legitimately take focus (the MFA step focuses
+            // its code field, which opens the IME and scrolls the field into view);
+            // that behaviour belongs to the "keyboard" cases. Let a pending
+            // auto-focus reach the IME first so a late show cannot race the hide.
+            compose.waitForIdle()
+            if (compose.onAllNodes(isFocused()).fetchSemanticsNodes().isNotEmpty())
+                runCatching { compose.waitUntil(5_000) { imeVisible() } }
+            compose.runOnUiThread {
+                focusManager.clearFocus(force = true)
+                WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                    .hide(WindowInsetsCompat.Type.ime())
+            }
+            compose.waitUntil(10_000) { !imeVisible() && compose.onAllNodes(isFocused()).fetchSemanticsNodes().isEmpty() }
+            val restingScroll = foregroundScrollMatcher()
+            var restingOffset = 0f
+            for (attempt in 0 until 24) {
+                compose.waitForIdle()
+                val node = compose.onAllNodes(restingScroll).fetchSemanticsNodes().firstOrNull() ?: break
+                restingOffset = node.config[SemanticsProperties.VerticalScrollAxisRange].value()
+                if (restingOffset <= 0.5f) break
+                compose.onAllNodes(restingScroll).onFirst().performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -restingOffset) }
+            }
+            check(restingOffset <= 0.5f) { "Resting view did not return to the top: $restingOffset" }
+            check(!imeVisible()) { "IME reappeared after the resting view was settled" }
         }
         // Deliver the notice after the real keyboard has settled. This exercises
         // the production feedback lifecycle, which isolated form captures omitted.
@@ -332,6 +372,7 @@ class UiReviewCaptureTest {
             .put("density_dpi", actual.densityDpi).put("font_scale", actual.fontScale.toDouble()).put("orientation", actual.orientation)
             .put("ime_visible", ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
             .put("capture_method", "actual-device-scrolled-viewport")
+            .put("resting_view_reset", interaction == "view")
             .put("locale_method", "Production application theme and AppCompat application locale verified on Activity resources; cold-start locale persistence not tested")
         File(directory, "capture.json").writeText(record.toString(2) + "\n")
     }
