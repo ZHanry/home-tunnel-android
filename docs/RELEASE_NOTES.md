@@ -9,10 +9,21 @@ landscape and with large text, and account/network notices follow the app
 language. The APK keeps the existing application ID and release signing identity
 and uses versionCode `10000000`. Microphone return is not available.
 
-Release validation covered real remote control of a Windows host and Gemini
-review of the Android screenshots. The 2-hour/24-hour soak, performance
-comparison, NAT/IPv6 fault matrix and physical arm64 phones were not run for
-this release.
+Android sessions use direct UDP only; the server's TURN relay is for browser
+viewers. The APK is signed with the existing release certificate, and the signing
+is verified in CI.
+
+Gemini reviewed emulator screenshots of development builds. The following were
+not run for this release and are recorded as owner waivers in the attached
+acceptance record:
+
+- Android controlling a real Windows host
+- the API 26/35 emulator runs of the final APK
+- physical arm64 phones
+- the 9→10 upgrade
+- the 2-hour and 24-hour soaks
+- performance comparison
+- the NAT, IPv6 and fault matrix
 
 ## Previous release: 9.0.0
 

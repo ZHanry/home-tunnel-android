@@ -1,6 +1,7 @@
 """Publication boundary tests with synthetic bytes; none are device acceptance results."""
 import base64
 import copy
+from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import json
@@ -30,20 +31,43 @@ def write_json(path, record):
     path.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
 
 
-def fixture(root):
+WAIVER = {"approved_by": "owner", "approved_at": "2026-09-29T00:40:00Z",
+          "reason": "Synthetic fixture waiver; not a real owner decision.", "disclosed_in": "fixture release notes"}
+
+
+def waived_receipt(receipt):
+    """A waived gate records no environment, raw evidence or measured results."""
+    for key in ("environment", "raw_evidence"):
+        receipt.pop(key)
+    receipt.update(status="waived", cases={"synthetic-case-not-run": "waived"}, metrics={}, waiver=dict(WAIVER))
+    return receipt
+
+
+def rewrite(root, acceptance, label, mutate):
+    name = f"android-acceptance-{label}.json"
+    path = root / "acceptance" / name
+    receipt = policy.read_json(path)
+    mutate(receipt)
+    write_json(path, receipt)
+    acceptance["files"][name] = {"sha256": policy.digest(path), "bytes": path.stat().st_size}
+    return receipt
+
+
+def fixture(root, waived=()):
     candidate_dir, acceptance_dir = root / "candidate", root / "acceptance"
     candidate_dir.mkdir(); acceptance_dir.mkdir()
     revision, lock, identity, _ = candidate_tests.AndroidCandidateTests().fixture(candidate_dir)
     lock.update(status="sdk-candidate-imported", signer_identity_observed=True, matches_android_snapshot=True)
     write_json(candidate_dir / "android-controller-sdk-candidate.lock.json", lock)
     candidate = candidate_tests.SEAL.seal(candidate_dir, "10.0.0", revision, lock, identity)
-    acceptance = {"schema_version": 1, "repository": policy.REPOSITORY, "status": "passed", "acceptance_complete": True,
-        "app_revision": revision, "sdk_revision": lock["source_revision"], "candidate_sha256": policy.digest(candidate_dir / policy.MANIFEST),
+    acceptance = {"schema_version": 1, "repository": policy.REPOSITORY, "status": "accepted_with_waivers" if waived else "passed",
+        "acceptance_complete": True, "app_revision": revision, "sdk_revision": lock["source_revision"],
+        "candidate_sha256": policy.digest(candidate_dir / policy.MANIFEST),
         "packages": candidate["packages"], "coverage": {}, "files": {}}
     for label in policy.COVERAGE:
         name = f"android-acceptance-{label}.json"
         receipt = {key: value for key, value in acceptance.items() if key not in ("coverage", "files", "acceptance_complete")}
-        receipt.update(gate=label, environment="synthetic fixture, no devices", reviewed_by="unit-test fixture",
+        receipt.update(status="passed", gate=label, environment="synthetic fixture, no devices", reviewed_by="unit-test fixture",
             raw_evidence=[{"location": "fixture://not-real-acceptance", "sha256": "f" * 64}],
             cases={"synthetic-case-not-device-acceptance": "passed"}, metrics={})
         if label == "gemini_screenshots":
@@ -55,8 +79,10 @@ def fixture(root):
             receipt["metrics"] = {"runtime_scope": "not_run"}
         elif label == "udp_network":
             receipt["metrics"] = {"server_relay_payload_bytes": 0}
+        if label in waived:
+            waived_receipt(receipt)
         write_json(acceptance_dir / name, receipt)
-        acceptance["coverage"][label] = {"status": "passed", "evidence": name}
+        acceptance["coverage"][label] = {"status": receipt["status"], "evidence": name}
         acceptance["files"][name] = {"sha256": policy.digest(acceptance_dir / name), "bytes": (acceptance_dir / name).stat().st_size}
     write_json(acceptance_dir / policy.ACCEPTANCE, acceptance)
     return candidate, acceptance, lock
@@ -105,6 +131,104 @@ class AndroidPromotionTests(unittest.TestCase):
                     write_json(path, receipt)
                     acceptance["files"][name] = {"sha256": policy.digest(path), "bytes": path.stat().st_size}
                 with self.assertRaises(SystemExit):
+                    self.verify(root, candidate, acceptance, lock)
+
+    SKIPPED = ("x64_api35", "x64_api26", "v9_x64_migration", "vm_tests", "udp_network", "stability", "performance")
+
+    def test_owner_waived_gates_are_accepted_but_not_passed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=self.SKIPPED)
+            self.assertTrue(self.verify(root, candidate, acceptance, lock))
+            self.assertEqual(acceptance["status"], "accepted_with_waivers")
+            self.assertEqual({label for label, item in acceptance["coverage"].items() if item["status"] == "waived"}, set(self.SKIPPED))
+            for label in self.SKIPPED:
+                receipt = policy.read_json(root / "acceptance" / f"android-acceptance-{label}.json")
+                self.assertNotIn("passed", receipt["cases"].values())
+                self.assertEqual(receipt["metrics"], {})
+
+    def test_every_gate_except_the_signed_build_is_waivable(self):
+        self.assertEqual(set(policy.WAIVABLE), set(policy.COVERAGE) - {"arm64_build_signature"})
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=policy.WAIVABLE)
+            self.assertTrue(self.verify(root, candidate, acceptance, lock))
+
+    def test_signed_build_gate_cannot_be_waived(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=("arm64_build_signature",))
+            with self.assertRaisesRegex(SystemExit, "cannot be waived: arm64_build_signature"):
+                self.verify(root, candidate, acceptance, lock)
+
+    def test_partially_waived_receipt_still_needs_raw_evidence_for_passed_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=("stability",))
+            rewrite(root, acceptance, "stability", lambda r: r["cases"].update({"synthetic-short-run": "passed"}))
+            with self.assertRaisesRegex(SystemExit, "original hashed evidence"):
+                self.verify(root, candidate, acceptance, lock)
+            rewrite(root, acceptance, "stability", lambda r: r.update(
+                raw_evidence=[{"location": "fixture://not-real-acceptance", "sha256": "e" * 64}]))
+            self.assertTrue(self.verify(root, candidate, acceptance, lock))
+
+    def test_invalid_owner_waivers_are_rejected(self):
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        mutations = {
+            "no_reason": lambda w: w.pop("reason"), "blank_reason": lambda w: w.update(reason="  "),
+            "no_disclosure": lambda w: w.pop("disclosed_in"), "not_owner": lambda w: w.update(approved_by="coordinator"),
+            "future": lambda w: w.update(approved_at=future), "naive_time": lambda w: w.update(approved_at="2026-09-29T00:40:00"),
+            "bad_time": lambda w: w.update(approved_at="yesterday"), "missing": None}
+        for mutation, change in mutations.items():
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=("performance",))
+                rewrite(root, acceptance, "performance", lambda r: r.pop("waiver") if change is None else change(r["waiver"]))
+                with self.assertRaisesRegex(SystemExit, "Waiver"):
+                    self.verify(root, candidate, acceptance, lock)
+
+    def test_waiver_timestamp_tolerates_small_clock_skew(self):
+        policy.verify_waiver(dict(WAIVER, approved_at=(datetime.now(timezone.utc) + timedelta(minutes=4)).isoformat()), "vm_tests")
+        policy.verify_waiver(dict(WAIVER, approved_at="2026-09-29T08:40:00+08:00"), "vm_tests")
+
+    def test_manifest_status_must_match_recorded_coverage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=("vm_tests",))
+            with self.assertRaisesRegex(SystemExit, "must be accepted_with_waivers"):
+                self.verify(root, candidate, dict(acceptance, status="passed"), lock)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); candidate, acceptance, lock = fixture(root)
+            with self.assertRaisesRegex(SystemExit, "must be passed"):
+                self.verify(root, candidate, dict(acceptance, status="accepted_with_waivers"), lock)
+
+    def test_inconsistent_waived_receipts_are_rejected(self):
+        mutations = {
+            "failed_case": lambda r: r["cases"].update({"synthetic-case-failed": "failed"}),
+            "skipped_case": lambda r: r["cases"].update({"synthetic-case-skipped": "skipped"}),
+            "no_waived_case": lambda r: r.update(cases={"synthetic-case": "passed"}),
+            "receipt_passed": lambda r: r.update(status="passed"),
+            "no_reviewer": lambda r: r.update(reviewed_by=""),
+            "wrong_gate": lambda r: r.update(gate="stability")}
+        for mutation, change in mutations.items():
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=("udp_network",))
+                rewrite(root, acceptance, "udp_network", change)
+                with self.assertRaises(SystemExit):
+                    self.verify(root, candidate, acceptance, lock)
+
+    def test_passed_gates_cannot_carry_waived_cases_or_waivers(self):
+        mutations = {"waived_case": lambda r: r["cases"].update({"synthetic-case-not-run": "waived"}),
+                     "waiver": lambda r: r.update(waiver=dict(WAIVER)), "receipt_waived": lambda r: r.update(status="waived"),
+                     "no_environment": lambda r: r.pop("environment")}
+        for mutation, change in mutations.items():
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); candidate, acceptance, lock = fixture(root)
+                rewrite(root, acceptance, "arm64_build_signature", change)
+                with self.assertRaises(SystemExit):
+                    self.verify(root, candidate, acceptance, lock)
+
+    def test_coverage_entry_must_be_an_exact_passed_or_waived_record(self):
+        for entry in ({"status": "skipped", "evidence": "android-acceptance-vm_tests.json"},
+                      {"status": "waived", "evidence": "android-acceptance-vm_tests.json", "passed": True}, "waived"):
+            with self.subTest(entry=entry), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); candidate, acceptance, lock = fixture(root, waived=("vm_tests",))
+                acceptance["coverage"]["vm_tests"] = entry
+                with self.assertRaisesRegex(SystemExit, "Missing acceptance result"):
                     self.verify(root, candidate, acceptance, lock)
 
     def test_changed_installable_and_supporting_files_are_rejected(self):
@@ -156,8 +280,13 @@ class AndroidPromotionTests(unittest.TestCase):
             network.assert_not_called()
 
     def test_staging_preserves_all_original_bytes(self):
+        for waived in ((), self.SKIPPED):
+            with self.subTest(waived=bool(waived)):
+                self.stage_fixture(waived)
+
+    def stage_fixture(self, waived):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary); candidate, acceptance, lock = fixture(root)
+            root = Path(temporary); candidate, acceptance, lock = fixture(root, waived)
             subjects = set(candidate["files"]) | {policy.MANIFEST}
             for name in subjects:
                 (root / "candidate" / (name + ".sigstore.json")).write_bytes(b"fixture signature, not a real certificate")

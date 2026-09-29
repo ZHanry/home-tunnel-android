@@ -297,6 +297,28 @@ def public_asset_names(component, version):
             for platform in ("linux", "macos") for arch in ("amd64", "arm64")]
     return [f"home-tunnel-server-{version}.tar.gz", "compose.release.yaml"]
 
+def waiver_notes(directory):
+    """Disclose every owner-waived Android acceptance gate; a waiver is not a pass."""
+    from android_release_candidate import ACCEPTANCE, COVERAGE, local_file, read_json
+    if not (directory / ACCEPTANCE).is_file():
+        return ""
+    acceptance = read_json(local_file(directory, ACCEPTANCE))
+    lines = []
+    for label in COVERAGE:
+        item = acceptance["coverage"][label]
+        if item["status"] != "waived":
+            continue
+        receipt = read_json(local_file(directory, item["evidence"]))
+        waiver = receipt["waiver"]
+        reason = " ".join(waiver["reason"].split())
+        cases = ", ".join(f"`{case.replace('`', '')}`" for case, result in sorted(receipt["cases"].items()) if result == "waived")
+        lines.append(f"- `{label}`: {reason} Waived cases: {cases}. Approved by the {waiver['approved_by']} at {waiver['approved_at']}.")
+    if not lines:
+        return ""
+    return ("\n\n## Not verified (owner waivers)\n\n"
+            "The owner approved publishing without these acceptance gates. They were not tested and are not reported as passed.\n\n"
+            + "\n".join(lines) + "\n")
+
 def publish(stable=False):
     directory=ROOT/'release'
     stable = re.fullmatch(r"v\d+\.\d+\.\d+", TAG) is not None
@@ -323,6 +345,8 @@ def publish(stable=False):
     title=f'Home Tunnel {COMPONENT} {local_version()}' + ('' if stable else f' ({TAG.rsplit("-",1)[1]})')
     notes=ROOT/'release-notes.md'
     summary=(ROOT/'docs/RELEASE_NOTES.md').read_text(encoding='utf-8')
+    if stable and COMPONENT == "android":
+        summary += waiver_notes(directory)
     run_url=f"https://github.com/{REPO}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     notes.write_text(summary + "\n\n## Downloads\n\n" + downloads + "\n\n```text\n" + checksums + "```\n" + f"\n\nSource: `{SHA}`. [Build, verification and signing evidence]({run_url}).\n\n" +
         "Packages and durable verification evidence are covered by SHA256SUMS.txt and its Sigstore bundle.\n",encoding='utf-8')

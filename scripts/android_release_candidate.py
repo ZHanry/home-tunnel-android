@@ -2,7 +2,10 @@
 
 These checks validate recorded evidence, not the act of performing device tests.
 The release coordinator reviews the original evidence before committing receipts.
+An owner waiver records that a gate was knowingly not verified; it is never a pass
+and carries no measured results.
 """
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -14,6 +17,9 @@ SIGNER = ".github/workflows/android-candidate.yml"
 ACCEPTANCE_REPOSITORY = "ZHanry/home-tunnel"
 COVERAGE = ("x64_api35", "x64_api26", "arm64_build_signature", "gemini_screenshots",
             "v9_x64_migration", "vm_tests", "udp_network", "stability", "performance")
+# The build/signature gate is backed by CI signing and apksigner verification of the
+# candidate bytes, so it must truly pass. Every other gate may carry an owner waiver.
+WAIVABLE = tuple(label for label in COVERAGE if label != "arm64_build_signature")
 MANIFEST = "android-release-candidate.json"
 ACCEPTANCE = "android-release-acceptance.json"
 
@@ -106,33 +112,73 @@ def verify_candidate(record, directory, app_revision, sdk_lock, version):
     return record
 
 
+def verify_waiver(waiver, label):
+    """Validate an owner waiver: who approved it, when, why, and where it is disclosed."""
+    if not isinstance(waiver, dict) or waiver.get("approved_by") != "owner":
+        raise SystemExit("Waiver must be approved by the owner: " + label)
+    try:
+        approved = datetime.fromisoformat(str(waiver.get("approved_at", "")))
+    except ValueError:
+        raise SystemExit("Waiver approval time is invalid: " + label) from None
+    if approved.tzinfo is None or approved.utcoffset() is None:
+        raise SystemExit("Waiver approval time must include a timezone: " + label)
+    if approved > datetime.now(timezone.utc) + timedelta(minutes=5):
+        raise SystemExit("Waiver approval time is in the future: " + label)
+    for key in ("reason", "disclosed_in"):
+        if not isinstance(waiver.get(key), str) or not waiver[key].strip():
+            raise SystemExit(f"Waiver lacks its {key}: " + label)
+    return waiver
+
+
 def verify_acceptance(acceptance, directory, candidate, candidate_sha):
-    expected = {"schema_version": 1, "repository": REPOSITORY, "status": "passed", "acceptance_complete": True,
-                "app_revision": candidate["app_revision"], "sdk_revision": candidate["sdk_revision"],
+    bindings = {"repository": REPOSITORY, "app_revision": candidate["app_revision"], "sdk_revision": candidate["sdk_revision"],
                 "candidate_sha256": candidate_sha, "packages": candidate["packages"]}
+    expected = dict(bindings, schema_version=1, acceptance_complete=True)
     if any(acceptance.get(key) != value for key, value in expected.items()):
         raise SystemExit("Acceptance is incomplete or belongs to different source/package bytes")
     coverage = acceptance.get("coverage", {})
     files = acceptance.get("files", {})
-    if set(coverage) != set(COVERAGE) or set(files) != {f"android-acceptance-{label}.json" for label in COVERAGE}:
+    if (not isinstance(coverage, dict) or set(coverage) != set(COVERAGE) or not isinstance(files, dict) or
+            set(files) != {f"android-acceptance-{label}.json" for label in COVERAGE}):
         raise SystemExit("All required acceptance receipts must be present")
+    statuses = {}
+    for label in COVERAGE:
+        status = coverage[label].get("status") if isinstance(coverage[label], dict) else None
+        if status not in ("passed", "waived") or coverage[label] != {"status": status, "evidence": f"android-acceptance-{label}.json"}:
+            raise SystemExit("Missing acceptance result: " + label)
+        if status == "waived" and label not in WAIVABLE:
+            raise SystemExit("This acceptance gate cannot be waived: " + label)
+        statuses[label] = status
+    overall = "passed" if all(status == "passed" for status in statuses.values()) else "accepted_with_waivers"
+    if acceptance.get("status") != overall:
+        raise SystemExit("Acceptance status must be " + overall + " for the recorded coverage")
     verify_files(files, directory)
     for label in COVERAGE:
-        item = coverage[label]
+        status = statuses[label]
         name = f"android-acceptance-{label}.json"
-        if item != {"status": "passed", "evidence": name}:
-            raise SystemExit("Missing acceptance result: " + label)
         receipt = read_json(local_file(directory, name))
-        if any(receipt.get(key) != value for key, value in expected.items() if key not in ("schema_version", "acceptance_complete")):
+        if any(receipt.get(key) != value for key, value in bindings.items()):
             raise SystemExit("Receipt has stale package or source bindings: " + label)
-        if receipt.get("gate") != label or not receipt.get("environment") or not receipt.get("reviewed_by"):
+        if receipt.get("status") != status:
+            raise SystemExit("Receipt status differs from the acceptance coverage: " + label)
+        if receipt.get("gate") != label or not receipt.get("reviewed_by") or (status == "passed" and not receipt.get("environment")):
             raise SystemExit("Receipt lacks its environment or reviewer: " + label)
         cases = receipt.get("cases")
-        if not isinstance(cases, dict) or not cases or any(not name or result != "passed" for name, result in cases.items()):
+        if (not isinstance(cases, dict) or not cases or any(not case or result not in ("passed", "waived") for case, result in cases.items()) or
+                (status == "passed" and any(result != "passed" for result in cases.values())) or
+                (status == "waived" and "waived" not in cases.values())):
             raise SystemExit("Receipt has missing, failed or skipped required cases: " + label)
-        raw = receipt.get("raw_evidence", [])
-        if not isinstance(raw, list) or not raw or any(not r.get("location") or not re.fullmatch(r"[0-9a-f]{64}", str(r.get("sha256", ""))) for r in raw):
-            raise SystemExit("Receipt must locate the original hashed evidence: " + label)
+        if status == "waived":
+            verify_waiver(receipt.get("waiver"), label)
+        elif "waiver" in receipt:
+            raise SystemExit("A passed receipt cannot carry a waiver: " + label)
+        if status == "passed" or "passed" in cases.values():
+            raw = receipt.get("raw_evidence", [])
+            if (not isinstance(raw, list) or not raw or
+                    any(not isinstance(r, dict) or not r.get("location") or not re.fullmatch(r"[0-9a-f]{64}", str(r.get("sha256", ""))) for r in raw)):
+                raise SystemExit("Receipt must locate the original hashed evidence: " + label)
+        if status == "waived":
+            continue  # A waiver is not a measurement; no metrics are checked or implied.
         metrics = receipt.get("metrics", {})
         if label == "gemini_screenshots":
             total = metrics.get("applicable")

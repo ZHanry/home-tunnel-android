@@ -197,6 +197,24 @@ class ReleasePolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "Unknown release stage"):
             module.validate_release_tag("v1.0.0", "1.0.0", "publc-release")
 
+    def test_stable_notes_disclose_every_owner_waiver(self):
+        import test_android_promotion as promotion
+        waived = ("vm_tests", "stability")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            promotion.fixture(root, waived=waived)
+            notes = module.waiver_notes(root / "acceptance")
+            self.assertIn("## Not verified (owner waivers)", notes)
+            for label in waived:
+                self.assertIn(f"- `{label}`: {promotion.WAIVER['reason']} Waived cases: `synthetic-case-not-run`.", notes)
+            for label in set(promotion.policy.COVERAGE) - set(waived):
+                self.assertNotIn(f"`{label}`", notes)
+            self.assertEqual(module.waiver_notes(root / "candidate"), "")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            promotion.fixture(root)
+            self.assertEqual(module.waiver_notes(root / "acceptance"), "")
+
     def test_public_asset_list_keeps_only_installable_deliverables(self):
         self.assertEqual(module.public_asset_names("android", "6.0.0"), ["HomeTunnel-Android-6.0.0-arm64-v8a.apk", "HomeTunnel-Android-6.0.0-x86_64.apk"])
         client = module.public_asset_names("client", "6.0.0")

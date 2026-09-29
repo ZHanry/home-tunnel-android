@@ -119,6 +119,7 @@ def fetch_acceptance(revision, candidate, candidate_sha, destination):
     origin = {"repository": ACCEPTANCE_REPOSITORY, "revision": revision,
         "path": f"validation/android/{candidate['app_revision']}", "manifest_sha256": digest(destination / ACCEPTANCE)}
     (destination / "android-acceptance-origin.json").write_text(json.dumps(origin, indent=2) + "\n", encoding="utf-8")
+    return record
 
 
 def main():
@@ -154,14 +155,20 @@ def main():
             build["source_ref"] not in {"refs/heads/" + run["head_branch"], "refs/tags/" + run["head_branch"]}):
         raise SystemExit("Candidate manifest differs from the requested build invocation")
     verify_signatures(directory, candidate, args.cosign, args.output / "verification")
+    acceptance = None
     if args.acceptance_revision:
-        fetch_acceptance(args.acceptance_revision, candidate, digest(directory / MANIFEST), args.output / "acceptance")
+        acceptance = fetch_acceptance(args.acceptance_revision, candidate, digest(directory / MANIFEST), args.output / "acceptance")
     receipt = {"schema_version": 1, "repository": REPOSITORY, "source_revision": args.revision,
         "run_id": args.run_id, "run_attempt": run["run_attempt"], "artifact_id": args.artifact_id,
         "artifact_sha256": args.artifact_sha256, "candidate_sha256": digest(directory / MANIFEST),
         "signatures_verified": True, "run_attestations_verified": True, "acceptance_revision": args.acceptance_revision}
     (args.output / "android-candidate-download.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-    print("Verified fixed Android candidate bytes" + (" and reviewed acceptance receipts" if args.acceptance_revision else "; runtime acceptance still required"))
+    if acceptance is None:
+        print("Verified fixed Android candidate bytes; runtime acceptance still required")
+    else:
+        waived = [label for label in COVERAGE if acceptance["coverage"][label]["status"] == "waived"]
+        print("Verified fixed Android candidate bytes and reviewed acceptance receipts (status: " + acceptance["status"] +
+              ("; owner-waived, not verified: " + ", ".join(waived) if waived else "") + ")")
 
 
 if __name__ == "__main__":
