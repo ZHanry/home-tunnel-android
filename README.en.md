@@ -24,6 +24,14 @@ Tunnel management retains compatibility with server **7.0.0+**. Remote control s
 verifying HTTPS. Existing encrypted single-account state migrates on upgrade;
 uninstalling can destroy local keys and is not required.
 
+## Screenshots
+
+Actual 10.0.0 Compose UI on an Android API 35 emulator, using a debug build and
+explicit sample data. These show the remote-control entry and device list, not
+final-APK or physical-device remote acceptance. [Capture provenance and hashes](docs/SCREENSHOTS.md).
+
+<img src="docs/assets/overview.png" alt="10.0.0 remote entry with emulator sample data" width="280"> <img src="docs/assets/devices.png" alt="10.0.0 device list with emulator sample data" width="280">
+
 Build with JDK 17 and Android SDK 35:
 
 ```sh

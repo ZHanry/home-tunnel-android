@@ -1,5 +1,6 @@
 """Public entry points must describe and link the current component version."""
 import json
+import hashlib
 from pathlib import Path
 import unittest
 
@@ -19,6 +20,19 @@ class ReadmeVersionTests(unittest.TestCase):
                 for abi in ("arm64-v8a", "x86_64"):
                     self.assertIn(f"{base}/download/v{version}/HomeTunnel-Android-{version}-{abi}.apk", content)
                 self.assertIn("docs/RELEASE_NOTES.md", content)
+
+    def test_documentation_screenshots_retain_verified_original_bytes(self):
+        record = json.loads((ROOT / "docs/assets/screenshots.json").read_text())
+        self.assertEqual(record["component_version"], json.loads((ROOT / "compatibility.json").read_text())["version"])
+        self.assertEqual(record["variant"], "debug")
+        self.assertFalse(record["instrumentation"]["full_app_acceptance"])
+        self.assertEqual(record["instrumentation"]["remote_media_acceptance"], "not_run")
+        for screenshot in record["screenshots"]:
+            with self.subTest(path=screenshot["path"]):
+                image = (ROOT / screenshot["path"]).read_bytes()
+                self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
+                self.assertEqual(hashlib.sha256(image).hexdigest(), screenshot["sha256"])
+                self.assertFalse(screenshot["edited"])
 
 
 if __name__ == "__main__":

@@ -26,6 +26,13 @@ Windows、macOS、Linux 电脑或 NAS 上。
 纯管理登录无需 FRPS 证书字段；HTTPS 身份仍正常校验。已有单账号状态自动迁移，
 继续使用 AndroidKeyStore；不要为升级而卸载应用。
 
+## 界面预览
+
+10.0.0 实际 Compose 界面，Android API 35 模拟器、调试构建及明确的示例数据。
+截图展示远控入口和设备列表，不代表最终 APK 或真机远控验收。[截图来源与哈希](docs/SCREENSHOTS.md)。
+
+<img src="docs/assets/overview.png" alt="10.0.0 远控入口，模拟器示例数据" width="280"> <img src="docs/assets/devices.png" alt="10.0.0 设备列表，模拟器示例数据" width="280">
+
 ## 构建
 
 JDK 17、Android SDK 35，使用仓库内已锁定的 Gradle wrapper：
