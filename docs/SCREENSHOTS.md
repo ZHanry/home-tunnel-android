@@ -15,8 +15,8 @@ remote session. The original 1080 × 2400 PNG bytes are preserved without editin
 
 Instrumentation reported 21 passed, 0 failed and 2 skipped tests. This is a debug
 build with development fixtures. It is not final signed-APK, physical-device,
-remote-media or full-app acceptance, and it does not change the owner waivers in
-[release notes](RELEASE_NOTES.md).
+remote-media or full-app acceptance. The final-artifact tests that remain unrun
+are listed separately in [release notes](RELEASE_NOTES.md).
 
 The retired `overview.jpg` and `administration.jpg` were stale, unreferenced assets.
 Current docs use `overview.png` and `devices.png`; the device image is not labeled

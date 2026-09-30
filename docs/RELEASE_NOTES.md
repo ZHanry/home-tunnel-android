@@ -14,8 +14,8 @@ viewers. The APK is signed with the existing release certificate, and the signin
 is verified in CI.
 
 Gemini reviewed emulator screenshots of development builds. The following were
-not run for this release and are recorded as owner waivers in the attached
-acceptance record:
+not run on the final release artifacts. Their detailed test status is preserved
+in the attached acceptance record:
 
 - Android controlling a real Windows host
 - the API 26/35 emulator runs of the final APK

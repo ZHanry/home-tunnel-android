@@ -10,7 +10,7 @@
 Android 8.0+ 的 Home Tunnel 远程管理客户端。手机负责管理，实际隧道持续运行在
 Windows、macOS、Linux 电脑或 NAS 上。
 
-当前版本为 **10.0.0**，使用与 10.0.0 桌面端同源、经核验的 arm64-v8a / x86_64 原生 SDK。远控支持经授权的画面与输入、系统声音播放、剪贴板、文件、显示器选择和有界重连，仅使用 UDP 直连；服务端 TURN 中继用于浏览器控制端。麦克风回传不可用。构建、签名和开发版截图审核不等于最终安装包或真机验收，未测项目及负责人豁免见 [发行说明](docs/RELEASE_NOTES.md) 和 [能力与验证边界](docs/REMOTE_DESKTOP.md)。
+当前版本为 **10.0.0**，使用与 10.0.0 桌面端同源、经核验的 arm64-v8a / x86_64 原生 SDK。远控支持经授权的画面与输入、系统声音播放、剪贴板、文件、显示器选择和有界重连，仅使用 UDP 直连；服务端 TURN 中继用于浏览器控制端。麦克风回传不可用。构建、签名和开发版截图审核不等于最终安装包或真机验收，已验证范围和未验证项目见 [发行说明](docs/RELEASE_NOTES.md) 和 [能力与验证边界](docs/REMOTE_DESKTOP.md)。
 
 [下载 10.0.0 正式 APK（arm64-v8a）](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-arm64-v8a.apk) · [x86_64 APK](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-x86_64.apk) · [Release、校验和与签名证据](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
 
