@@ -2,7 +2,7 @@
 
 **在手机上管理自己的服务器与家庭设备**
 
-[![Stable 7.0.0](https://img.shields.io/badge/stable-7.0.0-176653)](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0) [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Stable release](https://img.shields.io/github/v/release/ZHanry/home-tunnel-android?label=stable)](https://github.com/ZHanry/home-tunnel-android/releases/latest) [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 [English](README.en.md) · [项目网站](https://zhanry.github.io/home-tunnel/) · [下载](https://github.com/ZHanry/home-tunnel/blob/main/docs/DOWNLOADS.md) · [快速开始](https://github.com/ZHanry/home-tunnel/blob/main/docs/GETTING_STARTED.md)
 
@@ -10,9 +10,9 @@
 Android 8.0+ 的 Home Tunnel 远程管理客户端。手机负责管理，实际隧道持续运行在
 Windows、macOS、Linux 电脑或 NAS 上。
 
-当前源码为 **8.0.0**：新增控制端安全身份、配对界面和同源 JNI 核心。发行包要求锁定客户端正式 Release 的原生 SDK，支持 VP8/Surface 与键鼠、文本的 UDP 直连实现；Android 真机解码与输入尚待验证。音频、麦克风回传、剪贴板/文件传输、多会话界面和 AV1/HEVC 尚不可用，应用如实显示状态。已有隧道管理功能继续可用，下方保留 7.0 历史下载。[能力与验证边界](docs/REMOTE_DESKTOP.md)。
+当前版本为 **10.0.0**，使用与 10.0.0 桌面端同源、经核验的 arm64-v8a / x86_64 原生 SDK。远控支持经授权的画面与输入、系统声音播放、剪贴板、文件、显示器选择和有界重连，仅使用 UDP 直连；服务端 TURN 中继用于浏览器控制端。麦克风回传不可用。构建、签名和开发版截图审核不等于最终安装包或真机验收，未测项目及负责人豁免见 [发行说明](docs/RELEASE_NOTES.md) 和 [能力与验证边界](docs/REMOTE_DESKTOP.md)。
 
-[下载 7.0.0 正式 APK（arm64-v8a）](https://github.com/ZHanry/home-tunnel-android/releases/download/v7.0.0/HomeTunnel-Android-7.0.0-arm64-v8a.apk) · [Release 与签名证据](https://github.com/ZHanry/home-tunnel-android/releases/tag/v7.0.0)
+[下载 10.0.0 正式 APK（arm64-v8a）](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-arm64-v8a.apk) · [x86_64 APK](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-x86_64.apk) · [Release、校验和与签名证据](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
 
 ## 登录后能做什么
 
@@ -22,7 +22,7 @@ Windows、macOS、Linux 电脑或 NAS 上。
 - 设备搜索、标签和收藏；最多 50 条连接批量暂停/恢复，确认范围并逐项报告。
 - 管理账号、系统状态和审计；复制脱敏的管理端诊断报告。
 
-服务端需为 **7.0.0**。输入自己的 HTTPS 地址后登录，选择已登记设备，再创建连接。
+隧道管理保留对 **7.0.0+** 服务端的兼容；远控应搭配公布对应能力的 **10.0.0** 服务端与桌面端。输入自己的 HTTPS 地址后登录，选择已登记设备，再创建连接。
 纯管理登录无需 FRPS 证书字段；HTTPS 身份仍正常校验。已有单账号状态自动迁移，
 继续使用 AndroidKeyStore；不要为升级而卸载应用。
 
