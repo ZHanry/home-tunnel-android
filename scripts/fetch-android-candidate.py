@@ -167,8 +167,8 @@ def main():
         print("Verified fixed Android candidate bytes; runtime acceptance still required")
     else:
         waived = [label for label in COVERAGE if acceptance["coverage"][label]["status"] == "waived"]
-        print("Verified fixed Android candidate bytes and reviewed acceptance receipts (status: " + acceptance["status"] +
-              ("; owner-waived, not verified: " + ", ".join(waived) if waived else "") + ")")
+        print("Verified fixed Android candidate bytes and reviewed acceptance receipts" +
+              ("; not verified: " + ", ".join(waived) if waived else ""))
 
 
 if __name__ == "__main__":

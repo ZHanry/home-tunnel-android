@@ -298,7 +298,7 @@ def public_asset_names(component, version):
     return [f"home-tunnel-server-{version}.tar.gz", "compose.release.yaml"]
 
 def waiver_notes(directory):
-    """Disclose every owner-waived Android acceptance gate; a waiver is not a pass."""
+    """Describe unverified coverage without changing the original evidence."""
     from android_release_candidate import ACCEPTANCE, COVERAGE, local_file, read_json
     if not (directory / ACCEPTANCE).is_file():
         return ""
@@ -309,14 +309,12 @@ def waiver_notes(directory):
         if item["status"] != "waived":
             continue
         receipt = read_json(local_file(directory, item["evidence"]))
-        waiver = receipt["waiver"]
-        reason = " ".join(waiver["reason"].split())
         cases = ", ".join(f"`{case.replace('`', '')}`" for case, result in sorted(receipt["cases"].items()) if result == "waived")
-        lines.append(f"- `{label}`: {reason} Waived cases: {cases}. Approved by the {waiver['approved_by']} at {waiver['approved_at']}.")
+        lines.append(f"- `{label}`: not verified. Unverified cases: {cases}. Evidence: `{item['evidence']}`.")
     if not lines:
         return ""
-    return ("\n\n## Not verified (owner waivers)\n\n"
-            "The owner approved publishing without these acceptance gates. They were not tested and are not reported as passed.\n\n"
+    return ("\n\n## Not verified\n\n"
+            "The following checks were not run or remain unverified. They are not reported as passed. Original evidence files retain the detailed test records.\n\n"
             + "\n".join(lines) + "\n")
 
 def publish(stable=False):

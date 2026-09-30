@@ -26,6 +26,15 @@ repository_policy = importlib.util.module_from_spec(repository_spec)
 repository_spec.loader.exec_module(repository_policy)
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_public_documentation_uses_objective_test_coverage(self):
+        root = Path(__file__).resolve().parents[1]
+        documents = [*root.glob("README*.md"), *(root / "docs").rglob("*.md")]
+        for document in documents:
+            with self.subTest(path=document.relative_to(root)):
+                self.assertNotRegex(document.read_text(encoding="utf-8"), r"(?i)owner[\s_-]+waiv|负责人豁免")
+        policy = json.loads((root / "compatibility.json").read_text())["support_policy"]
+        self.assertNotRegex(policy, r"(?i)owner[\s_-]+waiv|负责人豁免")
+
     def frozen_contract_fixture(self):
         project = {"contract_ref": "api-v1.4.0", "contract_status": "frozen", "frozen_tag": "api-v1.4.0"}
         lock = {"repository": "ZHanry/home-tunnel-server", "contract_status": "frozen",
@@ -197,16 +206,21 @@ class ReleasePolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "Unknown release stage"):
             module.validate_release_tag("v1.0.0", "1.0.0", "publc-release")
 
-    def test_stable_notes_disclose_every_owner_waiver(self):
+    def test_stable_notes_list_unverified_coverage_without_rewriting_evidence(self):
         import test_android_promotion as promotion
         waived = ("vm_tests", "stability")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             promotion.fixture(root, waived=waived)
+            originals = {path: path.read_bytes() for path in (root / "acceptance").iterdir()}
             notes = module.waiver_notes(root / "acceptance")
-            self.assertIn("## Not verified (owner waivers)", notes)
+            self.assertIn("## Not verified\n", notes)
             for label in waived:
-                self.assertIn(f"- `{label}`: {promotion.WAIVER['reason']} Waived cases: `synthetic-case-not-run`.", notes)
+                self.assertIn(f"- `{label}`: not verified. Unverified cases: `synthetic-case-not-run`.", notes)
+            self.assertNotIn("waiv", notes.lower())
+            self.assertNotIn("owner", notes.lower())
+            for path, original in originals.items():
+                self.assertEqual(path.read_bytes(), original)
             for label in set(promotion.policy.COVERAGE) - set(waived):
                 self.assertNotIn(f"`{label}`", notes)
             self.assertEqual(module.waiver_notes(root / "candidate"), "")
