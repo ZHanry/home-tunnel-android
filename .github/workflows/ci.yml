@@ -9,6 +9,9 @@ name: Android CI
   workflow_dispatch: null
 permissions:
   contents: read
+env:
+  # A clean universal Flutter engine restore exceeds Gradle's upstream 1 GB heap.
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dorg.gradle.workers.max=2
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
