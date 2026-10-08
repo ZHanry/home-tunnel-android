@@ -108,11 +108,37 @@ jobs:
         vcpkgDirectory: ${{ runner.temp }}/vcpkg
         vcpkgGitCommitId: 120deac3062162151622ca4860575a33844ba10b
         vcpkgJsonGlob: homedesk-core/client/vcpkg.json
-        doNotCache: false
+        doNotCache: true
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
         name: homedesk-bridge
         path: homedesk-core/client
+    - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+      id: native-deps
+      with:
+        path: |-
+          ${{ runner.temp }}/vcpkg/installed
+          ${{ runner.temp }}/vcpkg/buildtrees
+          ${{ runner.temp }}/vcpkg/downloads
+        key: homedesk-android-native-source-ndk27-120deac-${{ matrix.abi }}-${{ hashFiles('homedesk-core/client/vcpkg.json', 'homedesk-core/client/res/vcpkg/**') }}
+    - name: Build locked dependencies with corresponding source
+      env:
+        ABI: ${{ matrix.abi }}
+        # Binary-only cache entries do not retain the actual patched sources.
+        VCPKG_BINARY_SOURCES: clear
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang libclang-dev nasm ninja-build cmake pkg-config
+        cd homedesk-core/client
+        bash flutter/build_android_deps.sh "$ABI"
+    - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+      if: ${{ steps.native-deps.outputs.cache-hit != 'true' }}
+      with:
+        path: |-
+          ${{ runner.temp }}/vcpkg/installed
+          ${{ runner.temp }}/vcpkg/buildtrees
+          ${{ runner.temp }}/vcpkg/downloads
+        key: ${{ steps.native-deps.outputs.cache-primary-key }}
     - name: Compile the locked native core
       env:
         ABI: ${{ matrix.abi }}
@@ -124,7 +150,6 @@ jobs:
         sudo apt-get install -y clang libclang-dev nasm ninja-build cmake pkg-config
         cargo install cargo-ndk --version 3.5.4 --locked
         cd homedesk-core/client
-        bash flutter/build_android_deps.sh "$ABI"
         # Bindgen must use Bionic target headers, independently of cargo-ndk's C compiler.
         export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/$SYSROOT -D__ANDROID_API__=26"
         cargo ndk --platform 26 --target "$TARGET" build --locked --release --features "$FEATURES" --lib
