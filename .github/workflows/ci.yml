@@ -219,7 +219,8 @@ jobs:
         flutter test --no-pub test/homedesk_devices_test.dart test/homedesk_dashboard_test.dart test/homedesk_advanced_test.dart test/homedesk_services_test.dart test/homedesk_mobile_test.dart
         flutter build apk --debug --target-platform android-arm64,android-x64
         cd android
-        ./gradlew --no-daemon :app:assembleDebugAndroidTest
+        # The test task rebuilds the app; keep Flutter's selected ABIs instead of its arm32 default.
+        ./gradlew --no-daemon :app:assembleDebugAndroidTest -Ptarget-platform=android-arm64,android-x64
         cd "$GITHUB_WORKSPACE"
         python3 scripts/verify-homedesk-apk.py homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-debug.apk --unsigned-debug
         mkdir -p outputs/android-debug

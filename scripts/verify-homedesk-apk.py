@@ -32,7 +32,7 @@ with zipfile.ZipFile(args.apk) as archive:
     engines = {}
     abis = {name.split('/')[1] for name in archive.namelist() if name.startswith('lib/') and name.endswith('.so')}
     if abis != {'arm64-v8a','x86_64'}:
-        raise SystemExit('Universal APK must contain exactly arm64-v8a and x86_64')
+        raise SystemExit('Universal APK must contain exactly arm64-v8a and x86_64; found: ' + ', '.join(sorted(abis)))
     for abi in sorted(abis):
         for library in ('librustdesk.so','libflutter.so','libc++_shared.so'):
             name = f'lib/{abi}/{library}'
