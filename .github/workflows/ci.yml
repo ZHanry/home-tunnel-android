@@ -93,12 +93,7 @@ jobs:
         java-version: '17'
     - name: Install pinned Android SDK/NDK
       run: |
-        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
-        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
-        cp gradle/wrapper/gradle-wrapper.jar homedesk-core/client/flutter/android/gradle/wrapper/
-        printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> homedesk-core/client/flutter/android/gradle/wrapper/gradle-wrapper.properties
-        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-        echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+        bash scripts/setup-homedesk-sdk.sh
     - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
       with:
         path: |-
@@ -174,12 +169,7 @@ jobs:
         java-version: '17'
     - name: Install pinned Android SDK/NDK
       run: |
-        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
-        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
-        cp gradle/wrapper/gradle-wrapper.jar homedesk-core/client/flutter/android/gradle/wrapper/
-        printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> homedesk-core/client/flutter/android/gradle/wrapper/gradle-wrapper.properties
-        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-        echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+        bash scripts/setup-homedesk-sdk.sh
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
         name: homedesk-bridge
@@ -277,12 +267,7 @@ jobs:
         java-version: '17'
     - name: Install pinned Android SDK/NDK
       run: |
-        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
-        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
-        cp gradle/wrapper/gradle-wrapper.jar homedesk-core/client/flutter/android/gradle/wrapper/
-        printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> homedesk-core/client/flutter/android/gradle/wrapper/gradle-wrapper.properties
-        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-        echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+        bash scripts/setup-homedesk-sdk.sh
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
         name: homedesk-bridge
