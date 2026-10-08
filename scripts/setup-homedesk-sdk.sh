@@ -10,5 +10,11 @@ cp gradle/wrapper/gradle-wrapper.jar "$android/gradle/wrapper/"
 cp gradlew "$android/gradlew"
 chmod +x "$android/gradlew"
 printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> "$android/gradle/wrapper/gradle-wrapper.properties"
+
+# Flutter debug mode adds x86 engines even with explicit target-platform flags.
+# Filter APK packaging to the ABIs for which this repository builds the core.
+gradle_user_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+mkdir -p "$gradle_user_home/init.d"
+cp gradle/homedesk-abis.gradle "$gradle_user_home/init.d/homedesk-abis.gradle"
 echo "ANDROID_NDK_HOME=$sdk/ndk/27.2.12479018" >> "$GITHUB_ENV"
 echo "ANDROID_NDK=$sdk/ndk/27.2.12479018" >> "$GITHUB_ENV"

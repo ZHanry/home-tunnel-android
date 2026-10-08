@@ -9,3 +9,5 @@ Three attachments: universal arm64-v8a/x86_64 APK, source/build materials and SH
 Configure your own hbbs trust settings and HTTPS Server 11.x portal. Account enrollment does not grant screen sharing. Real-device, cross-network NAT, sustained media, audio/input/files and 16 KiB page acceptance remain pending. [Candidate notes](docs/HOMEDESK_RELEASE.md).
 
 Initialize recursive submodules and run `python3 scripts/check-homedesk-source.py`. Hosted CI pins Rust1.96, Flutter3.24.5, FRB1.80.1, vcpkg, JDK17 and NDK27.2, builds both ABIs, tests AndroidKeyStore/startup on API26/35, then signs the universal APK with the existing identity. Releases reuse exact main-build bytes. Historical app/native/10.x recipes are retained for provenance and are not packaged by the current workflow. Shared HomeDesk runtime is AGPL-3.0; original project code retains Apache-2.0.
+
+`scripts/setup-homedesk-sdk.sh` installs this repository's `gradle/homedesk-abis.gradle` in Gradle's `init.d`. Debug and release APKs package only arm64-v8a/x86_64, excluding Flutter's extra debug architectures without a matching Rust engine. Instrumentation assembly retains the same two target platforms.

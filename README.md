@@ -19,6 +19,8 @@ python3 scripts/check-homedesk-source.py
 
 `homedesk-core` 是精确固定的 Client Git 子模块，包含同一 Rust/Flutter 源码，不维护复制分叉。`.github/workflows/ci.yml` 固定 Rust 1.96.0、Flutter 3.24.5、FRB 1.80.1、vcpkg、JDK17 和 NDK27.2，编译两个原生 ABI、运行 API26/35 加密存储与启动测试，使用原发行证书构建通用 APK。发布复用同一个 main 构建的原始字节。
 
+`scripts/setup-homedesk-sdk.sh` 将本仓 `gradle/homedesk-abis.gradle` 安装到 Gradle 的 `init.d`。调试与发行 APK 都只打包 arm64-v8a/x86_64，避免 Flutter 自动附加的调试架构缺少对应 Rust 引擎；测试包构建同时沿用这两个目标架构。
+
 历史 `app/`、`native/` 和旧发行脚本供 10.x 追溯，不由当前 CI 打包。共用 HomeDesk 运行时按 AGPL-3.0 分发，材料包含对应源码、依赖和许可证；原 Android/Go 项目代码保留 Apache-2.0。
 
 [Client 共用源码](https://github.com/ZHanry/home-tunnel-client) · [Server](https://github.com/ZHanry/home-tunnel-server) · [项目入口](https://github.com/ZHanry/home-tunnel)
