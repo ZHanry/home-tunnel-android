@@ -21,6 +21,8 @@ python3 scripts/check-homedesk-source.py
 
 `scripts/setup-homedesk-sdk.sh` 将本仓 `gradle/homedesk-abis.gradle` 安装到 Gradle 的 `init.d`。调试与发行 APK 都只打包 arm64-v8a/x86_64，避免 Flutter 自动附加的调试架构缺少对应 Rust 引擎；测试包构建同时沿用这两个目标架构。
 
+构建准备还通过 `scripts/prepare-homedesk-signing.py` 将固定共用项目的 `storeFile` 改为显式赋值，修正提供签名路径时 Groovy 条件表达式的解析。补丁严格匹配原行，遇到其他源码会停止；发行仍强制原证书，不回退调试签名。
+
 历史 `app/`、`native/` 和旧发行脚本供 10.x 追溯，不由当前 CI 打包。共用 HomeDesk 运行时按 AGPL-3.0 分发，材料包含对应源码、依赖和许可证；原 Android/Go 项目代码保留 Apache-2.0。
 
 [Client 共用源码](https://github.com/ZHanry/home-tunnel-client) · [Server](https://github.com/ZHanry/home-tunnel-server) · [项目入口](https://github.com/ZHanry/home-tunnel)

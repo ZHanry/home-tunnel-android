@@ -6,6 +6,7 @@ test -x "$manager"
 "$manager" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
 echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
 android=homedesk-core/client/flutter/android
+python3 scripts/prepare-homedesk-signing.py
 cp gradle/wrapper/gradle-wrapper.jar "$android/gradle/wrapper/"
 cp gradlew "$android/gradlew"
 chmod +x "$android/gradlew"
