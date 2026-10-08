@@ -125,6 +125,8 @@ jobs:
         cargo install cargo-ndk --version 3.5.4 --locked
         cd homedesk-core/client
         bash flutter/build_android_deps.sh "$ABI"
+        # Bindgen must use Bionic target headers, independently of cargo-ndk's C compiler.
+        export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/$SYSROOT -D__ANDROID_API__=26"
         cargo ndk --platform 26 --target "$TARGET" build --locked --release --features "$FEATURES" --lib
         mkdir -p "$GITHUB_WORKSPACE/native-artifact/jniLibs/$ABI"
         cp "target/$TARGET/release/liblibrustdesk.so" "$GITHUB_WORKSPACE/native-artifact/jniLibs/$ABI/librustdesk.so"
@@ -140,6 +142,7 @@ jobs:
       with:
         name: homedesk-native-${{ matrix.abi }}
         path: native-artifact/
+        include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
   debug:
@@ -306,6 +309,7 @@ jobs:
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: homedesk-android
+        include-hidden-files: true
         path: |-
           products/*
           material-input/**
