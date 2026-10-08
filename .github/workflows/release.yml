@@ -1,93 +1,44 @@
-name: Release android
-on:
-  workflow_dispatch:
-    inputs:
-      candidate_run_id:
-        description: Successful ci.yml Android candidate run ID
-        required: true
-        type: string
-      candidate_artifact_id:
-        description: Exact android-release-candidate artifact ID
-        required: true
-        type: string
-      candidate_artifact_sha256:
-        description: Verified SHA-256 of the original candidate artifact ZIP
-        required: true
-        type: string
-      acceptance_revision:
-        description: Full hub main commit containing reviewed candidate-bound acceptance receipts
-        required: true
-        type: string
+name: Release Android
+'on':
+  push:
+    tags:
+    - v*-rc.*
 permissions:
-  contents: read
+  contents: write
   checks: read
   actions: read
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  id-token: write
+  attestations: write
 jobs:
-  metadata:
-    name: Validate component tag and CI
+  release:
+    name: Publish compact signed Android candidate
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
+        submodules: recursive
         fetch-depth: 0
-    - name: Require an existing version tag
-      env:
-        REF_TYPE: ${{ github.ref_type }}
-      run: test "$REF_TYPE" = tag
-    - id: version
+    - id: metadata
       env:
         GH_TOKEN: ${{ github.token }}
-      run: python3 scripts/release.py metadata
-  promote:
-    name: Publish the accepted original files
-    needs: metadata
-    runs-on: ubuntu-latest
-    environment: android-release
-    permissions:
-      contents: write
-      actions: read
-      id-token: write
-      attestations: write
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      run: python3 scripts/homedesk-release.py metadata
+    - name: Download exact successful main artifact
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BUILD_RUN: ${{ steps.metadata.outputs.build-run }}
+      run: |-
+        gh run download "$BUILD_RUN" -n homedesk-android -D imported/android
+        mkdir -p products material-input
+        cp imported/android/products/* products/
+        cp -R imported/android/material-input/. material-input/
     - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
-    - name: Verify exact candidate run, artifact, signatures and reviewed receipts
-      env:
-        GH_TOKEN: ${{ github.token }}
-        CANDIDATE_RUN: ${{ inputs.candidate_run_id }}
-        CANDIDATE_ARTIFACT: ${{ inputs.candidate_artifact_id }}
-        CANDIDATE_SHA256: ${{ inputs.candidate_artifact_sha256 }}
-        ACCEPTANCE_REVISION: ${{ inputs.acceptance_revision }}
-        VERSION: ${{ needs.metadata.outputs.version }}
-      run: |
-        set -euo pipefail
-        python3 scripts/fetch-android-candidate.py --run-id "$CANDIDATE_RUN" --artifact-id "$CANDIDATE_ARTIFACT" --artifact-sha256 "$CANDIDATE_SHA256" --revision "$GITHUB_SHA" --version "$VERSION" --acceptance-revision "$ACCEPTANCE_REVISION" --output candidate-import
-        python3 scripts/stage-android-release.py --source candidate-import --output release --revision "$GITHUB_SHA" --version "$VERSION"
-        python3 scripts/release.py seal
-    - name: Sign the publication inventory
-      run: cosign sign-blob --yes --bundle release/SHA256SUMS.txt.sigstore.json release/SHA256SUMS.txt
-    - name: Attest the promoted inventory and separate acceptance
-      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+    - env:
+        VERSION: ${{ steps.metadata.outputs.version }}
+      run: python3 scripts/homedesk-release.py pack --component android --input products
+        --select "HomeDesk-Android-$VERSION.apk" --evidence material-input
+    - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
       with:
-        subject-path: |
-          release/SHA256SUMS.txt
-          release/android-release-acceptance.json
-    - name: Publish without rebuilding or replacing candidate signatures
-      env:
+        subject-path: release-public/SHA256SUMS.txt
+    - env:
         GH_TOKEN: ${{ github.token }}
-      run: python3 scripts/release.py stable
-    - name: Preserve verification evidence
-      if: ${{ always() }}
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-      with:
-        name: release-verification-evidence
-        path: |
-          release/*
-          candidate-import/verification/*
-        if-no-files-found: warn
-        retention-days: 90
+      run: python3 scripts/homedesk-release.py publish --input release-public

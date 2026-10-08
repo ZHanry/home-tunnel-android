@@ -1,0 +1,8 @@
+{
+  "repository": "ZHanry/home-tunnel-client",
+  "revision": "c69967dcd7515754127ee0d97c6a4ea4d4b52883",
+  "flutter_path": "homedesk-core/client/flutter",
+  "rust_path": "homedesk-core/client",
+  "gradle_wrapper_source": "gradle/wrapper/gradle-wrapper.jar",
+  "gradle_wrapper_sha256": "498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17"
+}

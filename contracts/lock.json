@@ -1,10 +1,10 @@
 {
   "repository": "ZHanry/home-tunnel-server",
-  "ref": "api-v1.4.0",
+  "ref": "api-v1.6.0",
   "contract_status": "frozen",
-  "frozen_tag": "api-v1.4.0",
-  "published_contract_ref": "api-v1.4.0",
-  "source_revision": "74e140da43c88043d0db2aad7505ba75fd3a9a49",
+  "frozen_tag": "api-v1.6.0",
+  "published_contract_ref": "api-v1.6.0",
+  "source_revision": "f260a5ffcd789c9a71936307b809ed5137e1a832",
   "source_tree_dirty": false,
   "api_prefix": "/api/v1",
   "path": "contracts/home-tunnel.v1.json",
@@ -16,11 +16,11 @@
     },
     {
       "path": "contracts/openapi.v1.json",
-      "sha256": "080e508814ce5c29c2a0c7dc847ebc11cf9e50f26a24d9e47110ce724d76676b"
+      "sha256": "8c72baae633157ccd5e7c8e9cf3d5fc24f6f607685744349fa1cb39fe482fae4"
     },
     {
       "path": "contracts/api.schema.json",
-      "sha256": "c0a8714cee6bc9e5cfa8db0df8e2636c0e9f79d26ce461813482e4520f89f493"
+      "sha256": "5edd7c53065d8b81fb6cc500015c60246dd4d6c7da3afd7daf33aad22b6272d7"
     }
   ]
 }

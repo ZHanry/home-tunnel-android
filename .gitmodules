@@ -1,0 +1,3 @@
+[submodule "homedesk-core"]
+	path = homedesk-core
+	url = https://github.com/ZHanry/home-tunnel-client

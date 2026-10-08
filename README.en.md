@@ -1,46 +1,11 @@
-# Home Tunnel Android
+# HomeDesk Android / Home Tunnel
 
-**Manage your servers and home devices from Android**
+Current main: **11.0.0-rc.1 candidate**, using a pinned Client Rust/Flutter gitlink. Hearth mobile navigation retains family devices and complete governed tunnel service management. Remote desktop requires authenticated encrypted direct P2P; no relay/vendor/proxy fallback. Failed direct connections terminate.
 
-[![Stable release](https://img.shields.io/github/v/release/ZHanry/home-tunnel-android?label=stable)](https://github.com/ZHanry/home-tunnel-android/releases/latest) [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[简体中文](README.md) · [Candidate](https://github.com/ZHanry/home-tunnel-android/releases/tag/v11.0.0-rc.1) · [Last stable 10.0.0](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
 
-[简体中文](README.md) · [Website](https://zhanry.github.io/home-tunnel/en/) · [Downloads](https://github.com/ZHanry/home-tunnel/blob/main/docs/DOWNLOADS.md) · [Quick start](https://github.com/ZHanry/home-tunnel/blob/main/docs/GETTING_STARTED.md)
+Three attachments: universal arm64-v8a/x86_64 APK, source/build materials and SHA256SUMS. Android API26+, target35, unchanged application ID and release certificate, increasing versionCode 11000001. Android 14/15 screen capture needs fresh visible user consent. Credentials use AndroidKeyStore AES-GCM256 with randomized IVs and AAD, no plaintext fallback or OS backup.
 
+Configure your own hbbs trust settings and HTTPS Server 11.x portal. Account enrollment does not grant screen sharing. Real-device, cross-network NAT, sustained media, audio/input/files and 16 KiB page acceptance remain pending. [Candidate notes](docs/HOMEDESK_RELEASE.md).
 
-The Android 8.0+ management app for Home Tunnel. Your phone controls devices and
-connections; tunnels run continuously on a Windows/macOS/Linux computer or NAS.
-
-The current version is **10.0.0**, using the verified same-source arm64-v8a / x86_64 native SDK from the 10.0.0 desktop client. Remote control implements authorized video/input, system audio playback, clipboard, files, monitor selection and bounded reconnect over direct UDP only. The server's TURN relay is for browser viewers. Microphone return is unavailable. Builds, signatures and development screenshot review do not establish final-package or physical-device acceptance; see the [release notes](docs/RELEASE_NOTES.md) and [capabilities and validation](docs/REMOTE_DESKTOP.md) for verified coverage and untested cases.
-
-[Download signed 10.0.0 APK (arm64-v8a)](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-arm64-v8a.apk) · [x86_64 APK](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-x86_64.apk) · [Release, checksums and signature evidence](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
-
-- Save up to 20 encrypted server/account profiles with isolated request/cache state.
-- TOTP/recovery-code sign-in, MFA setup, session revocation and one-time enrollment codes.
-- Capability-based HTTP/TCP/UDP, SSH/RDP/RTSP presets and versioned administrator port settings.
-- Device tags/favorites and batch pause/resume for up to 50 connections with per-item results.
-- Account administration, status/audit views and redacted management diagnostics.
-
-Tunnel management retains compatibility with server **7.0.0+**. Remote control should use a **10.0.0** server and desktop host advertising the required capabilities. Enter your own HTTPS origin, sign in and select an enrolled home device. Management discovery accepts an absent FRPS certificate while still
-verifying HTTPS. Existing encrypted single-account state migrates on upgrade;
-uninstalling can destroy local keys and is not required.
-
-## Screenshots
-
-Actual 10.0.0 Compose UI on an Android API 35 emulator, using a debug build and
-explicit sample data. These show the remote-control entry and device list, not
-final-APK or physical-device remote acceptance. [Capture provenance and hashes](docs/SCREENSHOTS.md).
-
-<img src="docs/assets/overview.png" alt="10.0.0 remote entry with emulator sample data" width="280"> <img src="docs/assets/devices.png" alt="10.0.0 device list with emulator sample data" width="280">
-
-Build with JDK 17 and Android SDK 35:
-
-```sh
-./gradlew test lint assembleDebug assembleDebugAndroidTest
-python3 scripts/check-repository.py
-```
-
-Official releases retain the established Android signing identity pinned in
-`release-signing-cert.sha256`. CI checks KeyStore and management UI on API 26/35.
-Release assets retain checksums, SBOMs and signing/install evidence.
-
-[Feature guide](docs/PLATFORM_FEATURES.md) · [API](contracts/README.md) · [Project](https://github.com/ZHanry/home-tunnel)
+Initialize recursive submodules and run `python3 scripts/check-homedesk-source.py`. Hosted CI pins Rust1.96, Flutter3.24.5, FRB1.80.1, vcpkg, JDK17 and NDK27.2, builds both ABIs, tests AndroidKeyStore/startup on API26/35, then signs the universal APK with the existing identity. Releases reuse exact main-build bytes. Historical app/native/10.x recipes are retained for provenance and are not packaged by the current workflow. Shared HomeDesk runtime is AGPL-3.0; original project code retains Apache-2.0.

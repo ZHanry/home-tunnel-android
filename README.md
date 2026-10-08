@@ -1,51 +1,24 @@
-# Home Tunnel Android
+# HomeDesk Android / Home Tunnel
 
-**在手机上管理自己的服务器与家庭设备**
+当前主线 **11.0.0-rc.1 候选版**，使用固定的 Client Rust/Flutter 共用源码。暖居移动界面包含家庭设备、家庭服务、共享屏幕、设置；完整穿透服务管理保留，远控强制认证加密的 P2P 直连，失败停止，没有中继回退。
 
-[![Stable release](https://img.shields.io/github/v/release/ZHanry/home-tunnel-android?label=stable)](https://github.com/ZHanry/home-tunnel-android/releases/latest) [![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[English](README.en.md) · [候选下载](https://github.com/ZHanry/home-tunnel-android/releases/tag/v11.0.0-rc.1) · [最后稳定版 10.0.0](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
 
-[English](README.en.md) · [项目网站](https://zhanry.github.io/home-tunnel/) · [下载](https://github.com/ZHanry/home-tunnel/blob/main/docs/DOWNLOADS.md) · [快速开始](https://github.com/ZHanry/home-tunnel/blob/main/docs/GETTING_STARTED.md)
+Release 只有通用 APK（arm64-v8a/x86_64）、材料包和 SHA256SUMS 三个附件。Android 8.0/API 26 以上，目标 API 35；application ID 与发行证书保持不变，versionCode 11000001。升级前备份必要信息；旧 Compose/DTLS 远控不作为兼容目标。Android 14/15 共享屏幕必须从可见应用重新取得系统授权。
 
+通用包不包含服务器、公钥或账户。配置自己的 hbbs 与公钥、允许的来源；登录 Server 11.x HTTPS 管理台。接入账号不等于共享屏幕授权。门户刷新凭据使用 AndroidKeyStore AES-GCM256；无明文回退、不启用系统备份。
 
-Android 8.0+ 的 Home Tunnel 远程管理客户端。手机负责管理，实际隧道持续运行在
-Windows、macOS、Linux 电脑或 NAS 上。
+构建和模拟器测试不代表真机及跨网媒体可用。跨网 NAT、长期媒体、真机权限/音频/输入/文件与 16 KiB 页设备仍待验收，详见 [候选说明](docs/HOMEDESK_RELEASE.md)。旧验证记录仅属于各自历史版本。
 
-当前版本为 **10.0.0**，使用与 10.0.0 桌面端同源、经核验的 arm64-v8a / x86_64 原生 SDK。远控支持经授权的画面与输入、系统声音播放、剪贴板、文件、显示器选择和有界重连，仅使用 UDP 直连；服务端 TURN 中继用于浏览器控制端。麦克风回传不可用。构建、签名和开发版截图审核不等于最终安装包或真机验收，已验证范围和未验证项目见 [发行说明](docs/RELEASE_NOTES.md) 和 [能力与验证边界](docs/REMOTE_DESKTOP.md)。
-
-[下载 10.0.0 正式 APK（arm64-v8a）](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-arm64-v8a.apk) · [x86_64 APK](https://github.com/ZHanry/home-tunnel-android/releases/download/v10.0.0/HomeTunnel-Android-10.0.0-x86_64.apk) · [Release、校验和与签名证据](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
-
-## 登录后能做什么
-
-- 加密保存最多 20 个服务器/账号，切换不混用连接、请求或缓存。
-- TOTP/恢复码登录、MFA 设置、会话撤销和为新电脑生成一次性接入码。
-- 按服务端能力创建 HTTP/TCP/UDP 及 SSH/RDP/RTSP 预设；管理员带版本编辑端口池。
-- 设备搜索、标签和收藏；最多 50 条连接批量暂停/恢复，确认范围并逐项报告。
-- 管理账号、系统状态和审计；复制脱敏的管理端诊断报告。
-
-隧道管理保留对 **7.0.0+** 服务端的兼容；远控应搭配公布对应能力的 **10.0.0** 服务端与桌面端。输入自己的 HTTPS 地址后登录，选择已登记设备，再创建连接。
-纯管理登录无需 FRPS 证书字段；HTTPS 身份仍正常校验。已有单账号状态自动迁移，
-继续使用 AndroidKeyStore；不要为升级而卸载应用。
-
-## 界面预览
-
-10.0.0 实际 Compose 界面，Android API 35 模拟器、调试构建及明确的示例数据。
-截图展示远控入口和设备列表，不代表最终 APK 或真机远控验收。[截图来源与哈希](docs/SCREENSHOTS.md)。
-
-<img src="docs/assets/overview.png" alt="10.0.0 远控入口，模拟器示例数据" width="280"> <img src="docs/assets/devices.png" alt="10.0.0 设备列表，模拟器示例数据" width="280">
-
-## 构建
-
-JDK 17、Android SDK 35，使用仓库内已锁定的 Gradle wrapper：
+## 源码与构建
 
 ```sh
-./gradlew test lint assembleDebug assembleDebugAndroidTest
-python3 scripts/check-repository.py
+git submodule update --init --recursive
+python3 scripts/check-homedesk-source.py
 ```
 
-包含 JNI 的构建还需 NDK 27.2.12479018、CMake 3.22.1。`python scripts/build-remote-native.py` 提供开发/CI 使用的双 ABI 安全核心；远控发行必须从客户端正式封存的 Release 导入固定摘要的 arm64 Controller SDK。Gradle 显式选择对应 profile，详细步骤见[预览构建说明](docs/REMOTE_DESKTOP.md)和[发行步骤](docs/RELEASING.md)。
+`homedesk-core` 是精确固定的 Client Git 子模块，包含同一 Rust/Flutter 源码，不维护复制分叉。`.github/workflows/ci.yml` 固定 Rust 1.96.0、Flutter 3.24.5、FRB 1.80.1、vcpkg、JDK17 和 NDK27.2，编译两个原生 ABI、运行 API26/35 加密存储与启动测试，使用原发行证书构建通用 APK。发布复用同一个 main 构建的原始字节。
 
-正式发行必须使用既有 Android 签名身份，证书摘要固定在 `release-signing-cert.sha256`。
-CI 在 Android API 26 和 35 上检查 KeyStore 与管理界面；发行保留 APK、AAB、
-校验清单、SBOM 和签名/安装检查证据。
+历史 `app/`、`native/` 和旧发行脚本供 10.x 追溯，不由当前 CI 打包。共用 HomeDesk 运行时按 AGPL-3.0 分发，材料包含对应源码、依赖和许可证；原 Android/Go 项目代码保留 Apache-2.0。
 
-[功能与升级](docs/PLATFORM_FEATURES.md) · [API 契约](contracts/README.md) · [项目入口](https://github.com/ZHanry/home-tunnel) · [服务端部署](https://github.com/ZHanry/home-tunnel-server/blob/main/docs/SELF_HOSTING.md)
+[Client 共用源码](https://github.com/ZHanry/home-tunnel-client) · [Server](https://github.com/ZHanry/home-tunnel-server) · [项目入口](https://github.com/ZHanry/home-tunnel)

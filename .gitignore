@@ -95,3 +95,10 @@ release-notes.md
 # Reproducible native build products (the same-source text snapshot is tracked).
 .cache/
 .cxx/
+/products/
+/outputs/
+/imported/
+/material-input/
+__pycache__/
+*.pyc
+/native-artifact/

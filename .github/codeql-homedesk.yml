@@ -1,0 +1,8 @@
+name: Current shared Android native source
+paths:
+- homedesk-core/client/flutter/android
+- homedesk-core/client/libs
+- homedesk-core/client/src
+paths-ignore:
+- '**/build/**'
+- '**/target/**'

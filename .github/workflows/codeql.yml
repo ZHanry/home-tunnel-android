@@ -6,67 +6,38 @@ name: CodeQL
   pull_request:
     branches:
     - main
-  merge_group: null
-  schedule:
-  - cron: 23 3 * * 1
   workflow_dispatch: null
 permissions:
   contents: read
 jobs:
   analyze:
-    name: Analyze (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-        - language: java-kotlin
-          name: Java/Kotlin Android client
-          os: ubuntu-latest
-          build-mode: manual
-          target: android
-        - language: c-cpp
-          name: Android JNI and shared core
-          os: ubuntu-latest
-          build-mode: manual
-          target: android-native
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    name: Analyze current Android source (${{ matrix.language }})
+    runs-on: ubuntu-latest
     permissions:
       security-events: write
       packages: read
       actions: read
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+        - java-kotlin
+        - c-cpp
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
       with:
-        distribution: temurin
-        java-version: '17'
-        cache: gradle
-        cache-dependency-path: |
-          **/*.gradle*
-          gradle.properties
-          gradle/wrapper/gradle-wrapper.properties
+        submodules: recursive
+        fetch-depth: 0
     - uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
       with:
         languages: ${{ matrix.language }}
-        build-mode: ${{ matrix.build-mode }}
-    - if: matrix.target == 'android'
-      name: Build Android client under CodeQL
-      run: |
-        ./gradlew --no-daemon clean test lint assembleDebug --no-build-cache --rerun-tasks
-    - if: matrix.target == 'android-native'
-      name: Build shared core and JNI under CodeQL
-      run: |
-        source scripts/install-native-tools.sh
-        python3 scripts/build-remote-native.py
-        ./gradlew --no-daemon -PremoteNativeRoot="$PWD/.cache/remote-native" assembleDebug --no-build-cache --rerun-tasks
+        build-mode: none
+        config-file: .github/codeql-homedesk.yml
     - uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
       with:
-        category: /language:${{ matrix.language }}/target:${{ matrix.target || 'default' }}
+        category: /language:${{ matrix.language }}/target:homedesk
         wait-for-processing: true
-    - name: Require no open CodeQL findings
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        python scripts/check-codeql-alerts.py
+    - env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/check-codeql-alerts.py

@@ -6,145 +6,357 @@ name: Android CI
   pull_request:
     branches:
     - main
-  merge_group: null
-  workflow_dispatch:
-    inputs:
-      release_candidate:
-        description: Sign arm64 and x64 APKs once. This does not publish a Release.
-        type: boolean
-        default: false
+  workflow_dispatch: null
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.ref }}
+  group: android-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  release-candidate:
-    name: Signed Android candidate
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate }}
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    uses: ./.github/workflows/android-candidate.yml
-    secrets: inherit
-  android:
-    name: Android client
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.release_candidate }}
-    runs-on: ubuntu-latest
+  bridge:
+    name: Generate exact shared Rust/Flutter bridge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      HOMEDESK_CONFIG_PATH: ${{ github.workspace }}/homedesk-core/build/config.toml.example
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    - name: Verify the pinned Gradle wrapper
-      run: |
-        set -euo pipefail
-        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
-        grep -Fxq 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip' gradle/wrapper/gradle-wrapper.properties
-        grep -Fxq 'distributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab' gradle/wrapper/gradle-wrapper.properties
-    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
       with:
-        distribution: temurin
-        java-version: '17'
-        cache: gradle
-        cache-dependency-path: |
-          **/*.gradle*
-          gradle.properties
-          gradle/wrapper/gradle-wrapper.properties
-    - name: Test, lint, and assemble the unsigned debug client
-      run: |
-        source scripts/install-native-tools.sh
-        python3 scripts/build-remote-native.py
-        ./gradlew --no-daemon -PremoteNativeRoot="$PWD/.cache/remote-native" test lint assembleDebug assembleDebugAndroidTest
-    - name: Share compiled debug instrumentation packages
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        submodules: recursive
+        fetch-depth: 0
+    - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
       with:
-        name: android-debug-instrumentation
-        path: app/build/outputs/apk/
+        toolchain: 1.96.0
+        components: rustfmt
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        channel: stable
+        flutter-version: 3.24.5
+        cache: true
+    - name: Install bridge tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang libclang-dev libgtk-3-dev ninja-build nasm cmake pkg-config
+        cargo install cargo-expand --version 1.0.95 --locked
+        cargo install flutter_rust_bridge_codegen --version 1.80.1 --features uuid --locked
+        cd homedesk-core/client/flutter
+        flutter pub get --enforce-lockfile
+        cd ..
+        flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: homedesk-bridge
+        path: |-
+          homedesk-core/client/src/bridge_generated*.rs
+          homedesk-core/client/flutter/lib/generated_bridge*.dart
+          homedesk-core/client/flutter/macos/Runner/bridge_generated.h
         if-no-files-found: error
-    - name: Require generated Android binaries to remain untracked
-      shell: bash
-      run: |
-        set -euo pipefail
-        tracked=$(git ls-files -- '*.apk' '*.aab' '*.aar' '*.jks' '*.keystore' '*.so')
-        if [ -n "$tracked" ]; then
-          echo 'Generated Android binaries or signing stores must not be committed:' >&2
-          printf '%s\n' "$tracked" >&2
-          exit 1
-        fi
-        git diff --exit-code
-  instrumentation:
-    name: Android runtime (API ${{ matrix.api }})
-    needs: android
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  native:
+    name: Build native P2P (${{ matrix.abi }})
+    runs-on: ubuntu-24.04
+    needs: bridge
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
-        api: [26, 35]
+        include:
+        - abi: arm64-v8a
+          target: aarch64-linux-android
+          sysroot: aarch64-linux-android
+          features: flutter,hwcodec
+        - abi: x86_64
+          target: x86_64-linux-android
+          sysroot: x86_64-linux-android
+          features: flutter
+    env:
+      HOMEDESK_CONFIG_PATH: ${{ github.workspace }}/homedesk-core/build/config.toml.example
+      CARGO_INCREMENTAL: '0'
+      RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.96.0
+        components: rustfmt
+        targets: ${{ matrix.target }}
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        channel: stable
+        flutter-version: 3.24.5
+        cache: true
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Install pinned Android SDK/NDK
+      run: |
+        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+        cp gradle/wrapper/gradle-wrapper.jar homedesk-core/client/flutter/android/gradle/wrapper/
+        printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> homedesk-core/client/flutter/android/gradle/wrapper/gradle-wrapper.properties
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+        echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: |-
+          ~/.cargo/registry
+          ~/.cargo/git
+          homedesk-core/client/target
+        key: android-rust-1.96-${{ matrix.target }}-${{ hashFiles('homedesk-core/client/Cargo.lock')
+          }}
+        restore-keys: android-rust-1.96-${{ matrix.target }}-
+    - uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+      with:
+        vcpkgDirectory: ${{ runner.temp }}/vcpkg
+        vcpkgGitCommitId: 120deac3062162151622ca4860575a33844ba10b
+        vcpkgJsonGlob: homedesk-core/client/vcpkg.json
+        doNotCache: false
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: homedesk-bridge
+        path: homedesk-core/client
+    - name: Compile the locked native core
+      env:
+        ABI: ${{ matrix.abi }}
+        TARGET: ${{ matrix.target }}
+        FEATURES: ${{ matrix.features }}
+        SYSROOT: ${{ matrix.sysroot }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang libclang-dev nasm ninja-build cmake pkg-config
+        cargo install cargo-ndk --version 3.5.4 --locked
+        cd homedesk-core/client
+        bash flutter/build_android_deps.sh "$ABI"
+        cargo ndk --platform 26 --target "$TARGET" build --locked --release --features "$FEATURES" --lib
+        mkdir -p "$GITHUB_WORKSPACE/native-artifact/jniLibs/$ABI"
+        cp "target/$TARGET/release/liblibrustdesk.so" "$GITHUB_WORKSPACE/native-artifact/jniLibs/$ABI/librustdesk.so"
+        cp "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$SYSROOT/libc++_shared.so" "$GITHUB_WORKSPACE/native-artifact/jniLibs/$ABI/"
+        cd flutter
+        flutter pub get --enforce-lockfile
+        cd ../../..
+        python3 homedesk-core/scripts/collect-native-materials.py
+        mkdir -p "native-artifact/material-input/$ABI"
+        cp -R homedesk-core/material-input/. "native-artifact/material-input/$ABI/"
+        find "$ANDROID_NDK_HOME" -maxdepth 2 -type f -name '*NOTICE*' -exec cp {} "native-artifact/material-input/$ABI/" \;
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: homedesk-native-${{ matrix.abi }}
+        path: native-artifact/
+        if-no-files-found: error
+        retention-days: 30
+  debug:
+    name: Android app and encrypted-storage test packages
+    runs-on: ubuntu-24.04
+    needs:
+    - bridge
+    - native
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.96.0
+        components: rustfmt
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        channel: stable
+        flutter-version: 3.24.5
+        cache: true
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Install pinned Android SDK/NDK
+      run: |
+        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+        cp gradle/wrapper/gradle-wrapper.jar homedesk-core/client/flutter/android/gradle/wrapper/
+        printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> homedesk-core/client/flutter/android/gradle/wrapper/gradle-wrapper.properties
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+        echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: homedesk-bridge
+        path: homedesk-core/client
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        pattern: homedesk-native-*
+        path: imported/native
+        merge-multiple: true
+    - name: Build and analyze the shared product
+      run: |
+        cp -R imported/native/jniLibs homedesk-core/client/flutter/android/app/src/main/
+        cd homedesk-core/client/flutter
+        flutter pub get --enforce-lockfile
+        flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+        flutter test --no-pub test/homedesk_devices_test.dart test/homedesk_dashboard_test.dart test/homedesk_advanced_test.dart test/homedesk_services_test.dart test/homedesk_mobile_test.dart
+        flutter build apk --debug --target-platform android-arm64,android-x64
+        cd android
+        ./gradlew --no-daemon :app:assembleDebugAndroidTest
+        cd "$GITHUB_WORKSPACE"
+        python3 scripts/verify-homedesk-apk.py homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-debug.apk --unsigned-debug
+        mkdir -p outputs/android-debug
+        cp homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-debug.apk outputs/android-debug/
+        cp homedesk-core/client/flutter/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk outputs/android-debug/
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: homedesk-android-debug
+        path: outputs/android-debug/
+        if-no-files-found: error
+  instrumentation:
+    name: AndroidKeyStore and startup (API ${{ matrix.api }})
+    runs-on: ubuntu-24.04
+    needs: debug
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api:
+        - 26
+        - 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
       with:
         distribution: temurin
         java-version: '17'
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
-        name: android-debug-instrumentation
-        path: app/build/outputs/apk/
-    - name: Exercise AndroidKeyStore and management UI on Android
+        name: homedesk-android-debug
+        path: outputs/android-debug
+    - name: Exercise real AndroidKeyStore and app startup
       env:
         ANDROID_API: ${{ matrix.api }}
-      run: bash scripts/emulator-check.sh
-    - name: Preserve Android runtime evidence
+      run: bash scripts/homedesk-emulator-check.sh
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       if: ${{ always() }}
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: android-runtime-api-${{ matrix.api }}
+        name: homedesk-android-runtime-${{ matrix.api }}
         path: instrumentation-evidence/
         if-no-files-found: error
-  repository:
-    name: Repository boundaries
-    runs-on: ubuntu-latest
+  signed:
+    name: Sign unchanged Android application identity
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    needs:
+    - debug
+    - instrumentation
+    - repository
+    environment: android-release
+    timeout-minutes: 40
+    env:
+      ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+      ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+      ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    - run: |
-        python3 scripts/check-repository.py
-        python3 scripts/build-remote-native.py --verify-only
-    - name: Check release policy
-      run: |
-        python3 -m unittest discover -s scripts -p 'test_*.py'
-  dependency-review:
-    name: Dependency Review
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
       with:
-        fail-on-severity: moderate
+        submodules: recursive
+        fetch-depth: 0
+    - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.96.0
+        components: rustfmt
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      with:
+        channel: stable
+        flutter-version: 3.24.5
+        cache: true
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Install pinned Android SDK/NDK
+      run: |
+        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+        echo '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+        cp gradle/wrapper/gradle-wrapper.jar homedesk-core/client/flutter/android/gradle/wrapper/
+        printf '\ndistributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab\n' >> homedesk-core/client/flutter/android/gradle/wrapper/gradle-wrapper.properties
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+        echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: homedesk-bridge
+        path: homedesk-core/client
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        pattern: homedesk-native-*
+        path: imported/native
+        merge-multiple: true
+    - name: Build once with the existing release certificate
+      env:
+        KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      run: |
+        export ANDROID_RELEASE_STORE_FILE="$RUNNER_TEMP/homedesk-release.jks"
+        trap 'rm -f -- "$ANDROID_RELEASE_STORE_FILE"' EXIT
+        python3 - <<'PY'
+        import base64, os
+        from pathlib import Path
+        path=Path(os.environ['ANDROID_RELEASE_STORE_FILE'])
+        path.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'],validate=True))
+        path.chmod(0o600)
+        PY
+        cp -R imported/native/jniLibs homedesk-core/client/flutter/android/app/src/main/
+        cd homedesk-core/client/flutter
+        flutter pub get --enforce-lockfile
+        flutter build apk --release --target-platform android-arm64,android-x64
+        cd "$GITHUB_WORKSPACE"
+        mkdir -p products material-input
+        cp homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-release.apk products/HomeDesk-Android-11.0.0-rc.1.apk
+        cp -R imported/native/material-input/. material-input/
+        python3 scripts/verify-homedesk-apk.py products/HomeDesk-Android-11.0.0-rc.1.apk
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        pattern: homedesk-android-runtime-*
+        path: material-input/android-runtime
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: homedesk-android
+        path: |-
+          products/*
+          material-input/**
+        if-no-files-found: error
+        retention-days: 30
+  repository:
+    name: Pinned shared-source and API ownership
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    - run: |-
+        python3 scripts/check-homedesk-source.py
+        python3 -m compileall -q scripts
+        git diff --check
   quality-gate:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate && 'Candidate Build Gate' || 'Quality Gate' }}
+    name: Quality Gate
     runs-on: ubuntu-latest
     if: ${{ always() }}
     needs:
-    - release-candidate
-    - android
+    - bridge
+    - native
+    - debug
     - instrumentation
+    - signed
     - repository
-    - dependency-review
     steps:
-    - name: Require all component checks
-      env:
+    - env:
         RESULTS: ${{ toJSON(needs) }}
-        CANDIDATE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate }}
+        PR: ${{ github.event_name == 'pull_request' }}
       run: |
         python3 - <<'PY'
-        import json, os
-        results = json.loads(os.environ['RESULTS'])
-        candidate = os.environ['CANDIDATE_RUN'] == 'true'
-        required = {'repository', 'release-candidate'} if candidate else {'android', 'instrumentation', 'repository'}
-        failed = {k:v['result'] for k,v in results.items() if (k in required and v['result'] != 'success') or v['result'] not in ('success', 'skipped')}
-        if not required.issubset(results): raise SystemExit('Missing required job results')
+        import json,os
+        results=json.loads(os.environ['RESULTS'])
+        failed={k:v['result'] for k,v in results.items() if v['result']!='success' and not (k=='signed' and v['result']=='skipped' and os.environ['PR']=='true')}
         if failed: raise SystemExit(str(failed))
-        print('Candidate build checks passed; device acceptance remains separate' if candidate else 'All component checks passed')
         PY
