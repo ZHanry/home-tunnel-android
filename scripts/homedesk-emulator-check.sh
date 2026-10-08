@@ -64,7 +64,11 @@ if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -[1
   echo 'AndroidKeyStore authentication checks failed' >&2
   exit 1
 fi
-"$adb" -s "$serial" logcat -c
+# API 26 can deny global log-buffer clearing even though app logging works.
+# Keep the failure as evidence and still require a live, crash-free app PID.
+if ! "$adb" -s "$serial" logcat -c > instrumentation-evidence/logcat-clear.txt 2>&1; then
+  echo "Global log clearing is unavailable on API $api; checking the app PID's buffered log" >&2
+fi
 "$adb" -s "$serial" shell am start -W -n io.github.zhanry.hometunnel/com.carriez.flutter_hbb.MainActivity \
   | tee instrumentation-evidence/startup.txt
 sleep 5
