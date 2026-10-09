@@ -10,6 +10,7 @@ name: Android CI
 permissions:
   contents: read
 env:
+  CARGO_HTTP_MULTIPLEXING: 'false'
   # A clean universal Flutter engine restore exceeds Gradle's upstream 1 GB heap.
   GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dorg.gradle.workers.max=2
 concurrency:

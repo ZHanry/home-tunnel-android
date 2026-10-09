@@ -18,3 +18,8 @@
 ab8be136eb1865dc087b740a280654153eae63ba:native/remote-source.lock.json:generic-api-key:26
 ab8be136eb1865dc087b740a280654153eae63ba:native/remote-source.lock.json:generic-api-key:27
 ab8be136eb1865dc087b740a280654153eae63ba:native/remote-source.lock.json:generic-api-key:66
+# Frozen Ed25519 public keys and offline permit signatures; no private keys or credentials.
+4b5eba70cbf9e29f8a1e250e9969495ee6ed2474:contracts/nestlink-auth.v2-vectors.json:generic-api-key:23
+4b5eba70cbf9e29f8a1e250e9969495ee6ed2474:contracts/nestlink-auth.v2-vectors.json:generic-api-key:24
+4b5eba70cbf9e29f8a1e250e9969495ee6ed2474:contracts/nestlink-auth.v2-vectors.json:generic-api-key:27
+4b5eba70cbf9e29f8a1e250e9969495ee6ed2474:contracts/nestlink-auth.v2-vectors.json:generic-api-key:29
