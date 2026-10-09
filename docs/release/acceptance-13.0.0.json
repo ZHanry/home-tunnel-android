@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "version": "13.0.0",
+  "component": "android",
+  "status": "passed_reproducible",
+  "source_revision": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+  "client_core_revision": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+  "build_run": 37960996185,
+  "recorded_at": "2026-10-09T17:52:19.713259+00:00",
+  "deliverables": {
+    "NestLink-Android-13.0.0.apk": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede"
+  },
+  "scenarios": [
+    {
+      "name": "installed-universal-apk",
+      "status": "passed",
+      "evidence": {
+        "version": "13.0.0",
+        "android_source": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+        "client_source": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+        "build_run": 37960996185,
+        "package": "NestLink-Android-13.0.0.apk",
+        "sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+        "installed_apk_sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+        "status": "passed",
+        "application_id": "io.github.zhanry.hometunnel",
+        "version_code": 13000000,
+        "certificate_sha256": "d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702",
+        "abis": [
+          "arm64-v8a",
+          "x86_64"
+        ],
+        "native_sha256": {
+          "lib/arm64-v8a/librustdesk.so": "cfa1c163b4d347420a5f20c4bf8837e73232d15cc980b7eaf8936872464ca0a5",
+          "lib/arm64-v8a/libflutter.so": "0baa710d6b7f7de2f8bcc05aa2950bab2989f3a4c95bc7f7bcc23ce84626ee52",
+          "lib/arm64-v8a/libc++_shared.so": "4397241b4bd20a8e579bfb41d21107857e12985f6a01ca0c2a5f83380d1270b4",
+          "lib/x86_64/librustdesk.so": "1bd0a4dcbca12258435f05b1e4522e2de36eb9686f535760aaf72de1c82145d1",
+          "lib/x86_64/libflutter.so": "c64e72997fff2fff02705cba95b27c8bd7d792bc96333038c2e99b4125dc8b77",
+          "lib/x86_64/libc++_shared.so": "db9609240e60ca18b816a5e95a6bbc784e799261efbd5b30c8e2e03b540b3fa8"
+        },
+        "installation": "adb install -r succeeded; original app identity and certificate preserved",
+        "scope": "Installed release APK on task API 35 x86_64 emulator. ARM64 packaged bytes checked; no physical ARM64 runtime claim."
+      }
+    },
+    {
+      "name": "account-login-management",
+      "status": "passed",
+      "evidence": {
+        "remembered_login": "Signed in through the real installed app with remember-login enabled. Force-stopped and cold-started the app; authenticated workspace restored without re-entering account/password. Actual UI and screenshots reviewed.",
+        "renewal": {
+          "version": "13.0.0",
+          "android_source": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+          "client_source": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+          "package_sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+          "before": {
+            "id": "5e70de97-5a4a-4fac-9cff-1797a71c0025",
+            "updated_at": "2026-10-09T17:32:05.215Z",
+            "access_expires_at": "2026-10-09T17:47:05.215Z",
+            "refresh_expires_at": "2026-11-08T17:30:37.007Z"
+          },
+          "expired_at_unix": 1791567310.544402,
+          "scope": "Only this disposable Android foreground access expiry was shortened in the fixture database; real installed app, Keystore and server renewal paths remain unchanged.",
+          "after": {
+            "id": "5e70de97-5a4a-4fac-9cff-1797a71c0025",
+            "updated_at": "2026-10-09T17:35:15.731Z",
+            "access_expires_at": "2026-10-09T17:50:15.731Z",
+            "refresh_expires_at": "2026-11-08T17:30:37.007Z"
+          },
+          "status": "passed",
+          "observation_delay_seconds": 21.681
+        },
+        "device_metadata": {
+          "version": "13.0.0",
+          "android_source": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+          "client_source": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+          "package_sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+          "status": "passed",
+          "device": {
+            "id": "d5a080d6-6ee3-4436-b25f-f6cce32f3c02",
+            "name": "Android",
+            "tags": [
+              "release13"
+            ],
+            "favorite": true
+          },
+          "scope": "Device tag and favorite edited through the installed Android GUI and independently retrieved from the real server API."
+        },
+        "account_revoked": {
+          "version": "13.0.0",
+          "android_source": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+          "client_source": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+          "package_sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+          "action": "revoke-android",
+          "username": "qa-one",
+          "revoked_count": 7,
+          "api_elapsed_ms": 80,
+          "started_at": "2026-10-09T17:45:56.609Z",
+          "status": "passed",
+          "direct_sockets_after_revocation": [],
+          "scope": "The approved native Android remote endpoint pair closed after Android foreground-session revocation."
+        },
+        "logout_restoration": "After foreground-session revocation the native endpoint pair closed, the app displayed login-required, and a cold restart returned to the self-hosted login form.",
+        "screenshots": {
+          "android13-release-login.png": "bf56d2705e1613fce33320916be6920df02ff88c0b3d5ffb7263b3cf051c9b29",
+          "android13-release-restored.png": "53ae1f9baa922659bfea38d71fa88da500cd7db71a5c5b212b3b1dd6eec5410f",
+          "android13-release-devices.png": "713fddafe73fe075f7e71f018221c12db4dd0a2822ad810b52c80a3ad52520a4",
+          "android13-release-revoked.png": "2afe4faabea097d07cea20173ac16d3c33bdc97a946f0c740e6bfe6fbf2a9371",
+          "android13-release-logged-out.png": "4b63fb69c8bb8538f6c2b9ba7391c50b9241d6dc72679c055c0e20fe2da9ec9c"
+        },
+        "real_keystore_and_startup_checks": [
+          {
+            "status": "passed",
+            "api_level": 26,
+            "revision": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+            "tests": 2,
+            "scope": "real AndroidKeyStore round trip, non-exportable key, IV/ciphertext/AAD/version tamper rejection and unconfigured app startup",
+            "physical_device": false,
+            "remote_media_acceptance": "not_run",
+            "files": [
+              {
+                "path": "android-keystore.txt",
+                "sha256": "0339a7fa2da2fe6cb435e2a2f0c162762978b2829c1c657acd554deefeb3418e"
+              },
+              {
+                "path": "logcat-clear.txt",
+                "sha256": "ac8aa5cc433ddf66136fcc755f41c88d9676711c756488f523d590fadbf957c1"
+              },
+              {
+                "path": "avds.txt",
+                "sha256": "8138499d839c8ac50532ef344a8a9819beb96d4f9ebb5db48eb713b0baefbfe2"
+              },
+              {
+                "path": "app-startup-logcat.txt",
+                "sha256": "7b33439df4a3c3213dc85342463b5c9dd768557eeebdeeffd47ed406e5118d9a"
+              },
+              {
+                "path": "sdk-install.log",
+                "sha256": "0edec60bea801dcfb6246a186b4d43c76cd1a7c42332c1d355a5d90466bc2fe2"
+              },
+              {
+                "path": "startup.png",
+                "sha256": "b8af179aabd68d1e246d9a657cbad3c7bc47adaabbceb452707acf37a3dd9d10"
+              },
+              {
+                "path": "startup.txt",
+                "sha256": "eea702120843e70e641821222bbf2f6ef5caf49ac1acdd48fd7391d75affd7bf"
+              },
+              {
+                "path": "emulator.log",
+                "sha256": "8360127e0ab4182a0f90b7ff8a46e001e51be9145a1af241c51e7834605c564d"
+              }
+            ]
+          },
+          {
+            "status": "passed",
+            "api_level": 35,
+            "revision": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+            "tests": 2,
+            "scope": "real AndroidKeyStore round trip, non-exportable key, IV/ciphertext/AAD/version tamper rejection and unconfigured app startup",
+            "physical_device": false,
+            "remote_media_acceptance": "not_run",
+            "files": [
+              {
+                "path": "android-keystore.txt",
+                "sha256": "aaeb374a6e49910a76b4c14a8623e17c5edf04c06dbbb5042a41d8e87247418b"
+              },
+              {
+                "path": "logcat-clear.txt",
+                "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              {
+                "path": "avds.txt",
+                "sha256": "c186473c0fad54b3cc5327fe1d54737ecd93a9201a09f506d64f2b29953814d4"
+              },
+              {
+                "path": "app-startup-logcat.txt",
+                "sha256": "cc9c6ea8c49674f43719c87b0ed602de69982dcf6c88be0542b39f86a6a88805"
+              },
+              {
+                "path": "sdk-install.log",
+                "sha256": "19d52978f0cd11f02fe7d63f3044fa953aaf73f1f22b7478c76fe12190e3afb7"
+              },
+              {
+                "path": "startup.png",
+                "sha256": "f3ddb927a979598abd4c744e71dcbf237ebaa40b5ccd633e8a0e1e06d8706a62"
+              },
+              {
+                "path": "startup.txt",
+                "sha256": "e4415617a793df41d8d121db91ca6a1ee1c37eb442f3ce1f66ee2918766b7199"
+              },
+              {
+                "path": "emulator.log",
+                "sha256": "fac7bc45aafe9235daefaf3d7fa8da9739680447225cc3ba74d47c07d9d2a7a2"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "native-remote-control",
+      "status": "passed",
+      "evidence": {
+        "cross_account": {
+          "version": "13.0.0",
+          "android_source": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+          "client_source": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+          "server_source": "4ccf4a068f7b8353e1ca734918f9e36cc69a39e9",
+          "package_sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+          "host_package_sha256": "bd2b9a612ea7078a745b4bcb977bf804b97f24b51871f5bd8f8be4d713a51957",
+          "status": "passed",
+          "scenario": "cross-account Android-to-Linux remote control",
+          "controller_account": "qa-one",
+          "host_account": "qa-two",
+          "input": "nestlink-android-input-13",
+          "direct_endpoint_pair": [
+            {
+              "host_uid": 1002,
+              "host_endpoint": "172.21.174.222:45277",
+              "emulator_endpoint": "172.21.174.222:54770",
+              "emulator_network_process": "netsimd",
+              "task_emulator_unit": "nestlink-13-e2e-android.service"
+            }
+          ],
+          "screenshots": {
+            "android13-release-input.png": "b409436752abeaf516ac854ed433074f6718499e2f36e814e3885368d763c319",
+            "android13-release-landscape.png": "b396497b37dd0ec45565cff492039a4c4939095685566f7c16e09cae1f12476c",
+            "android13-release-cross-host-input.png": "054d8bb7a827aa1230d494abc6a3c0cf9fd835a672f27766bd0403b873b0600f"
+          },
+          "screen_review": "Actual host workspace and received keyboard marker visually reviewed in the installed Android remote view.",
+          "scope": "Final universal APK on the API 35 x86_64 emulator and final Linux x64 DEB. Real approved native P2P and input through emulator networking; no physical-device or carrier-NAT claim."
+        },
+        "same_account": {
+          "version": "13.0.0",
+          "android_source": "7d1ee2025d6a3d89487efcd9e1cec34e7082331a",
+          "client_source": "4cf3d1603a7c6d22b37746f3f02fee707a9338d9",
+          "server_source": "4ccf4a068f7b8353e1ca734918f9e36cc69a39e9",
+          "package_sha256": "e61b5df9fce7df389ec1abba02d987c67c3b15d1bb4d850c192ea6838d8bfede",
+          "host_package_sha256": "bd2b9a612ea7078a745b4bcb977bf804b97f24b51871f5bd8f8be4d713a51957",
+          "status": "passed",
+          "scenario": "same-account Android-to-Linux remote control",
+          "controller_account": "qa-one",
+          "host_account": "qa-one",
+          "input": "nestlink-android-input-13",
+          "direct_endpoint_pair": [
+            {
+              "host_uid": 1001,
+              "host_endpoint": "172.21.174.222:38107",
+              "emulator_endpoint": "172.21.174.222:59790",
+              "emulator_network_process": "netsimd",
+              "task_emulator_unit": "nestlink-13-e2e-android.service"
+            }
+          ],
+          "screenshots": {
+            "android13-release-same-input.png": "c733edf5f8a42d9891c61129d2abc6291af3c1fb8eb59f511f93592e61898fa0",
+            "android13-release-same-host-input.png": "cb8f8a21bf49bfc9cc80efcfc9fc6f0d744ea123a1b941e547cb5f72bc00beb9"
+          },
+          "screen_review": "Actual host workspace and received keyboard marker visually reviewed in the installed Android remote view.",
+          "scope": "Final universal APK on the API 35 x86_64 emulator and final Linux x64 DEB. Real approved native P2P and input through emulator networking; no physical-device or carrier-NAT claim."
+        },
+        "rotation": "Actual remote view survived portrait-to-landscape and back with the accepted APK; original captures include the visible received host keyboard marker."
+      }
+    }
+  ],
+  "quality_evidence": {
+    "android_ci": "https://github.com/ZHanry/home-tunnel-android/actions/runs/37960996185",
+    "codeql": "https://github.com/ZHanry/home-tunnel-android/actions/runs/37960996168",
+    "secret_scan": "https://github.com/ZHanry/home-tunnel-android/actions/runs/37960996238"
+  },
+  "reproduction": {
+    "identity": "Verify the final APK with apksigner and aapt. Require original applicationId io.github.zhanry.hometunnel, versionName 13.0.0, versionCode 13000000, original certificate SHA256 and exactly ARM64/x86_64 ELF libraries. Install with adb install -r on an isolated API 35 x86_64 emulator and compare installed base.apk bytes to the published APK.",
+    "credentials": "Sign in to the accepted server over HTTPS using disposable credentials and remember-login. Force-stop/cold-start, observe restored authenticated workspace. Shorten only the fixture account access expiry in SQLite, then use the real app and server renewal paths. API 26/35 instrumentation separately verifies non-exportable AndroidKeyStore round-trip and IV/ciphertext/AAD/version tamper rejection.",
+    "management": "From the installed app device page, edit a disposable device tag and favorite. Independently fetch the server account device directory and verify persisted metadata and account scope.",
+    "media": "Install the accepted Linux x64 DEB on two isolated X11 OS users. Connect by device ID to both same-account and other-account hosts, approve locally and observe real screen. Send a unique keyboard marker from Android into a host terminal, verify the host file, and inspect the directly paired native host and task emulator-network endpoints. Rotate the viewer. Revoke only Android foreground sessions, require endpoints to close and cold startup to return to login."
+  },
+  "unverified": [
+    "physical-android-device",
+    "carrier-network-nat",
+    "long-duration-media",
+    "android-arm64-physical-runtime",
+    "android-to-windows-media",
+    "audio-file-clipboard"
+  ],
+  "scope": "Final signed universal APK actually installed on API 35 x86_64 emulator and used against final Linux x64 DEB and accepted server image digests. Packaged ARM64 native files are verified; no physical ARM64, operator-network or long-duration-media claim. Android is a management/controller product, without a standalone tunnel executor."
+}

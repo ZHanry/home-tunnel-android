@@ -1,79 +1,15 @@
-# Home Tunnel Android 10.0.0
+# nestlink 13.0.0
 
-The Android controller now uses the same-source production remote SDK from the
-10.0.0 desktop release for both arm64-v8a and x86_64. Remote sessions add scoped
-system audio playback, consent-bound file transfer, monitor selection, bounded
-reconnect and viewport gestures on top of the 9.0.0 authorization modes. Login,
-MFA, password change and tunnel editors stay visible above the soft keyboard in
-landscape and with large text, and account/network notices follow the app
-language. The APK keeps the existing application ID and release signing identity
-and uses versionCode `10000000`. Microphone return is not available.
+Android 正式版使用 nestlink 名称、统一图标和同源 Flutter 工作台，按远控、穿透、设备、设置组织导航。一个 APK 包含 ARM64 与 x86_64，提供管理和远控能力；不分发手机穿透执行器或独立 CLI。内容可触控滚动，隐藏可见滚动条。
 
-Android sessions use direct UDP only; the server's TURN relay is for browser
-viewers. The APK is signed with the existing release certificate, and the signing
-is verified in CI.
+启动后必须登录自建 HTTPS 服务，自动获取连接配置。提供账号密码、记住登录、自动续期和可撤销设备凭据，凭据由 Android Keystore 保护。修复登录恢复和续期时的安全存储缓冲区问题。MFA、恢复码与设备接入码入口移除；原生核心校验短期远控许可，未登录或会话撤销后无法建立远控。
 
-Gemini reviewed emulator screenshots of development builds. The following were
-not run on the final release artifacts. Their detailed test status is preserved
-in the attached acceptance record:
+同一自建服务下，可按设备 ID 连接同账号设备或跨账号协助，被控端必须批准或验证密码。画面与输入走认证加密的 P2P 直连，失败明确结束。设备标签和收藏可在手机管理，穿透和远控的生命周期分别管理。
 
-- Android controlling a real Windows host
-- the API 26/35 emulator runs of the final APK
-- physical arm64 phones
-- the 9→10 upgrade
-- the 2-hour and 24-hour soaks
-- performance comparison
-- the NAT, IPv6 and fault matrix
+发布复用 [构建 37960996185](https://github.com/ZHanry/home-tunnel-android/actions/runs/37960996185) 的最终签名 APK，Client 核心精确固定为 4cf3d1603a7c6d22b37746f3f02fee707a9338d9。保留 applicationId io.github.zhanry.hometunnel 与原发行证书；versionName 为 13.0.0、versionCode 为 13000000，最低 Android API 26、目标 API 35。
 
-## Previous release: 9.0.0
+实际安装 APK 的字节、两种 ABI、ELF 架构与原证书均已核验。API 26/35 的真实 Keystore、篡改拒绝和启动检查通过。最终 APK 在 API 35 x86_64 模拟器中通过登录、强制停止后的冷恢复、真实自动续期、设备元数据管理，以及与最终 Linux x64 安装版的同账号和跨账号批准、真实画面、键盘输入、直连、横竖屏和撤销后断开；撤销后冷启动回到登录页。
 
-# Home Tunnel Android 9.0.0
+完整记录见 [13.0.0 验收记录](release/acceptance-13.0.0.json)。发行包含通用 APK、材料 ZIP 和 SHA256SUMS；材料提供对应源码、许可证、构建与 Sigstore 证据。历史标签和升级身份保留，本次不升级生产部署。
 
-The app refreshes navigation and the remote-control surface and exposes
-host-approved requests, fixed-password access and one-time temporary-password
-access with matching 9.0.0 server and desktop components. Login asks for an MFA
-code only when the server requires one. The APK keeps the existing application
-ID and release signing identity and uses versionCode `9000000`.
-
-The Android controller requires the exact reviewed 9.0.0 native SDK from the
-published desktop release. The x86_64 API 35 emulator exercised local-network
-video and input, but the arm64 APK and real phones were not run. Clipboard
-delivery remains unverified; audio, microphone return and file transport are
-not available. Build and release evidence must not be presented as arm64
-runtime acceptance.
-
-## Previous release: 8.0.0
-
-# Home Tunnel Android 8.0.0
-
-This release adds the Android controller's remote-desktop protocol and security
-foundation. Existing tunnel management remains available. The source version is
-`8.0.0` with versionCode `8000002`; the source, tag, APK/AAB display version and asset names must match exactly.
-
-- Add a remote-desktop entry, endpoint enrollment, parent-account reauthentication,
-  AndroidKeyStore P-256 identity, DPoP requests, WSS authentication and pairing-code
-  confirmation against the shared server contract.
-- Add strict JSON/JWS validation, account-change cancellation, signed server-key rotation,
-  foreground and permission gates, and explicit text-only clipboard/SAF access.
-- Fix account-token refresh races that could restore a cleared login.
-- Bind first-frame readiness to the current Surface generation. Replacing or detaching
-  the target releases input; queued frames from an old target cannot re-enable it.
-- Integrate the hash-locked shared C ABI through JNI and package its matching C++
-  runtime. Native-source and library digests accompany the APK/AAB release evidence.
-- Preserve the Android application ID and persistent signing certificate. Each RC
-  and stable package requires a strictly increasing versionCode.
-
-The default development/CI shared core reports `security-core-only-media-unavailable`
-and blocks session creation. The separately compiled controller implements VP8/Surface
-and keyboard/pointer/text through verified direct UDP, but physical-device decoding
-and input remain unverified. Release now requires that controller SDK from the final
-client tag, a verified published Release and committed digest lock; developer CI
-artifacts cannot satisfy the release gate. No final SDK lock has been fabricated.
-System audio, microphone return, clipboard/file delivery, multi-session UI and optional
-AV1/HEVC remain unavailable in the Android controller profile. The 8.0.0 label does
-not imply completion of these features or of physical-device acceptance.
-
-Local verification covers JVM tests, Lint, JNI compilation and package contents.
-The release workflow also requires API 26/35 instrumentation CI and persistent
-signing checks. Physical-device interoperability and media tests remain outstanding;
-see [REMOTE_DESKTOP.md](REMOTE_DESKTOP.md) and the published evidence for exact scope.
+Android 真机、实际 ARM64 手机运行、Android 到 Windows 的媒体、运营商网络 NAT 和长期媒体尚未验收。音频、文件与剪贴板未纳入本次验收。模拟器和同机隔离网络的结果不代表上述范围。
