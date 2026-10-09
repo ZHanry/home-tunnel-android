@@ -24,7 +24,7 @@ match = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)',signature
 if not match or (not args.unsigned_debug and match[1] != identity):
     raise SystemExit('APK signing identity differs from the existing release certificate')
 badging = subprocess.check_output([str(tools/'aapt'),'dump','badging',str(args.apk)],text=True)
-if not re.search(r"package: name='io.github.zhanry.hometunnel'.*versionCode='11000001'.*versionName='"+re.escape(version)+r"'",badging):
+if not re.search(r"package: name='io.github.zhanry.hometunnel'.*versionCode='12000001'.*versionName='"+re.escape(version)+r"'",badging):
     raise SystemExit('Application ID, version or monotonic versionCode mismatch')
 if "sdkVersion:'26'" not in badging or "targetSdkVersion:'35'" not in badging:
     raise SystemExit('Android API level mismatch')
@@ -44,7 +44,7 @@ with zipfile.ZipFile(args.apk) as archive:
                 raise SystemExit('Wrong ELF architecture: '+name)
             engines[name]=hashlib.sha256(payload).hexdigest()
 record={'revision':revision,'core_revision':core,'version':version,'application_id':'io.github.zhanry.hometunnel',
-        'version_code':11000001,'certificate_sha256':match[1],'variant':'debug' if args.unsigned_debug else 'release',
+        'version_code':12000001,'certificate_sha256':match[1],'variant':'debug' if args.unsigned_debug else 'release',
         'apk':args.apk.name,'sha256':hashlib.sha256(args.apk.read_bytes()).hexdigest(),'native_sha256':engines,
         'policy':'require_direct','acceptance':'APK packaging/signature only; real-device and NAT/media acceptance pending'}
 output=ROOT/'material-input'

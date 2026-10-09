@@ -37,7 +37,7 @@ abstract class PackageRemoteAcceptanceCaTask : DefaultTask() {
 val productVersionValue = providers.gradleProperty("HOME_TUNNEL_VERSION_NAME").get()
 val versionNameValue = providers.gradleProperty("HOME_TUNNEL_RELEASE_VERSION").orElse(productVersionValue).get()
 val versionCodeValue = providers.gradleProperty("HOME_TUNNEL_VERSION_CODE").get().toInt()
-require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-rc\\.[1-9][0-9]*)?").matches(productVersionValue) && versionNameValue == productVersionValue) {
+require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-(?:RC[1-9][0-9]*|rc\\.[1-9][0-9]*))?").matches(productVersionValue) && versionNameValue == productVersionValue) {
     "Release display version must exactly match the complete source version"
 }
 require(versionCodeValue in 1..2_100_000_000) { "Android versionCode is outside the supported range" }

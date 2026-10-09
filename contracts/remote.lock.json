@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "repository": "ZHanry/home-tunnel-server",
-  "source_revision": "74e140da43c88043d0db2aad7505ba75fd3a9a49",
+  "source_revision": "2242354fc10c6681ec0ccf33e91ab96611e60791",
   "source_tree_dirty": false,
   "contract_status": "frozen",
-  "frozen_tag": "api-v1.4.0",
-  "published_contract_ref": "api-v1.4.0",
+  "frozen_tag": "api-v2.0.0",
+  "published_contract_ref": "api-v2.0.0",
   "proposed_ref": null,
-  "previous_immutable_tag": null,
+  "previous_immutable_tag": "api-v1.6.0",
   "source_tree_sha256": "22e4ecfb3c55aae185f3b2e1075c1574dd9af777919418a18d3dc2e84cd525a8",
   "files": [
     {

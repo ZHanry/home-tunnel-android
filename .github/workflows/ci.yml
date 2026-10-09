@@ -328,9 +328,9 @@ jobs:
         flutter build apk --release --target-platform android-arm64,android-x64
         cd "$GITHUB_WORKSPACE"
         mkdir -p products material-input
-        cp homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-release.apk products/HomeDesk-Android-11.0.0-rc.1.apk
+        cp homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-release.apk products/NestLink-Android-12.0.0-RC1.apk
         cp -R imported/native/material-input/. material-input/
-        python3 scripts/verify-homedesk-apk.py products/HomeDesk-Android-11.0.0-rc.1.apk
+        python3 scripts/verify-homedesk-apk.py products/NestLink-Android-12.0.0-RC1.apk
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
         pattern: homedesk-android-runtime-*

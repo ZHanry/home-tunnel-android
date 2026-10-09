@@ -3,6 +3,7 @@ name: Release Android
   push:
     tags:
     - v*-rc.*
+    - v*-RC*
 permissions:
   contents: write
   checks: read
@@ -35,7 +36,7 @@ jobs:
     - env:
         VERSION: ${{ steps.metadata.outputs.version }}
       run: python3 scripts/homedesk-release.py pack --component android --input products
-        --select "HomeDesk-Android-$VERSION.apk" --evidence material-input
+        --select "NestLink-Android-$VERSION.apk" --evidence material-input
     - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
       with:
         subject-path: release-public/SHA256SUMS.txt

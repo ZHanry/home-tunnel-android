@@ -63,7 +63,7 @@ def verify_files(files, directory):
 
 
 def package_names(version):
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[1-9][0-9]*)?", version):
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-(?:RC[1-9][0-9]*|rc\.[1-9][0-9]*))?", version):
         raise SystemExit("Invalid candidate version")
     return {"arm64-v8a": f"HomeTunnel-Android-{version}-arm64-v8a.apk",
             "x86_64": f"HomeTunnel-Android-{version}-x86_64.apk", "aab": f"HomeTunnel-Android-{version}.aab"}
