@@ -82,6 +82,10 @@ else:
         assert (root / "app/src/test/resources/rd-keyset-vectors.json").read_bytes() == (root / "contracts/rd-keyset-vectors.json").read_bytes()
         assert (root / "app/src/test/resources/remote-authorization-vectors.json").read_bytes() == (root / "contracts/remote-authorization-vectors.json").read_bytes()
 
+extension = json.loads((root/'contracts/browser.lock.json').read_text())
+for item in extension['files']:
+    assert hashlib.sha256((root/item['path']).read_bytes()).hexdigest()==item['sha256'], 'Browser extension drift'
+
 files = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root).decode().split("\0")
 for name in filter(None, files):
     path = root / name

@@ -1,15 +1,7 @@
-# HomeDesk Android / Home Tunnel
+# nestlink
 
-Current main: **11.0.0-rc.1 candidate**, using a pinned Client Rust/Flutter gitlink. Hearth mobile navigation retains family devices and complete governed tunnel service management. Remote desktop requires authenticated encrypted direct P2P; no relay/vendor/proxy fallback. Failed direct connections terminate.
+The **13.0.0 stable release target** is under implementation and acceptance. Web provides management and in-browser remote control; Windows x64 and Linux x64/ARM64 provide controllers, hosts and tunnel hubs; Android ARM64/x86_64 uses one universal management/controller APK.
 
-[简体中文](README.md) · [Candidate](https://github.com/ZHanry/home-tunnel-android/releases/tag/v11.0.0-rc.1) · [Last stable 10.0.0](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
+Sign in to your own HTTPS server to retrieve connection settings. Remote control requires encrypted direct P2P plus host approval or password verification. Desktop clients manage tunnels independently of remote sessions. Standalone CLI/NAS products and macOS GUI packages are outside the product scope.
 
-Three attachments: universal arm64-v8a/x86_64 APK, source/build materials and SHA256SUMS. Android API26+, target35, unchanged application ID and release certificate, increasing versionCode 11000001. Android 14/15 screen capture needs fresh visible user consent. Credentials use AndroidKeyStore AES-GCM256 with randomized IVs and AAD, no plaintext fallback or OS backup.
-
-Configure your own hbbs trust settings and HTTPS Server 11.x portal. Account enrollment does not grant screen sharing. Real-device, cross-network NAT, sustained media, audio/input/files and 16 KiB page acceptance remain pending. [Candidate notes](docs/HOMEDESK_RELEASE.md).
-
-Initialize recursive submodules and run `python3 scripts/check-homedesk-source.py`. Hosted CI pins Rust1.96, Flutter3.24.5, FRB1.80.1, vcpkg, JDK17 and NDK27.2, builds both ABIs, tests AndroidKeyStore/startup on API26/35, then signs the universal APK with the existing identity. Releases reuse exact main-build bytes. Historical app/native/10.x recipes are retained for provenance and are not packaged by the current workflow. Shared HomeDesk runtime is AGPL-3.0; original project code retains Apache-2.0.
-
-`scripts/setup-homedesk-sdk.sh` installs this repository's `gradle/homedesk-abis.gradle` in Gradle's `init.d`. Debug and release APKs package only arm64-v8a/x86_64, excluding Flutter's extra debug architectures without a matching Rust engine. Instrumentation assembly retains the same two target platforms.
-
-Preparation also runs `scripts/prepare-homedesk-signing.py` to assign the pinned project's `storeFile` explicitly, fixing Groovy's conditional parsing when a signing path is supplied. The patch requires the exact original line and rejects other source. Release signing still requires the original certificate, with no debug-key fallback.
+See [release scope and upgrade notes](docs/HOMEDESK_RELEASE.md). Current documentation contains no historical UI screenshots. Installation/configuration identities and the Android release certificate are preserved. Apache-2.0 and AGPL-3.0 apply to their respective source components; corresponding sources and licenses accompany the release.

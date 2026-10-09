@@ -1,36 +1,11 @@
-# 栖云桥 / NestLink
+# nestlink
 
-自建服务账号登录、内网穿透与认证加密的 P2P 远控。当前开发版本 **12.0.0-RC1**，采用统一蓝白工作台、三字中文名和桥形图标。
+Android 管理与远控应用，一个 APK 覆盖 ARM64 和 x86_64。 当前发行目标 **13.0.0 正式版**，正在实施和验收。
 
-新版本的使用、认证迁移、全平台发行及验证范围见 [12.0.0-RC1 说明](docs/HOMEDESK_RELEASE.md)。所有组件使用冻结契约 `api-v2.0.0`；旧管理登录和接入码已移除，独立后台穿透凭据与协议保留。完整发布前仍需构建和联调门槛通过。
+使用自己的 HTTPS 服务和账号登录，连接配置自动获取。远控要求认证加密 P2P 直连及被控端批准或密码验证。HTTP/HTTPS 与受控 TCP/UDP 穿透、权限、端口池、访问控制和流量治理保留。
 
-以下记录此前发行和组件背景，旧版本的配置入口及认证方法不适用于 12.0.0-RC1。
+平台、升级、验证边界与构建材料见 [13.0.0 说明](docs/HOMEDESK_RELEASE.md)。桌面客户端集中管理后台穿透，不分发独立 CLI/NAS 或 macOS GUI。旧界面截图从当前文档中移除。
 
-# HomeDesk Android / Home Tunnel
+[项目入口](https://github.com/ZHanry/home-tunnel) · [English](README.en.md) · [构建与来源](docs/BUILDING.md)
 
-当前主线 **11.0.0-rc.1 候选版**，使用固定的 Client Rust/Flutter 共用源码。暖居移动界面包含家庭设备、家庭服务、共享屏幕、设置；完整穿透服务管理保留，远控强制认证加密的 P2P 直连，失败停止，没有中继回退。
-
-[English](README.en.md) · [候选下载](https://github.com/ZHanry/home-tunnel-android/releases/tag/v11.0.0-rc.1) · [最后稳定版 10.0.0](https://github.com/ZHanry/home-tunnel-android/releases/tag/v10.0.0)
-
-Release 只有通用 APK（arm64-v8a/x86_64）、材料包和 SHA256SUMS 三个附件。Android 8.0/API 26 以上，目标 API 35；application ID 与发行证书保持不变，versionCode 11000001。升级前备份必要信息；旧 Compose/DTLS 远控不作为兼容目标。Android 14/15 共享屏幕必须从可见应用重新取得系统授权。
-
-通用包不包含服务器、公钥或账户。配置自己的 hbbs 与公钥、允许的来源；登录 Server 11.x HTTPS 管理台。接入账号不等于共享屏幕授权。门户刷新凭据使用 AndroidKeyStore AES-GCM256；无明文回退、不启用系统备份。
-
-构建和模拟器测试不代表真机及跨网媒体可用。跨网 NAT、长期媒体、真机权限/音频/输入/文件与 16 KiB 页设备仍待验收，详见 [候选说明](docs/HOMEDESK_RELEASE.md)。旧验证记录仅属于各自历史版本。
-
-## 源码与构建
-
-```sh
-git submodule update --init --recursive
-python3 scripts/check-homedesk-source.py
-```
-
-`homedesk-core` 是精确固定的 Client Git 子模块，包含同一 Rust/Flutter 源码，不维护复制分叉。`.github/workflows/ci.yml` 固定 Rust 1.96.0、Flutter 3.24.5、FRB 1.80.1、vcpkg、JDK17 和 NDK27.2，编译两个原生 ABI、运行 API26/35 加密存储与启动测试，使用原发行证书构建通用 APK。发布复用同一个 main 构建的原始字节。
-
-`scripts/setup-homedesk-sdk.sh` 将本仓 `gradle/homedesk-abis.gradle` 安装到 Gradle 的 `init.d`。调试与发行 APK 都只打包 arm64-v8a/x86_64，避免 Flutter 自动附加的调试架构缺少对应 Rust 引擎；测试包构建同时沿用这两个目标架构。
-
-构建准备还通过 `scripts/prepare-homedesk-signing.py` 将固定共用项目的 `storeFile` 改为显式赋值，修正提供签名路径时 Groovy 条件表达式的解析。补丁严格匹配原行，遇到其他源码会停止；发行仍强制原证书，不回退调试签名。
-
-历史 `app/`、`native/` 和旧发行脚本供 10.x 追溯，不由当前 CI 打包。共用 HomeDesk 运行时按 AGPL-3.0 分发，材料包含对应源码、依赖和许可证；原 Android/Go 项目代码保留 Apache-2.0。
-
-[Client 共用源码](https://github.com/ZHanry/home-tunnel-client) · [Server](https://github.com/ZHanry/home-tunnel-server) · [项目入口](https://github.com/ZHanry/home-tunnel)
+Android 保留原 applicationId 与发行证书；Windows/Linux 保留安装升级和配置身份。冻结认证契约 api-v2.0.0 保持不变，浏览器远控使用独立版本契约。原 Go 代码按 Apache-2.0 分发，整合 Rust/Flutter 代码遵循 AGPL-3.0，发行材料包含对应源码和许可证。历史记录见 Git 标签和 GitHub 发行页。

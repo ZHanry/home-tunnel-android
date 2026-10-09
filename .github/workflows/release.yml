@@ -4,6 +4,7 @@ name: Release Android
     tags:
     - v*-rc.*
     - v*-RC*
+    - v13.*
 permissions:
   contents: write
   checks: read
@@ -12,7 +13,7 @@ permissions:
   attestations: write
 jobs:
   release:
-    name: Publish compact signed Android candidate
+    name: Publish verified signed Android
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
