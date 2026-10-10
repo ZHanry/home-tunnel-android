@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Home Tunnel</string>
+    <string name="app_name">NestLink</string>
     <string name="tagline">Manage devices, remote sessions and private tunnels.</string>
     <string name="server_address">Server address</string>
     <string name="server_hint">https://console.example.com</string>
@@ -8,7 +8,7 @@
     <string name="password">Password</string>
     <string name="sign_in">Sign in</string>
     <string name="signing_in">Signing in…</string>
-    <string name="secure_discovery_note">Enter your Home Tunnel console address and the account provided by your administrator.</string>
+    <string name="secure_discovery_note">Enter your NestLink console address and the account provided by your administrator.</string>
     <string name="change_password">Change password</string>
     <string name="password_change_required">Set your own password before continuing to manage your devices.</string>
     <string name="current_password">Current password</string>
@@ -63,8 +63,8 @@
     <string name="status_stopped_by_user">Stopped by you</string>
     <string name="status_waiting">Waiting for the first secure sync</string>
     <string name="notification_channel_name">Active tunnels</string>
-    <string name="notification_channel_description">Shows when Home Tunnel is running in the foreground.</string>
-    <string name="notification_title">Home Tunnel</string>
+    <string name="notification_channel_description">Shows when NestLink is running in the foreground.</string>
+    <string name="notification_title">NestLink</string>
     <string name="notification_starting">Starting the managed tunnel…</string>
     <plurals name="notification_online">
         <item quantity="one">Tunnel active · %1$d connection</item>
@@ -89,10 +89,10 @@
     <string name="show_password">Show password</string>
     <string name="hide_password">Hide password</string>
     <string name="reload_latest">Load latest version and keep my edits</string>
-    <string name="nav_overview">Remote control</string>
-    <string name="nav_devices">Devices</string>
+    <string name="nav_overview">Remote assistance</string>
+    <string name="nav_devices">Device management</string>
     <string name="nav_connections">Tunnels</string>
-    <string name="nav_account">Account</string>
+    <string name="nav_account">Account and settings</string>
     <string name="attention_title">Needs attention</string>
     <string name="all_connected">All services are connected</string>
     <string name="all_connected_detail">Open Services to copy an address and reach your home.</string>
@@ -114,7 +114,7 @@
     <string name="discard">Discard</string>
     <string name="keep_editing">Keep editing</string>
     <string name="preferences">Preferences</string>
-    <string name="about_app">About Home Tunnel</string>
+    <string name="about_app">About NestLink</string>
     <string name="login_heading">Connect your world</string>
     <string name="status_paused">Paused</string>
     <string name="management_notice">Manage your devices and connections here. Tunnels keep running on your computer or NAS.</string>

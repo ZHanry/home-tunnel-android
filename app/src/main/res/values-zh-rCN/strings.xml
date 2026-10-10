@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Home Tunnel</string>
+    <string name="app_name">NestLink</string>
     <string name="tagline">登录后管理设备、远控与内网服务。</string>
     <string name="server_address">服务器地址</string>
     <string name="server_hint">https://console.example.com</string>
@@ -8,7 +8,7 @@
     <string name="password">密码</string>
     <string name="sign_in">登录</string>
     <string name="signing_in">正在登录…</string>
-    <string name="secure_discovery_note">填写你的 Home Tunnel 控制台地址，并使用管理员为你创建的账号。</string>
+    <string name="secure_discovery_note">填写你的 NestLink 控制台地址，并使用管理员为你创建的账号。</string>
     <string name="change_password">修改密码</string>
     <string name="password_change_required">首次登录请设置自己的密码，然后继续管理家庭设备。</string>
     <string name="current_password">当前密码</string>
@@ -63,8 +63,8 @@
     <string name="status_stopped_by_user">已由你停止</string>
     <string name="status_waiting">等待首次安全同步</string>
     <string name="notification_channel_name">活动隧道</string>
-    <string name="notification_channel_description">Home Tunnel 在前台运行时显示状态。</string>
-    <string name="notification_title">Home Tunnel</string>
+    <string name="notification_channel_description">NestLink 在前台运行时显示状态。</string>
+    <string name="notification_title">NestLink</string>
     <string name="notification_starting">正在启动受管隧道…</string>
     <plurals name="notification_online">
         <item quantity="other">隧道已启动 · %1$d 条连接</item>
@@ -88,10 +88,10 @@
     <string name="show_password">显示密码</string>
     <string name="hide_password">隐藏密码</string>
     <string name="reload_latest">读取最新版本并保留我的输入</string>
-    <string name="nav_overview">远程控制</string>
-    <string name="nav_devices">设备</string>
+    <string name="nav_overview">远程协助</string>
+    <string name="nav_devices">设备管理</string>
     <string name="nav_connections">内网穿透</string>
-    <string name="nav_account">账户</string>
+    <string name="nav_account">账号与设置</string>
     <string name="attention_title">需要关注</string>
     <string name="all_connected">所有连接运行正常</string>
     <string name="all_connected_detail">随时从连接页面复制地址，访问家里的服务。</string>
@@ -113,7 +113,7 @@
     <string name="discard">放弃修改</string>
     <string name="keep_editing">继续编辑</string>
     <string name="preferences">偏好设置</string>
-    <string name="about_app">关于 Home Tunnel</string>
+    <string name="about_app">关于 NestLink</string>
     <string name="login_heading">连接自己的世界</string>
     <string name="status_paused">已暂停</string>
     <string name="management_notice">手机用于管理家庭设备与连接。转发服务持续运行在电脑或 NAS 上。</string>

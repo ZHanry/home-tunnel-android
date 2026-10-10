@@ -218,7 +218,9 @@ jobs:
         cd homedesk-core/client/flutter
         flutter pub get --enforce-lockfile
         flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
-        flutter test --no-pub test/homedesk_devices_test.dart test/homedesk_dashboard_test.dart test/homedesk_advanced_test.dart test/homedesk_services_test.dart test/homedesk_mobile_test.dart
+        mapfile -t widget_tests < <(find test -maxdepth 1 -type f \( -name 'homedesk_*_test.dart' -o -name 'nestlink_*_test.dart' \) | sort)
+        [ "${#widget_tests[@]}" -gt 0 ]
+        flutter test --no-pub "${widget_tests[@]}"
         flutter build apk --debug --target-platform android-arm64,android-x64
         cd android
         # The test task rebuilds the app; keep Flutter's selected ABIs instead of its arm32 default.
@@ -330,9 +332,10 @@ jobs:
         flutter build apk --release --target-platform android-arm64,android-x64
         cd "$GITHUB_WORKSPACE"
         mkdir -p products material-input
-        cp homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-release.apk products/NestLink-Android-13.0.0.apk
+        VERSION="$(python3 -c 'import json; print(json.load(open("compatibility.json"))["version"])')"
+        cp homedesk-core/client/flutter/build/app/outputs/flutter-apk/app-release.apk "products/NestLink-Android-$VERSION.apk"
         cp -R imported/native/material-input/. material-input/
-        python3 scripts/verify-homedesk-apk.py products/NestLink-Android-13.0.0.apk
+        python3 scripts/verify-homedesk-apk.py "products/NestLink-Android-$VERSION.apk"
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
         pattern: homedesk-android-runtime-*
@@ -356,6 +359,8 @@ jobs:
         fetch-depth: 0
     - run: |-
         python3 scripts/check-homedesk-source.py
+        python3 scripts/check-device-capabilities-contract.py
+        python3 -m unittest discover -s scripts -p 'test_homedesk_release.py'
         python3 -m compileall -q scripts
         git diff --check
   quality-gate:
