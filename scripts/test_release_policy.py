@@ -86,9 +86,9 @@ class ReleasePolicyTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         compatibility = json.loads((root / "compatibility.json").read_text())
         properties = (root / "gradle.properties").read_text()
-        self.assertEqual((compatibility["version"], compatibility["stage"]), ("10.0.0", "public-release"))
-        self.assertIn("HOME_TUNNEL_VERSION_NAME=10.0.0\n", properties)
-        self.assertIn("HOME_TUNNEL_VERSION_CODE=10000000\n", properties)
+        self.assertEqual((compatibility["version"], compatibility["stage"]), ("14.0.0", "public-release"))
+        self.assertIn("HOME_TUNNEL_VERSION_NAME=14.0.0\n", properties)
+        self.assertIn("HOME_TUNNEL_VERSION_CODE=14000000\n", properties)
         self.assertEqual((root / "release-signing-cert.sha256").read_text().strip(), "d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702")
         self.assertIn('applicationId = "io.github.zhanry.hometunnel"', (root / "app/build.gradle.kts").read_text())
 
