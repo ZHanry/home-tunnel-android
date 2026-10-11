@@ -1,5 +1,9 @@
 # Changelog
 
+## 14.0.1
+
+- Fix the race between device login token refresh and native remote authorization synchronization so normal refresh does not disconnect an active remote session; sign-out, account switching and actual revocation still invalidate old sessions.
+
 ## 10.0.0
 
 - Integrate the same-source production remote SDK for both arm64-v8a and x86_64: scoped system audio playback, consent-bound file transfer, monitor selection, bounded reconnect and viewport gestures.
