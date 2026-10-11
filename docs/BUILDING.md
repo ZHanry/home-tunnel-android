@@ -1,8 +1,8 @@
-# NestLink Android 14.0.0 构建与来源
+# NestLink Android 14.0.1 构建与来源
 
 正式 Android 产品来自本仓库固定的 `homedesk-core` 子模块，即 `ZHanry/home-tunnel-client` 的共享 Rust/Flutter 源码。应用目录为 `homedesk-core/client/flutter`，Android 工程为其 `android/` 子目录。一个 universal APK 同时包含 `arm64-v8a` 与 `x86_64`，与桌面客户端共用界面、账号、设备和远控逻辑。
 
-本仓库根目录的旧 `app/`、独立控制器 SDK 导入脚本和历史候选流程保留供历史版本查询，不是 14.0.0 的构建入口。运行根目录 `./gradlew assembleRelease` 不会生成本版正式产品。
+本仓库根目录的旧 `app/`、独立控制器 SDK 导入脚本和历史候选流程保留供历史版本查询，不是 14.0.1 的构建入口。运行根目录 `./gradlew assembleRelease` 不会生成本版正式产品。
 
 ## 固定源码与工具链
 
@@ -15,9 +15,9 @@ python3 scripts/check-homedesk-source.py
 python3 scripts/check-device-capabilities-contract.py
 ```
 
-`ANDROID_SOURCE_COMMIT` 应替换为待构建的完整提交 SHA。`homedesk-core.lock.json` 必须与子模块 gitlink、实际 HEAD 和共享契约字节一致；不要把子模块切到浮动分支或单独更换某个 ABI 的库。最终已发布版本的来源与安装包摘要见发行材料中的 `BUILD.json`，当前构建状态见 [14.0.0 说明](HOMEDESK_RELEASE.md)。
+`ANDROID_SOURCE_COMMIT` 应替换为待构建的完整提交 SHA。`homedesk-core.lock.json` 必须与子模块 gitlink、实际 HEAD 和共享契约字节一致；不要把子模块切到浮动分支或单独更换某个 ABI 的库。最终已发布版本的来源与安装包摘要见发行材料中的 `BUILD.json`，当前构建状态见 [14.0.1 说明](HOMEDESK_RELEASE.md)。
 
-权威构建配方是 [Android CI](../.github/workflows/ci.yml)。它固定 Flutter 3.24.5、Rust 1.96.0、JDK 17、Android SDK Platform 35、Build Tools 35.0.0、NDK 27.2.12479018、Gradle 8.9 和 vcpkg 提交。最低 Android 8.0 / API 26，目标 API 35。Flutter 版本来自共享源码 `pubspec.yaml` 的 `14.0.0+14000000`，本仓库 `gradle.properties` 与 `compatibility.json` 同步记录 `versionName=14.0.0`、`versionCode=14000000`。
+权威构建配方是 [Android CI](../.github/workflows/ci.yml)。它固定 Flutter 3.24.5、Rust 1.96.0、JDK 17、Android SDK Platform 35、Build Tools 35.0.0、NDK 27.2.12479018、Gradle 8.9 和 vcpkg 提交。最低 Android 8.0 / API 26，目标 API 35。Flutter 版本来自共享源码 `pubspec.yaml` 的 `14.0.1+14000100`，本仓库 `gradle.properties` 与 `compatibility.json` 同步记录 `versionName=14.0.1`、`versionCode=14000100`。
 
 ## CI 构建流程
 
@@ -27,7 +27,7 @@ python3 scripts/check-device-capabilities-contract.py
 4. `instrumentation` 在 API 26、35 的 x86_64 模拟器上运行真实 AndroidKeyStore 测试和应用启动检查，保存日志、截图、源码与文件摘要。
 5. `signed` 在受保护的 `android-release` 环境构建正式 universal APK，使用原发行证书并验证实际包内容。PR 不接触签名密钥；main 构建的 Quality Gate 要求签名任务成功。
 
-正式产物是 `NestLink-Android-14.0.0.apk`，成功 main run 的 `homedesk-android` artifact 同时保存 `products/` 与 `material-input/`。该流程不发布 AAB 或分 ABI 安装包。
+正式产物是 `NestLink-Android-14.0.1.apk`，成功 main run 的 `homedesk-android` artifact 同时保存 `products/` 与 `material-input/`。该流程不发布 AAB 或分 ABI 安装包。
 
 ## 本地调试共享应用
 

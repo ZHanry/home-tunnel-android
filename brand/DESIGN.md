@@ -1,4 +1,4 @@
-# NestLink 14.0.0 Android 品牌资料
+# NestLink 14.0.1 Android 品牌资料
 
 Android 使用锁定的共享 Flutter/Rust 工程；唯一 Logo 来源是客户端提交 `feaf1181efe55076dead52931203a8488cbad20d` 的 `brand/icon.svg`。本仓库根目录的 `brand/icon.svg` 与 `brand/brand.json` 是该提交原始字节的资料镜像，根目录 `brand/` 不参与当前共享 Android 构建。
 
@@ -15,6 +15,6 @@ Android 使用锁定的共享 Flutter/Rust 工程；唯一 Logo 来源是客户�
 
 默认打开设备管理。手机以“设备管理、远程协助、内网穿透”三个业务底栏和顶部账号入口导航；宽度达到 760dp 的平板使用侧栏。控件和弹窗支持窄屏、大字体、横竖屏、软键盘、键盘焦点及可滚动内容；刷新保留已有内容，错误提供具体处理方式。
 
-保留 Android 控制、被控、屏幕共享与系统权限流程，隐藏 Windows 专属设置。保留既有配置命名空间、安装身份、安全凭据机制、Android applicationId `io.github.zhanry.hometunnel` 和原发行证书，产品版本为 14.0.0，versionCode 为 14000000。
+保留 Android 控制、被控、屏幕共享与系统权限流程，隐藏 Windows 专属设置。保留既有配置命名空间、安装身份、安全凭据机制、Android applicationId `io.github.zhanry.hometunnel` 和原发行证书，产品版本为 14.0.1，versionCode 为 14000100。
 
-实际 UI、启动及通知图标由共享工程中已提交的 SVG/PNG 等衍生资源提供；CI 消费这些预生成资源，不宣称每次构建都会从 SVG 重新生成。通知小图使用白色/透明单色 glyph，并由系统以主题色着色。此根目录资料维护不重建或替换已发布 APK，不移动正式 `v14.0.0` 标签，也不提供新的运行验收结论。
+实际 UI、启动及通知图标由共享工程中已提交的 SVG/PNG 等衍生资源提供；CI 消费这些预生成资源，不宣称每次构建都会从 SVG 重新生成。通知小图使用白色/透明单色 glyph，并由系统以主题色着色。14.0.1 需独立构建和验收；此根目录资料不替换已发布 14.0.0 APK，不移动正式 `v14.0.0` 标签，也不提供新的运行验收结论。

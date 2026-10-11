@@ -1,3 +1,11 @@
+# NestLink 14.0.1 维护版准备
+
+Android 与桌面端继续共用 Flutter/Rust 工程，维护发行版本同步为 14.0.1，versionCode 为 14000100；保留 io.github.zhanry.hometunnel、原签名证书、安装身份和安全凭据机制。本次产品修复针对 Linux 版本与更新菜单，Android 业务与权限流程保持不变。
+
+共享客户端提交与来源锁等待新客户端提交固定，随后需要新的签名 universal APK、原证书升级和隔离运行验收。当前尚未构建或验收 14.0.1，不以旧包、旧截图或旧测试结论代替。下方 14.0.0 来源和验证范围保留为历史；线上服务端不随 GitHub 维护发行升级。
+
+## 已发布 14.0.0 历史记录
+
 # NestLink 14.0.0
 
 NestLink 14.0.0 Android 与桌面端共用冻结的 Flutter/Rust 源码，统一紫色主题、Logo、设备目录和业务导航。保留 `io.github.zhanry.hometunnel` 与原发行证书；本版 `versionCode` 为 `14000000`。验收 APK 来源为 Android 提交 `dcdfc4299d1f92f46b5f3ca8e675d304f9639982`、共享客户端提交 `feaf1181efe55076dead52931203a8488cbad20d`，构建为 [Android CI 38069852456](https://github.com/ZHanry/home-tunnel-android/actions/runs/38069852456)。APK SHA-256：`0d81e4a2ac6ee64b21fd95bcae00ba3cbc71b9036371475786cc8bf03bcafbab`。
