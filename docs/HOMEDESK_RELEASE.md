@@ -1,8 +1,56 @@
-# NestLink 14.0.1 维护版准备
+# NestLink 14.0.1 维护版
 
-Android 与桌面端继续共用 Flutter/Rust 工程，维护发行版本同步为 14.0.1，versionCode 为 14000100；保留 io.github.zhanry.hometunnel、原签名证书、安装身份和安全凭据机制。本次产品修复针对 Linux 版本与更新菜单，Android 业务与权限流程保持不变。
+Android 与桌面继续共享 Flutter/Rust 工程，版本为 14.0.1，`versionCode` 为 `14000100`；保留 `io.github.zhanry.hometunnel`、原发行证书、安装身份和受保护凭据机制。gitlink 与来源锁固定本版 C Client 源码，包含 Linux 菜单、授权同步、GUI 凭据恢复、安全诊断和窄屏适配。
 
-共享客户端提交与来源锁等待新客户端提交固定，随后需要新的签名 universal APK、原证书升级和隔离运行验收。当前尚未构建或验收 14.0.1，不以旧包、旧截图或旧测试结论代替。下方 14.0.0 来源和验证范围保留为历史；线上服务端不随 GitHub 维护发行升级。
+The universal APK keeps the existing application ID, signing certificate and protected installation identity, and contains both ARM64/x86_64 native libraries. Its shared Flutter/Rust core is pinned to the C payload source, separately from any later formal Client documentation commit. Actual overlay, UI and media scope is recorded below.
+
+C 产物源码为 `dcbcf85126af88695a890137ca8ade5fed0e1296`，来源为成功的 [Android CI 38172156970](https://github.com/ZHanry/home-tunnel-android/actions/runs/38172156970)（attempt 1）。本版实际验收见 [acceptance-14.0.1.json](release/acceptance-14.0.1.json)。
+
+| C 固定产物 | SHA-256 |
+| --- | --- |
+| NestLink-Android-14.0.1.apk | `c06a56a16f69e8432793abea641869e43698c74e8fb38417e6f88cecba38db37` |
+| 原发行证书 | `d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702` |
+
+共享 C Client：`7ca0fd7186586965921e48beef2dbb2ae44fc895`。
+
+产物源码提交用于绑定已构建的 C 运行时字节；正式 `v14.0.1` 标签提交还会包含本版验收 JSON 与两份发行文档。本版 owner waiver 仅允许三个发行文档与 `scripts/homedesk-release.py`、`scripts/test_homedesk_release.py` 两项政策文件相对产物源码变化；逐场景绑定这两份政策的实际 SHA-256，运行时字节保持固定。验收 `source_revision/build_run` 保留 C 产物来源，正式 Materials 的 `BUILD.json.revision/build_run` 另记实际正式提交与 release.yml run，`payload_source_revision` 保留 C 来源；正式 Materials、附件签名和校验和在真正发布后独立核验，不宣称文档提交重新构建了产物。
+
+此前 A/B 的故障、安装链和原始尝试单独保留，13.0.0、14.0.0 及 A/B 结论不替代 C。用户取消后续远控回归并要求直接发布。未执行的 C 运行时场景明确记录为 not_run 和 owner waiver，不推断通过；通过场景才绑定实际执行原件。
+
+本次仅更新 GitHub 发行、下载站和自动更新信息；正在运行的生产服务端保持原版本。
+
+The acceptance source and candidate build run identify the exact C payload bytes. Formal documentation commits and release-workflow runs remain separate. Unfinished runtime scenarios remain not_run under the explicit owner waiver. Only GitHub releases, downloads and update information change; the running production server is not upgraded.
+
+## 本版实际验收范围
+
+状态：`accepted_with_waivers`。用户授权原话：`不需要远控回归,直接做后面的`。
+
+Exact C build provenance and payload hashes are verified. The actual APK retains the original Android signing certificate d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702. Formal Materials Sigstore verification is performed separately after publication. Pending installed-product remote, authorization, account and tunnel runtime scenarios are not_run after the owner requested direct publication. The Android C overlay is the sole passed required installed-product scenario. Existing local Linux overlay evidence remains a separate completed check. No production server deployment or Windows reinstallation is performed.
+
+- **account-login-management**：not_run — The owner stopped pending remote-control regression and requested direct publication. This unfinished runtime scenario remains not_run; exact-source CI and payload/signature verification do not constitute installed-product runtime acceptance.
+- **installed-universal-apk**：The exact signed C universal APK was overlaid once on the retained API35 x86_64 emulator. Original signing certificate, application ID, first-install time, installation identity, configuration and protected login ciphertext were preserved. Both ARM64/x86_64 libraries are packaged. UI, login, permissions and media were not tested for C; physical ARM64 was not tested.
+- **native-remote-control**：not_run — The owner stopped pending remote-control regression and requested direct publication. This unfinished runtime scenario remains not_run; exact-source CI and payload/signature verification do not constitute installed-product runtime acceptance.
+
+签名范围：The actual APK retains the original Android signing certificate d7779e338be1039acee6dda9a43417cbf2baf4b0c9995578d9708501e95af702. Formal Materials Sigstore verification is performed separately after publication.
+
+准备过程实际记录（不替代运行时回归）：
+
+- **linux-c-payload-overlay**：`passed` — Exact C Linux x64 payload installed with identity, configuration and keyring preserved; GUI and media not run.
+- **private-fixture-c-conversion-preflight**：`failed_before_dispatch` — The private application-image transition refused its shim identity preflight before any dispatch. Existing B application containers and FRPS remained unchanged. No C GUI or runtime fixture acceptance is asserted.
+
+## UI 与健康观察
+
+本版 C 产品 UI 与健康回归未完成；保留官网真实 14.0.0 图库、原 capture manifest 和 SHA-256，并明确标注 14.0.0 截图参考。没有 C 真实界面矩阵，不把历史像素改版本冒充新版截图。此前 B 的中文 remote placeholder 和 gatewayUnhealthy 观察保留为历史记录。本版 C 的中文初次打开、EN↔ZH 既有表单切换及健康结果须按实际原件判断，文档不会据源码 CI 或截图 helper exit 0 推断通过。英文管理区“策略队列/备份”的混合语言观察仍保留；未覆盖的管理员项与 FRPS 健康没有本版通过结论。
+
+## 限制与未测范围
+
+Windows 14.0.1 本机清装与 GUI 未实测；安装器由 CI 验证且没有 Authenticode，Materials 的 Sigstore 签名不能替代平台可执行文件签名。Linux ARM64/Wayland 实机媒体、实体 Android、运营商 NAT、长期媒体，以及音频/文件/剪贴板等未测范围继续如实保留。Android 被控方向、PIN/`trusted_devices` 与安装归属不宣称全部通过；具体边界以下方本版 unverified 原列表为准。历史安装链不等同于直接公开 13→C，synthetic 迁移不等同于生产原数据库升级。
+
+既有审查记录的 18 个 open 依赖告警（3 high、7 medium、8 low）及具体未修复依赖继续保留；没有通过版本同步关闭或 dismiss 告警，历史审查不是新的动态可达性或利用测试。Linux `users` 0.10.0/0.11.0、受影响的 `libgit2-sys` 构建输入、其他 glib/users 与 atty 风险没有由本维护修复消除。
+
+Windows local installation/GUI, physical Android/ARM64, Wayland media, carrier NAT and long-duration media remain outside the tested scope unless the original C acceptance explicitly records otherwise. Windows has no Authenticode signature, and the existing dependency advisory scope remains unresolved. Production deployment is not part of this release.
+
+本版原验收 unverified：`account-login-management`, `carrier-network-nat`, `current-c-product-ui-matrix`, `local-windows-14.0.1-reinstallation`, `long-duration-media`, `native-remote-control`, `physical-android-device`, `physical-linux-arm64-gui`。
 
 ## 已发布 14.0.0 历史记录
 
